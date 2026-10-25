@@ -315,7 +315,11 @@ function regularDayEnd(lg: League, day: number, rng: Rng) {
 }
 
 /** Play one game now and return it with its play-by-play. */
-export function playSingle(lg: League, home: string, away: string): { res: GameResult; pbp: PbpEv[] } | null {
+/**
+ * Play one of today's games for watching. With `defer` the result is not recorded yet: the viewer
+ * calls commit() when it closes, so nothing (box scores, series, a title) is known before it is seen.
+ */
+export function playSingle(lg: League, home: string, away: string, opts: { defer?: boolean } = {}): { res: GameResult; pbp: PbpEv[]; before?: string; commit: () => void } | null {
   const d = findTodayGame(lg, home, away);
   if (!d) return null;
   const rng = rngOf(lg);
@@ -328,12 +332,27 @@ export function playSingle(lg: League, home: string, away: string): { res: GameR
   );
   const res: GameResult = { id: lg.nextGameId++, season: lg.season, day: d.kind === 'reg' ? d.g.day : lg.day, po, home: r.home, away: r.away, ot: r.ot };
   const before = d.kind === 'series' ? `Game ${d.s.hw + d.s.lw + 1} · ${seriesText(lg, d.s)}` : d.kind === 'playin' ? 'Play-in' : undefined;
-  recordResult(lg, res, rng);
-  applyDeferred(lg, d, res, rng);
-  saveRng(lg, rng);
-  return { res, pbp: r.pbp!, before };
+  if (d.kind === 'series') {
+    // how the series stands after this game (shown at the final buzzer)
+    const homeWon = res.home.pts > res.away.pts;
+    const hiWon = (d.home === d.s.hi) === homeWon;
+    const t = { ...d.s, hw: d.s.hw + (hiWon ? 1 : 0), lw: d.s.lw + (hiWon ? 0 : 1) };
+    const need = Math.ceil(t.bestOf / 2);
+    if (t.hw >= need) t.winner = t.hi; else if (t.lw >= need) t.winner = t.lo;
+    res.ser = `Game ${t.hw + t.lw} · ${seriesText(lg, t)}`;
+  }
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    recordResult(lg, res, rng);
+    applyDeferred(lg, d, res, rng);
+    saveRng(lg, rng);
+  };
+  if (!opts.defer) commit();
+  return { res, pbp: r.pbp!, before, commit };
 }
-export const simDayWatching = (lg: League, home: string, away: string) => playSingle(lg, home, away);
+export const simDayWatching = (lg: League, home: string, away: string, opts: { defer?: boolean } = {}) => playSingle(lg, home, away, opts);
 
 /** "BOS leads 2–1", "Series tied 1–1", "BOS wins 4–2" */
 export function seriesText(lg: League, s: Series) {

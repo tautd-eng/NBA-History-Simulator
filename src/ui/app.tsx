@@ -117,10 +117,17 @@ function App() {
 
   async function watch(home: string, away: string, startAt = 0, show = true) {
     if (!lg || busy) return;
-    const w = simDayWatching(lg, home, away);
+    // a watched game is recorded only when the viewer closes: no spoilers in profiles, standings or the bracket
+    const w = simDayWatching(lg, home, away, { defer: show });
+    if (w && show) { setLive({ ...w, startAt }); return; }
     bump();
-    if (w && show) setLive({ ...w, startAt });
     setSaved((await saveLeague(lg)) ? 'ok' : 'fail');
+  }
+  async function closeLive() {
+    if (live?.commit) live.commit();
+    setLive(null);
+    bump();
+    if (lg) setSaved((await saveLeague(lg)) ? 'ok' : 'fail');
   }
 
   function start(destiny: number, seed: number, userTid: string | null, settings: any, fantasy = false, startYear = 1980, classMode: any = 'real') {
@@ -142,7 +149,7 @@ function App() {
 
   const openPlayer = (pid: string) => setPlayer(pid);
   const openTeam = (tid: string) => { setTeam(tid); setTab('komandos'); location.hash = 'komandos'; };
-  nav.lg = lg; nav.player = openPlayer; nav.team = (tid: string) => { setPlayer(null); setLive(null); setGameView(null); openTeam(tid); };
+  nav.lg = lg; nav.player = openPlayer; nav.team = (tid: string) => { setPlayer(null); if (live) closeLive(); setGameView(null); openTeam(tid); };
   const go = (t: string) => { setTab(t); try { history.replaceState(null, '', '#' + t); } catch { /* ignore */ } };
 
   return (
@@ -194,7 +201,7 @@ function App() {
       {clutch && <ClutchGame lg={lg} cs={clutch} close={() => setClutch(null)} openPlayer={() => {}}
         onFinish={async () => { finishClutch(lg, clutch); bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {gameView && <GameModal lg={lg} res={gameView} close={() => setGameView(null)} hold={!!player} openPlayer={(pid: string) => setPlayer(pid)} />}
-      {live && <LiveGame lg={lg} data={live} close={() => setLive(null)} hold={!!player} openPlayer={(pid: string) => setPlayer(pid)} />}
+      {live && <LiveGame lg={lg} data={live} close={closeLive} hold={!!player} openPlayer={(pid: string) => setPlayer(pid)} />}
       {player && <PlayerPanel lg={lg} pid={player} close={() => setPlayer(null)} openTeam={(t) => { setPlayer(null); openTeam(t); }} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
     </div>
   );
