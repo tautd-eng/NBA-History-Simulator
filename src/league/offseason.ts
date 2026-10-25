@@ -1018,3 +1018,28 @@ function arrivals(lg: League, rng: Rng) {
     }
   }
 }
+
+/**
+ * Bring a draft-and-stash player over now instead of waiting for his real debut year
+ * (the team holding his rights; he signs a rookie-scale deal or his market salary, whichever is higher).
+ */
+export function recallStash(lg: League, pid: string): { ok: boolean; msg: string } {
+  const p = lg.players[pid] as any;
+  if (!p || !p.stash) return { ok: false, msg: 'He is not playing overseas.' };
+  const tid = p.rights as string, t = lg.teams[tid];
+  if (!t) return { ok: false, msg: 'Nobody holds his rights.' };
+  if (lg.phase === 'playoffs' || lg.phase === 'draft') return { ok: false, msg: 'Players can be brought over in free agency or during the regular season.' };
+  if (t.roster.length >= ROSTER_MAX) return { ok: false, msg: `${t.name} have a full roster (${ROSTER_MAX}) – release someone first.` };
+  const N = lg.phase === 'regular' ? lg.season : lg.season + 1;
+  const rookie = p.draft && p.draft.year >= N - 2 ? rookieContract(p.draft.pick, p.draft.round, N - 1) : null;
+  const sal = Math.max(rookie?.sal ?? 0, askingSalary(p, N) * 0.8, MIN_SAL);
+  const hc = hardCap(lg);
+  if (payroll(lg, tid) + sal > hc + 1e-9) return { ok: false, msg: `His salary (${Math.round(sal * 100)}% of the cap) would put ${t.name} over the hard cap.` };
+  delete p.stash; delete p.rights;
+  p.tid = tid; t.roster.push(pid);
+  p.contract = rookie ? { ...rookie, sal } : { sal, exp: N + 2, rookie: true };
+  lockTrade(lg, p);
+  addTx(p, N, `Came over from overseas early to join the ${t.name}`, 5);
+  lg.news.push({ s: lg.season, t: `The ${t.name} brought ${p.name} over from overseas.` });
+  return { ok: true, msg: `${p.name} joins the ${t.name}.` };
+}

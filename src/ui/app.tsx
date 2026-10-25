@@ -20,6 +20,7 @@ import { Reporter } from './reporter';
 import { fantasyAdvance } from '../league/fantasy';
 import { Trades } from './trades';
 import { DraftRoom, FAHub, FreeAgentsView, potOf } from './offseason';
+import { recallStash } from '../league/offseason';
 import { Rankings, offRating, defRating } from './rankings';
 import { fatigueAt, nextCal, fatigueExcess, fatigueLabel } from '../league/fatigue';
 import { injName } from '../league/injuries';
@@ -855,7 +856,36 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
       )}
       {(view === 'stats' || view === 'attr') && <p className="note">R – rookie. +number – games he'll still miss through injury (hover for the injury). {view === 'stats' ? 'Stats are this season\'s per-game averages. Fat. – fatigue before the next game: it builds with heavy minutes and back-to-back games and fades on rest days; tired players rebound, defend and play less.' : 'Attributes 1–99 (50 = league average). Off and Def – offensive and defensive ratings on the 0–100 OVR scale. Usg and 3PA% are tendencies (how often he shoots), not quality. Click a column to sort.'}</p>}
       <TeamGames lg={lg} tid={t.tid} openGame={openGame} />
+      <OverseasRights lg={lg} tid={t.tid} openPlayer={openPlayer} />
     </div>
+  );
+}
+
+/** Draft rights to players still overseas; the user's team can bring them over now. */
+function OverseasRights({ lg, tid, openPlayer }: any) {
+  const [msg, setMsg] = useState('');
+  const [, bump] = useState(0);
+  const ps = (Object.values(lg.players) as any[]).filter(p => p.stash && p.rights === tid && !p.retired).sort((a, b) => ovrOf(b.z) - ovrOf(a.z));
+  if (!ps.length) return null;
+  const mine = tid === lg.userTid;
+  return (
+    <details className="more" open={mine}>
+      <summary>Draft rights overseas ({ps.length})</summary>
+      <div className="tbl-wrap"><table className="tbl">
+        <thead><tr><th className="l">Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Pot.</th><th className="l">Drafted</th><th className="l">Expected</th>{mine && <th></th>}</tr></thead>
+        <tbody>{ps.map(p => (
+          <tr key={p.id}>
+            <td className="l"><PFace lg={lg} p={p} /><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button></td>
+            <td>{p.pos}</td><td>{ageIn(p, lg.season)}</td><td><Ovr v={ovrOf(p.z)} /></td><td>{potOf(p, lg.season)}</td>
+            <td className="l dim">{p.draft ? `${p.draft.year}, No. ${p.draft.pick}` : '–'}</td>
+            <td className="l dim">{p.stash - 1}–{String(p.stash).slice(2)}</td>
+            {mine && <td><button className="small primary" onClick={() => { const r = recallStash(lg, p.id); setMsg(r.msg); bump(x => x + 1); if (r.ok) saveLeague(lg); }}>Bring over now</button></td>}
+          </tr>
+        ))}</tbody>
+      </table></div>
+      {msg && <p className="hint">{msg}</p>}
+      <p className="note">Drafted players who in real life stayed overseas for years join when their real NBA careers began. You can bring yours over right away: he signs a rookie-scale deal (or what the market pays him, if more) and has to fit under the hard cap and the 15-man limit.</p>
+    </details>
   );
 }
 

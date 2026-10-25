@@ -12,7 +12,7 @@ import { traits, TRAIT_LABELS, reasons, extensionNeed } from '../league/prefs';
 import { extendable, userExtend } from '../league/extensions';
 import { maxSalary } from '../ai/value';
 import { seasonInfo } from '../data';
-import { describeLog } from '../league/offseason';
+import { describeLog, recallStash } from '../league/offseason';
 import { PFace, SKINS, HAIR_STYLES, FACIAL_STYLES, faceOf } from './art';
 
 /** Small editor for the generated portrait (saved with the league). */
@@ -241,7 +241,8 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
 
   const [editFace, setEditFace] = useState(false);
   const [, bump] = useState(0);
-  const status = p.retired ? `Retired in ${p.retired}` : p.tid ? lg.teams[p.tid].name : 'Free agent';
+  const status = p.retired ? `Retired in ${p.retired}` : p.tid ? lg.teams[p.tid].name : (p as any).stash ? `Overseas – rights: ${lg.teams[(p as any).rights]?.abbr ?? '–'}` : 'Free agent';
+  const [recallMsg, setRecallMsg] = useState('');
   return (
     <div className="overlay" onClick={close}>
       <aside className="drawer wide" role="dialog" aria-label={p.name} onClick={e => e.stopPropagation()}>
@@ -254,6 +255,8 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
             <p className="dim">{p.pos} · {(p.ht * 0.0254).toFixed(2)} m · age {ageIn(p, lg.season)} · {p.tid ? <button className="link" onClick={() => openTeam(p.tid)}>{status}</button> : status}</p>
             {p.tid && (lg.phase === 'regular' || lg.phase === 'playoffs') && <p className="dim">Status: {p.injury > 0 ? `injured – ${p.inj ? injName(p.inj.k) : 'injury'}, out ~${p.injury} more games` : fatigueLabel(fatigueAt(lg, p, nextCal(lg, todayIndex(lg)))).toLowerCase()}</p>}
             {p.draft?.tid && <p className="dim">Draft {p.draft.year}: No. {p.draft.pick} ({lg.teams[p.draft.tid]?.abbr ?? p.draft.tid})</p>}
+            {(p as any).stash && <p className="dim">Playing overseas – expected to come over for {(p as any).stash - 1}–{String((p as any).stash).slice(2)}.{(p as any).rights === lg.userTid && <> <button className="small primary" onClick={() => { const r = recallStash(lg, p.id); setRecallMsg(r.msg); onChange?.(); bump(x => x + 1); }}>Bring him over now</button></>}</p>}
+            {recallMsg && <p className="hint">{recallMsg}</p>}
           </div>
         </div>
         {editFace && <FaceEditor p={p} season={lg.season} onChange={() => bump(x => x + 1)} />}
