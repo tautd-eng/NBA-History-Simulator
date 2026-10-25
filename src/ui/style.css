@@ -717,3 +717,4 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .series-chip:hover { background: var(--accent); color: #fff; }
 .pv-story { display: flex; flex-direction: column; gap: 4px; font-size: 0.88rem; line-height: 1.45; }
 .pv-story p { margin: 0; }
+.chip.traded { margin-left: 6px; border-color: var(--accent); color: var(--accent); }

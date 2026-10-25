@@ -12,6 +12,7 @@ import {
 import { SortTable } from './sorttable';
 import { posNum } from '../engine/game';
 import { teamColor } from './pixel';
+import { pickOwner } from '../ai/trades';
 
 function Ovr({ v }: any) {
   const tier = v >= 90 ? 'star' : v >= 80 ? 'good' : v >= 70 ? 'mid' : 'low';
@@ -147,6 +148,8 @@ export function LotteryRoom({ lg, onChange, onDrawn }: any) {
   const topN = Math.min(L.draws, n);
   const exp = (o: number[]) => o.reduce((a, p, i) => a + p * (i + 1), 0);
   const entrant = (tid: string) => L.entrants.includes(tid);
+  const owner = (tid: string) => pickOwner(lg, d.year, 1, tid);
+  const traded = L.teams.filter((t: any) => owner(t.tid) !== t.tid);
   return (
     <div className="panel accent lotto">
       <div className="team-head">
@@ -163,9 +166,10 @@ export function LotteryRoom({ lg, onChange, onDrawn }: any) {
           <tbody>{L.teams.map((t: any, i: number) => {
             const o = L.odds[i];
             const worst = o.reduce((a: number, p: number, k: number) => (p > 0.0005 ? k + 1 : a), 0);
-            return <tr key={t.tid} className={`${t.tid === lg.userTid ? 'mine' : ''} ${L.kind === 'coin' && !entrant(t.tid) ? 'bench' : ''}`}>
+            const ow = owner(t.tid);
+            return <tr key={t.tid} className={`${t.tid === lg.userTid || ow === lg.userTid ? 'mine' : ''} ${L.kind === 'coin' && !entrant(t.tid) ? 'bench' : ''}`}>
               <td>{i + 1}</td>
-              <td className="l"><span className="swatch" style={{ background: teamColor(t.tid)[0] }}></span><TL tid={t.tid} /></td>
+              <td className="l"><span className="swatch" style={{ background: teamColor(t.tid)[0] }}></span><TL tid={t.tid} />{ow !== t.tid && <span className="chip tiny traded" title={`${lg.teams[t.tid].name} traded this pick`}>pick owned by {lg.teams[ow].abbr}</span>}</td>
               <td>{t.w}–{t.l}</td>
               {L.kind === 'coin' ? <td>{entrant(t.tid) ? '50%' : <span className="dim">not in it</span>}</td> : <>
                 <td><b>{pct(o[0])}</b></td>
@@ -177,6 +181,7 @@ export function LotteryRoom({ lg, onChange, onDrawn }: any) {
           })}</tbody>
         </table></div>
       ) : <p className="note">Every team made the playoffs – no lottery.</p>}
+      {traded.length > 0 && <p className="note">Traded picks: {traded.map((t: any, i: number) => <span key={t.tid}>{i ? '; ' : ''}<TL tid={t.tid} abbr />'s pick belongs to <b><TL tid={owner(t.tid)} /></b></span>)}. Wherever the lottery puts it, that team makes the selection.</p>}
       <div className="def-row">
         <button className="primary big" onClick={() => { lotteryDraw(lg); onChange(); onDrawn(); }}>{L.kind === 'coin' ? 'Flip the coin' : 'Run the lottery'}</button>
       </div>
@@ -200,6 +205,7 @@ export function LotteryReveal({ lg, close }: any) {
     return () => clearTimeout(id);
   }, [auto, shown, n]);
   const lottery = L.teams.map((t: any) => t.tid);
+  const owner = (tid: string) => pickOwner(lg, d.year, 1, tid);
   return (
     <div className="panel accent lotto">
       <div className="team-head">
@@ -220,11 +226,11 @@ export function LotteryReveal({ lg, close }: any) {
           const isNext = slot === n - shown;
           const odds1 = L.odds[lottery.indexOf(tid)][0];
           return (
-            <li key={slot} className={`${open ? 'open' : 'hidden'} ${isNext ? 'next' : ''} ${open && tid === lg.userTid ? 'mine' : ''} ${open && slot === 1 ? 'first' : ''}`}>
+            <li key={slot} className={`${open ? 'open' : 'hidden'} ${isNext ? 'next' : ''} ${open && (tid === lg.userTid || owner(tid) === lg.userTid) ? 'mine' : ''} ${open && slot === 1 ? 'first' : ''}`}>
               <span className="slot">{slot}</span>
               {open ? <>
-                <span className="swatch big-sw" style={{ background: teamColor(tid)[0] }}></span>
-                <span className="tname">{lg.teams[tid].name}<small className="dim"> · seed {was}{L.kind !== 'coin' ? ` · odds at No. 1 ${pct(odds1)}` : ''}</small></span>
+                <span className="swatch big-sw" style={{ background: teamColor(owner(tid))[0] }}></span>
+                <span className="tname">{owner(tid) !== tid ? <><b>{lg.teams[owner(tid)].name}</b><small className="dim"> (pick from {lg.teams[tid].abbr})</small></> : lg.teams[tid].name}<small className="dim"> · seed {was}{L.kind !== 'coin' ? ` · odds at No. 1 ${pct(odds1)}` : ''}</small></span>
                 <span className={`mv ${mv > 0 ? 'up' : mv < 0 ? 'down' : ''}`}>{mv > 0 ? `▲ ${mv}` : mv < 0 ? `▼ ${-mv}` : '='}</span>
               </> : <span className="tname dim">{isNext ? 'Revealing…' : '?'}</span>}
             </li>
