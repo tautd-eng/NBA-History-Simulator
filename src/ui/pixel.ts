@@ -10,7 +10,7 @@
 import type { PbpEv } from '../engine/game';
 import { hash01 } from '../rng';
 import { Timeline } from './timeline';
-import { drawAthlete, shade, Body, Hands, AthPose } from './athlete';
+import { drawAthleteOutlined as drawAthlete, shade, Body, Hands, AthPose } from './athlete';
 
 export const VW = 320, VH = 180;
 const S = 2; // drawn at 2× so text and overlays stay crisp
@@ -130,7 +130,11 @@ export class PixelCourt {
   ff = false;                  // fast-forwarding after a jump: no floaters
   shown = -1;
 
+  benchCache = new Map<string, HTMLCanvasElement>();
+  R = 1; // extra resolution (the arena view draws its players in finer detail)
+  canvas: HTMLCanvasElement;
   constructor(canvas: HTMLCanvasElement, o: CourtOpts) {
+    this.canvas = canvas;
     canvas.width = VW * S; canvas.height = VH * S;
     this.ctx = canvas.getContext('2d')!;
     this.ctx.imageSmoothingEnabled = false;
@@ -162,6 +166,12 @@ export class PixelCourt {
   setStyle(style: 'classic' | 'arena', looks?: Record<string, Look>) {
     this.arena = style === 'arena';
     if (looks) this.o.looks = looks;
+    const R = this.arena ? 2 : 1;
+    if (R !== this.R || this.canvas.width !== VW * S * R) {
+      this.R = R;
+      this.canvas.width = VW * S * R; this.canvas.height = VH * S * R;
+      this.ctx.imageSmoothingEnabled = false;
+    }
     this.z = this.arena ? 1.3 : Z;
     this.camY = this.arena ? 24 : VH - VH / this.z;
     this.camX = Math.max(0, Math.min(VW - VW / this.z, this.camX));
@@ -1244,7 +1254,8 @@ export class PixelCourt {
   draw(time: number) {
     const ctx = this.ctx;
     const Zz = this.z;
-    ctx.setTransform(S * Zz, 0, 0, S * Zz, -this.camX * S * Zz, -this.camY * S * Zz);
+    const kk = S * Zz * this.R;
+    ctx.setTransform(kk, 0, 0, kk, -this.camX * kk, -this.camY * kk);
     if (this.arena) { this.drawArena(time); return; }
     // arena
     this.px(0, 0, VW, VH, '#141821');
@@ -1368,7 +1379,7 @@ export class PixelCourt {
     const c = this.tl.clockAt(this.v);
     if (c.shot == null) return;
     const ctx = this.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(this.R, 0, 0, this.R, 0, 0);
     const x = VW * S - 52, y = 17 * S + 6;
     ctx.fillStyle = c.shot <= 5 ? '#7a1010' : 'rgba(10,13,19,0.85)'; ctx.fillRect(x, y, 44, 26);
     ctx.fillStyle = c.shot <= 5 ? '#ffffff' : '#ff9a3c'; ctx.font = `18px ${this.font}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1379,7 +1390,7 @@ export class PixelCourt {
   private drawCaption(bottom = false) {
     const ctx = this.ctx;
     const c = this.caption;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(this.R, 0, 0, this.R, 0, 0);
     const H = 17 * S;
     if (bottom) ctx.translate(0, VH * S - H);
     ctx.fillStyle = 'rgba(10,13,19,0.88)'; ctx.fillRect(0, 0, VW * S, H);
@@ -1411,7 +1422,7 @@ export class PixelCourt {
     ctx.fillStyle = isCall ? '#ffd88a' : good ? '#d9ffe4' : bad ? '#ffe0e0' : '#f4efe2';
     ctx.fillText(t, x, H / 2 + 1);
     ctx.globalAlpha = 1;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(this.R, 0, 0, this.R, 0, 0);
   }
 
   private drawBasket(side: 'h' | 'a', time: number) {
@@ -1556,9 +1567,9 @@ export class PixelCourt {
     }
     if (b.holder && !b.fly) {
       const p = this.players.get(b.holder);
-      if (p) { const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S); const yy = q.y - top - 5 - p.z * 2.1 + Math.round(Math.sin(time * 6)); this.px(q.x - 2, yy, 5, 1, '#ffd34d'); this.px(q.x - 1, yy + 1, 3, 1, '#ffd34d'); this.px(q.x, yy + 2, 1, 1, '#ffd34d'); }
+      if (p) { const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S * this.R); const yy = q.y - top - 5 - p.z * 2.1 + Math.round(Math.sin(time * 6)); this.px(q.x - 2, yy, 5, 1, '#ffd34d'); this.px(q.x - 1, yy + 1, 3, 1, '#ffd34d'); this.px(q.x, yy + 2, 1, 1, '#ffd34d'); }
     }
-    if (this.label) { const p = this.players.get(this.label.pid); if (p) { const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y - top - 10 - p.z * 2.1, '#ffffff', 6, true); } }
+    if (this.label) { const p = this.players.get(this.label.pid); if (p) { const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S * this.R); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y - top - 10 - p.z * 2.1, '#ffffff', 6, true); } }
     if (this.label2 && this.label2.pid !== this.label?.pid) { const p = this.players.get(this.label2.pid); if (p) { const q = this.proj(p.x, p.d); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y + 5, '#ffb0b0', 5, true); } }
     for (const f of this.floaters) {
       const u = f.t / f.dur, alpha = 1 - Math.max(0, u - 0.7) / 0.3;
@@ -1578,7 +1589,17 @@ export class PixelCourt {
     pids.forEach((pid, i) => {
       const { X, Y } = this.toCanvas(x0 + i * 13 + 4, AY0 - 5);
       const lk = this.looksOf(pid);
-      drawAthlete(ctx, X, Y, { H: this.heightPx(lk) * 0.85, face: hash01(pid + 'f') < 0.5 ? 1 : -1, pose: this.cheer > 0.6 && hash01(pid + 'c') < 0.6 ? 'celebrate' : 'sit', ph: 0, amp: 0, air: false, kit: this.kitOf(side), body: lk, shorts: this.shortsLen(), font: this.font, num: false });
+      const pose: AthPose = this.cheer > 0.6 && hash01(pid + 'c') < 0.6 ? 'celebrate' : 'sit';
+      const H = this.heightPx(lk) * 0.85;
+      // seated players don't move: keep their picture
+      const key = `${pid}|${pose}|${H.toFixed(1)}`;
+      let img = this.benchCache.get(key);
+      if (!img && typeof document !== 'undefined') {
+        const c = document.createElement('canvas'); c.width = Math.ceil(H * 1.5); c.height = Math.ceil(H * 1.5);
+        drawAthlete(c.getContext('2d')!, c.width / 2, c.height - 4, { H, face: hash01(pid + 'f') < 0.5 ? 1 : -1, pose, ph: 0, amp: 0, air: false, kit: this.kitOf(side), body: lk, shorts: this.shortsLen(), font: this.font, num: false, view: 'front' });
+        this.benchCache.set(key, img = c);
+      }
+      if (img) ctx.drawImage(img, Math.round(X - img.width / 2), Math.round(Y - img.height + 4));
     });
     ctx.restore();
   }
@@ -1658,7 +1679,7 @@ export class PixelCourt {
   }
 
   /** player height on the canvas (pixels) */
-  private heightPx(lk: Look) { return 66 * (this.z / 1.3) * Math.max(0.86, Math.min(1.14, (lk.ht || 79) / 79)); }
+  private heightPx(lk: Look) { return 66 * this.R * (this.z / 1.3) * Math.max(0.86, Math.min(1.14, (lk.ht || 79) / 79)); }
   private kitOf(side: Side) {
     const [prim, sec] = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid);
     return side === 'h'
@@ -1666,7 +1687,7 @@ export class PixelCourt {
       : { jersey: prim, trim: sec === '#111111' || sec === '#2a2a2a' ? '#f4f4f4' : sec, trim2: shade(prim, 0.55), shorts: prim };
   }
   private shortsLen() { const s = this.o.season ?? 2000; return s < 1985 ? 0.3 : s < 1992 ? 0.45 : s < 2000 ? 0.75 : 0.95; }
-  private toCanvas(wx: number, wy: number) { return { X: (wx - this.camX) * this.z * S, Y: (wy - this.camY) * this.z * S }; }
+  private toCanvas(wx: number, wy: number) { const k = this.z * S * this.R; return { X: (wx - this.camX) * k, Y: (wy - this.camY) * k }; }
 
   private drawArenaPlayer(p: PSprite, time: number) {
     const q = this.proj(p.x, p.d);
@@ -1674,7 +1695,7 @@ export class PixelCourt {
     const lk = this.looksOf(p.pid);
     const pose = this.poseOf(p);
     const sp = Math.hypot(p.vx, p.vd);
-    const lift = p.z * 2.1 * this.z * S;
+    const lift = p.z * 2.1 * this.z * S * this.R;
     const H = this.heightPx(lk);
     const ctx = this.ctx;
     ctx.save();
@@ -1685,11 +1706,15 @@ export class PixelCourt {
     ctx.fillStyle = '#000';
     ctx.beginPath(); ctx.ellipse(X, Y, H * 0.17 * sh, H * 0.045 * sh, 0, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 1;
-    if (this.hl?.pid === p.pid) { ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(X, Y, H * 0.24, H * 0.07, 0, 0, Math.PI * 2); ctx.stroke(); }
+    if (this.hl?.pid === p.pid) { ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 2 * this.R; ctx.beginPath(); ctx.ellipse(X, Y, H * 0.24, H * 0.07, 0, 0, Math.PI * 2); ctx.stroke(); }
     const B = this.basket(p.side);
     const face = pose === 'shoot' ? Math.sign(B.x - p.x) || 1 : p.face;
     const ap: AthPose = pose === 'run' && sp < 1.5 ? 'stand' : (pose as AthPose);
-    const hands = drawAthlete(ctx, X, Y - lift, { H, face, pose: ap, ph: p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font });
+    // running toward or away from the camera shows the front or the back
+    const along = Math.abs(p.vx) * AFX, across = Math.abs(p.vd) * AFY;
+    const view = pose === 'shoot' || pose === 'stance' ? 'side' : sp > 3 && across > along * 1.3 ? (p.vd < 0 ? 'back' : 'front') : 'side';
+    const nm = (this.o.names[p.pid] ?? '').split(' ').slice(1).join(' ').toUpperCase();
+    const hands = drawAthlete(ctx, X, Y - lift, { H, face, pose: ap, ph: p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm });
     if (this.ball.holder === p.pid && !this.ball.fly) this.drawHeldBall(hands, Y, pose, H);
     ctx.restore();
   }
@@ -1710,7 +1735,7 @@ export class PixelCourt {
     ctx.fillStyle = '#5a2208'; ctx.beginPath(); ctx.arc(Math.round(x), Math.round(y), r + 0.8, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#e8762c'; ctx.beginPath(); ctx.arc(Math.round(x), Math.round(y), r, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#f7a35e'; ctx.beginPath(); ctx.arc(Math.round(x - r * 0.35), Math.round(y - r * 0.35), r * 0.35, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#5a2208'; ctx.lineWidth = 0.9;
+    ctx.strokeStyle = '#5a2208'; ctx.lineWidth = 0.9 * this.R;
     ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); ctx.stroke();
   }
   /** loose or flying ball (arena) */
@@ -1746,7 +1771,7 @@ export class PixelCourt {
   private drawScoreBug() {
     if (!this.tl || !this.tl.items.length) return;
     const ctx = this.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(this.R, 0, 0, this.R, 0, 0);
     const c = this.tl.clockAt(this.v);
     const W = 470, H = 34, x0 = (VW * S - W) / 2, y0 = 6;
     const [hc] = teamColor(this.o.home.tid), [ac] = teamColor(this.o.away.tid);
@@ -1771,7 +1796,7 @@ export class PixelCourt {
   private text(t: string, x: number, y: number, color: string, size: number, outline: boolean, alpha = 1, screen = false) {
     const ctx = this.ctx;
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(this.R, 0, 0, this.R, 0, 0);
     ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
     ctx.font = `${size * S}px ${this.font}`;
     ctx.textAlign = 'center';
