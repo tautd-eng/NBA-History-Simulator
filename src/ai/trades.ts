@@ -340,7 +340,10 @@ export function aiTradeRound(lg: League, rng: Rng, intensity = 1): TradeRec[] {
     const urge = A.mode === 'allin' ? 2 : A.mode === 'tank' ? 1.6 : A.mode === 'capclear' ? 2 : A.mode === 'retool' ? 1.9 : 1;
     if (!rng.chance(Math.min(0.95, (0.1 + 0.2 * A.gm.risk) * intensity * urge))) continue;
     const others = teams.filter(t => t !== A && !busy.has(t.tid));
-    const deal = A.mode === 'tank' ? (findSale(lg, A, others, rng) ?? findDeal(lg, A, others, rng))
+    // at the deadline every losing team is a seller
+    const g = A.w + A.l, losing = lg.phase === 'regular' && g >= 20 && A.w / g < 0.42;
+    const rush = lg.phase === 'regular' && lg.day >= deadlineDay(lg) - 14;
+    const deal = A.mode === 'tank' || (rush && (losing || A.strategy === 'rebuild')) ? (findSale(lg, A, others, rng) ?? findDeal(lg, A, others, rng))
       : A.mode === 'capclear' ? (findDump(lg, A, others) ?? findDeal(lg, A, others, rng))
       : findDeal(lg, A, others, rng);
     if (!deal) continue;

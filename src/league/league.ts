@@ -181,7 +181,8 @@ export function updateModes(lg: League, announce = true) {
     else if (pay > hc - 0.02) mode = 'capclear';
     else if (young >= 2 && coreAge <= 25.5 && i >= 3) mode = 'rising';
     // stuck in the middle: not good enough to contend, too good to tank – the GM keeps making side moves
-    else if (i >= Math.round(n * 0.25) && i < n - Math.max(2, Math.round(n * 0.2)) && (!inSeason || g < 15 || (wp >= 0.38 && wp <= 0.62)) && (t.gm.risk >= 0.35 || (inSeason && g >= 25 && Math.abs(wp - 0.5) < 0.07))) mode = 'retool';
+    else if (t.mode === 'retool' ? (i >= Math.round(n * 0.15) && i < n - 2 && (!inSeason || g < 15 || (wp >= 0.33 && wp <= 0.67)))
+      : (i >= Math.round(n * 0.25) && i < n - Math.max(2, Math.round(n * 0.2)) && (!inSeason || g < 15 || (wp >= 0.38 && wp <= 0.62)) && (t.gm.risk >= 0.35 || (inSeason && g >= 25 && Math.abs(wp - 0.5) < 0.07)))) mode = 'retool';
     if (t.tid === lg.userTid) mode = undefined; // the user decides for his own team
     if (announce && mode !== t.mode && mode) {
       const txt = { allin: 'goes all-in – hunting the missing pieces for a title, at the cost of the future', tank: 'starts tanking – will sell veterans for picks and young players', retool: 'is stuck in the middle – shopping for side moves to break out', rising: 'is rising with a young core – adding to it without selling the future', capclear: 'is close to the hard cap – will look to shed salary' }[mode];
@@ -315,12 +316,14 @@ function regularDayEnd(lg: League, day: number, rng: Rng) {
   if (lg.schedule.some(g => !g.done && g.day === day)) return;
   if (day % 4 === 3 && !pastDeadline(lg)) aiTradeRound(lg, rng, 0.75);
   if (day % 10 === 5) aiExtensions(lg, rng);
-  if (day % 15 === 8 && !pastDeadline(lg)) updateModes(lg);
+  // GMs settle on a plan early and take a last look three weeks before the deadline, so buyers and sellers are set for the rush
+  const dlDay = deadlineDay(lg);
+  if ((day % 12 === 8 && day < dlDay - 20) || day === dlDay - 20) updateModes(lg);
   if (day % 30 === 20 && !pastDeadline(lg)) aiRecallStash(lg, rng, 0.25);
   if (day % 10 === 3 && !pastDeadline(lg)) complyHardCap(lg, rng);
   // the trade deadline rush: the last ten days before it bring more talks
   const dl = deadlineDay(lg);
-  if (day >= dl - 12 && day < dl && day % 2 === 0) aiTradeRound(lg, rng, 1.1);
+  if (day >= dl - 14 && day <= dl) aiTradeRound(lg, rng, 1.2);
   lg.day = Math.max(lg.day, day + 1);
   if (!lg.schedule.some(g => !g.done)) startPlayoffs(lg, rng);
 }
