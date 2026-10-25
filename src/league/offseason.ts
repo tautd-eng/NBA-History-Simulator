@@ -646,7 +646,7 @@ export function faStage(lg: League) {
   const rng = rngOf(lg);
   const st = fa.stage;
   if (st === 0) { applyDecisions(lg); fa.stage = 1; save(lg, rng); return; }
-  if (st === 1) resolvePending(lg, rng);
+  if (st === 1) { resolvePending(lg, rng); aiRecallStash(lg, rng); }
   aiSignings(lg, rng, st);
   if (st === 3) reachFloor(lg, rng);
   resolveSheets(lg);
@@ -1042,4 +1042,28 @@ export function recallStash(lg: League, pid: string): { ok: boolean; msg: string
   addTx(p, N, `Came over from overseas early to join the ${t.name}`, 5);
   lg.news.push({ s: lg.season, t: `The ${t.name} brought ${p.name} over from overseas.` });
   return { ok: true, msg: `${p.name} joins the ${t.name}.` };
+}
+
+/**
+ * AI teams bring their overseas draft picks over early when the player would help:
+ * good enough for the rotation now (contenders), or a young talent worth developing (rebuilders).
+ */
+export function aiRecallStash(lg: League, rng: Rng, chance = 1) {
+  const S = lg.phase === 'regular' ? lg.season : lg.season + 1;
+  for (const p of Object.values(lg.players) as any[]) {
+    if (!p.stash || p.retired || p.rights === lg.userTid) continue;
+    const t = lg.teams[p.rights];
+    if (!t?.active || t.roster.length >= ROSTER_MAX) continue;
+    const ovr = ovrOf(p.z);
+    const rot = t.roster.map(pid => ovrOf(lg.players[pid].z)).sort((a, b) => b - a);
+    const ninth = rot[8] ?? 0, sixth = rot[5] ?? 0;
+    const age = ageIn(p, S);
+    const helpsNow = ovr >= ninth + 1;
+    const prospect = age <= 23 && peakBpm(p, S) >= 1.5;
+    const want = t.mode === 'allin' || t.strategy === 'contend' ? (ovr >= sixth ? 0.9 : helpsNow ? 0.6 : 0)
+      : t.mode === 'tank' || t.strategy === 'rebuild' ? (prospect ? 0.7 : helpsNow ? 0.35 : 0)
+      : helpsNow ? 0.55 : prospect ? 0.3 : 0;
+    if (!want || !rng.chance(want * chance)) continue;
+    recallStash(lg, p.id);
+  }
 }

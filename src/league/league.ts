@@ -11,6 +11,7 @@ import { buildClasses, ClassMode } from './classes';
 import { nextCal, fatigueAt, addLoad, fatigueExcess, calDay } from './fatigue';
 import { rollGameInjury, injure, refreshInjuries, offDayInjuries } from './injuries';
 import { aiExtensions } from './extensions';
+import { aiRecallStash } from './offseason';
 import { makeSchedule } from './schedule';
 import { recordHealth } from './health';
 import { computeAwards, applyAwardChips, finalsMvp } from './awards';
@@ -315,6 +316,7 @@ function regularDayEnd(lg: League, day: number, rng: Rng) {
   if (day % 4 === 3 && !pastDeadline(lg)) aiTradeRound(lg, rng, 0.75);
   if (day % 10 === 5) aiExtensions(lg, rng);
   if (day % 15 === 8 && !pastDeadline(lg)) updateModes(lg);
+  if (day % 30 === 20 && !pastDeadline(lg)) aiRecallStash(lg, rng, 0.25);
   if (day % 10 === 3 && !pastDeadline(lg)) complyHardCap(lg, rng);
   // the trade deadline rush: the last ten days before it bring more talks
   const dl = deadlineDay(lg);
