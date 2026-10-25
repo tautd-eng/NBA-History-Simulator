@@ -1567,7 +1567,13 @@ export class PixelCourt {
     }
     if (b.holder && !b.fly) {
       const p = this.players.get(b.holder);
-      if (p) { const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S * this.R); const yy = q.y - top - 5 - p.z * 2.1 + Math.round(Math.sin(time * 6)); this.px(q.x - 2, yy, 5, 1, '#ffd34d'); this.px(q.x - 1, yy + 1, 3, 1, '#ffd34d'); this.px(q.x, yy + 2, 1, 1, '#ffd34d'); }
+      if (p) {
+        const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S * this.R);
+        const yy = q.y - top - 5 - p.z * 2.1 + Math.round(Math.sin(time * 6));
+        this.px(q.x - 2, yy, 5, 1, '#ffd34d'); this.px(q.x - 1, yy + 1, 3, 1, '#ffd34d'); this.px(q.x, yy + 2, 1, 1, '#ffd34d');
+        // the man with the ball is always named
+        if (this.label?.pid !== p.pid) this.text(surname(this.o.names[p.pid] ?? ''), q.x, yy - 5, '#ffd34d', 5.5, true);
+      }
     }
     if (this.label) { const p = this.players.get(this.label.pid); if (p) { const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S * this.R); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y - top - 10 - p.z * 2.1, '#ffffff', 6, true); } }
     if (this.label2 && this.label2.pid !== this.label?.pid) { const p = this.players.get(this.label2.pid); if (p) { const q = this.proj(p.x, p.d); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y + 5, '#ffb0b0', 5, true); } }
