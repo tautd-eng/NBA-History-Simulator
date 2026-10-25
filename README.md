@@ -2,7 +2,7 @@
 
 Rewrite NBA history from any season since 1979–80: real rosters and draft classes, a possession-by-possession game engine, AI general managers (trades, free agency, contracts, tanking and all-in modes), injuries, fatigue, awards, records and franchise histories.
 
-**Play:** open the GitHub Pages site of this repository on your phone and add it to the home screen (iPhone: Share → *Add to Home Screen*; Android: menu → *Install app*). It runs offline and keeps several saved leagues in the browser.
+**Play:** https://tautd-eng.github.io/NBA-History-Simulator/ – open it on your phone and add it to the home screen (iPhone: Share → *Add to Home Screen*; Android: menu → *Install app*). It runs offline and keeps several saved leagues in the browser.
 
 ## Project layout
 
@@ -18,7 +18,8 @@ Rewrite NBA history from any season since 1979–80: real rosters and draft clas
 ```
 bun install react react-dom
 bun build.ts          # dist/nba-istorija.html (single page) and dist/pwa/ (installable app)
-cp dist/pwa/* docs/   # publish: GitHub Pages serves the docs/ folder
+cp dist/pwa/* docs/   # docs/ holds the current app build
+# publish: the gh-pages branch is the site – copy docs/ there and push it
 ```
 
 Data: Basketball-Reference (via sumitrodatta/bball-reference-datasets).
