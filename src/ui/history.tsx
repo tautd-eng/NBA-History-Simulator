@@ -243,6 +243,7 @@ export function Retirements({ lg, openPlayer }: any) {
     { key: 'ppg', label: 'PPG', get: (r: any) => r.ppg, fmt: (v: any) => (v == null ? '–' : f1(v)) },
     { key: 'rpg', label: 'RPG', get: (r: any) => r.rpg, fmt: (v: any) => (v == null ? '–' : f1(v)) },
     { key: 'apg', label: 'APG', get: (r: any) => r.apg, fmt: (v: any) => (v == null ? '–' : f1(v)) },
+    { key: 'why', label: 'Why', title: 'Main reason: age and decline, his real career ended then (destiny), or nobody signed him', left: true, get: (r: any) => r.p.retWhy ?? '', fmt: (v: any) => <span className="dim">{v === 'history' ? 'Real career ended' : v === 'unsigned' ? 'Unsigned' : v === 'age' ? 'Age / decline' : '–'}</span> },
     { key: 'titles', label: 'Titles', get: (r: any) => r.titles, fmt: (v: any) => (v ? `🏆 ${v}` : '') },
     { key: 'hon', label: 'Honors', title: 'MVPs and All-League selections', get: (r: any) => r.mvp * 10 + r.allLg, fmt: (_: any, r: any) => <span className="dim">{[r.mvp ? `${r.mvp}× MVP` : '', r.allLg ? `${r.allLg}× All-League` : ''].filter(Boolean).join(', ')}</span> },
   ];
@@ -260,7 +261,7 @@ export function Retirements({ lg, openPlayer }: any) {
         <span className="dim">{rows.length} players</span>
       </div>
       <SortTable cols={cols} rows={rows} initial="peak" limit={300} />
-      <p className="note">Players retire in the offseason, right after the draft. Age, a fading game and – with the destiny slider up – the end of their real careers decide it; players left unsigned for a year may also call it a career. Career numbers are this league's regular seasons. Click a name for the full career: draft, teams, trades, awards.</p>
+      <p className="note">Players retire in the offseason, right after the draft. Age, a fading game and – with the destiny slider up – the end of their real careers decide it (a young player still good enough to keep a job rarely quits just because history says so); players left unsigned for a year may also call it a career. Career numbers are this league's regular seasons. Click a name for the full career: draft, teams, trades, awards.</p>
     </div>
   );
 }

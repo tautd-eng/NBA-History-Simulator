@@ -303,13 +303,13 @@ function applyDeferred(lg: League, d: Deferred, res: GameResult, rng: Rng) {
 /** End of a regular-season day once all its games are played. */
 function regularDayEnd(lg: League, day: number, rng: Rng) {
   if (lg.schedule.some(g => !g.done && g.day === day)) return;
-  if (day % 4 === 3 && !pastDeadline(lg)) aiTradeRound(lg, rng, 0.45);
+  if (day % 4 === 3 && !pastDeadline(lg)) aiTradeRound(lg, rng, 0.75);
   if (day % 10 === 5) aiExtensions(lg, rng);
   if (day % 15 === 8 && !pastDeadline(lg)) updateModes(lg);
   if (day % 10 === 3 && !pastDeadline(lg)) complyHardCap(lg, rng);
   // the trade deadline rush: the last ten days before it bring more talks
   const dl = deadlineDay(lg);
-  if (day >= dl - 10 && day < dl && day % 2 === 0) aiTradeRound(lg, rng, 0.8);
+  if (day >= dl - 12 && day < dl && day % 2 === 0) aiTradeRound(lg, rng, 1.1);
   lg.day = Math.max(lg.day, day + 1);
   if (!lg.schedule.some(g => !g.done)) startPlayoffs(lg, rng);
 }

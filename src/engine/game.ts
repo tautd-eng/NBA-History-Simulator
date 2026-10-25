@@ -223,6 +223,8 @@ function chooseLineup(side: Side, period: number, rem: number, margin: number, s
     if (!drop) continue;
     five = five.map(g => (g === drop ? cand : g));
   }
+  // never fewer than five on the floor (a short-handed team plays its fouled-out or hurt men)
+  if (five.length < 5) for (const g of side.gps) if (five.length < 5 && !five.includes(g)) five.push(g);
   for (const g of side.gps) g.on = false;
   for (const g of five) g.on = true;
   side.on = five;

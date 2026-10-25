@@ -38,9 +38,9 @@ export function vetContract(p: Player, N: number, sal: number, years: number, rn
 }
 
 /** Restricted when his first contract ends (or always, before 1989), unless his option was declined. */
-export function rfaEligible(p: Player, N: number) {
+export function rfaEligible(p: Player, N: number, lg?: League) {
   if (p.noRfa) return false;
-  return rules(N).rfaAll || !!p.contract.rookie;
+  return (!!lg?.settings?.rfaHistoric && rules(N).rfaAll) || !!p.contract.rookie;
 }
 export const qoAmount = (p: Player) => Math.max(MIN_SAL * 1.2, p.contract.sal * 1.25);
 

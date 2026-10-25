@@ -350,7 +350,7 @@ function formOf(st: any) {
   const g = st?.games;
   const preset = st?.rr ? `rr${st.rr}` : g == null ? '' : GAME_OPTS.some(([v]) => v === String(g)) ? String(g) : 'custom';
   const rounds = (st?.poRounds ?? [null, null, null, null]).map((x: any, i: number) => (x ?? st?.series ?? '') === '' ? '' : String(x ?? st?.series));
-  return { games: preset, custom: g ? String(g) : '60', poTeams: st?.poTeams ? String(st.poTeams) : '', playIn: st?.playIn == null ? '' : st.playIn ? 'on' : 'off', rounds, hardCap: st?.hardCap === null ? 'none' : st?.hardCap ? String(st.hardCap) : '' };
+  return { games: preset, custom: g ? String(g) : '60', poTeams: st?.poTeams ? String(st.poTeams) : '', playIn: st?.playIn == null ? '' : st.playIn ? 'on' : 'off', rounds, hardCap: st?.hardCap === null ? 'none' : st?.hardCap ? String(st.hardCap) : '', rfa: st?.rfaHistoric ? 'all' : '' };
 }
 function settingsOf(f: any) {
   const rr = f.games.startsWith('rr') ? +f.games.slice(2) : null;
@@ -361,6 +361,7 @@ function settingsOf(f: any) {
     playIn: f.playIn === '' ? null : f.playIn === 'on',
     poRounds: f.rounds.map((x: string) => (x ? +x : null)),
     hardCap: f.hardCap === 'none' ? null : f.hardCap ? +f.hardCap : undefined,
+    rfaHistoric: f.rfa === 'all',
   };
 }
 
@@ -424,6 +425,14 @@ function SeasonFields({ form, setForm, idp = '' }: any) {
         <option value="none">None</option>
       </select>
       <small>No team may carry a higher payroll: signings, extensions and trades that would exceed it are not allowed. Teams near the limit look for ways to shed salary themselves (moving contracts to teams with room, attaching picks), and before the season the last resort is a buyout (half the salary stays on the books).</small>
+    </label>
+    <label className="field" htmlFor={idp + 'rfa'}>
+      <span>Restricted free agency</span>
+      <select id={idp + 'rfa'} value={form.rfa ?? ''} onChange={e => set('rfa', e.target.value)}>
+        <option value="">Only after the first (rookie) contract</option>
+        <option value="all">Historical: every free agent before 1988–89</option>
+      </select>
+      <small>A restricted free agent's old team can match any offer sheet. Until the 1988 agreement real NBA teams had this right of first refusal over all their free agents.</small>
     </label>
   </>;
 }

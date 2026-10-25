@@ -132,6 +132,7 @@ export interface Settings {
   playIn?: boolean | null;
   poRounds?: (number | null)[];             // [first round, second round, conference finals, finals]
   hardCap?: number | null;                  // hard payroll limit as a share of the cap (null = none; default 1.35)
+  rfaHistoric?: boolean;                    // before 1988–89 every free agent's team had the right of first refusal
 }
 
 export type Phase = 'fantasy' | 'regular' | 'playoffs' | 'draft' | 'offseason' | 'freeagency';

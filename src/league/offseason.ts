@@ -1,6 +1,6 @@
 // Off-season: expansion, lottery and draft, retirements, development, contracts,
 // arrivals and free agency.
-import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, agingIndex, NK } from '../data';
+import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, agingIndex, NK, shownOvr } from '../data';
 import { Rng } from '../rng';
 import { League, Player, Team, emptyLine, ExpansionDraft, Lottery, FreeAgency } from '../types';
 import { newPlayer, prospectZ, realTarget, lastRealSeason, ageIn, firstRealSeason, snapRatings, tagOf, addTx } from '../players';
@@ -880,19 +880,26 @@ function retirements(lg: League, rng: Rng, notes: string[]) {
     const age = ageIn(p, Y + 1);
     const ovr = ovrOf(p.z);
     const base = 1 / (1 + Math.exp(-((age - 35.5) * 0.9 + (46 - ovr) * 0.09)));
-    let pr = base;
+    let pr = base, hist = 0, uns = 0;
     const lr = lastRealSeason(p.id);
     const last = lr !== undefined ? lr + (p.shift ?? 0) : undefined;
     if (p.real && last !== undefined) {
       const endedInReality = last <= Y;
-      pr = endedInReality ? d + (1 - d) * base : (1 - d) * base;
+      // destiny ends real careers on time, but a young player who is good enough in this league to keep
+      // a job rarely walks away: the pull of history fades with youth and quality
+      const sh = shownOvr(p.z);
+      const w = age < 30 ? (sh >= 78 ? 0.06 : sh >= 74 ? 0.15 : sh >= 70 ? 0.4 : 0.8)
+        : age < 33 ? (sh >= 78 ? 0.25 : sh >= 74 ? 0.45 : 0.8) : 1;
+      hist = endedInReality ? d * w : 0;
+      pr = endedInReality ? hist + (1 - hist) * base : (1 - d) * base;
     }
     // unsigned for a long time → leaves the league
     if (!p.tid && p.cur.gp === 0 && !p.career.some(c => c.s === Y)) {
       const lastPlayed = Math.max(p.entered, ...p.career.map(c => c.s));
-      if (Y - lastPlayed >= 1) pr = Math.max(pr, age >= 30 ? 0.7 : 0.35);
+      if (Y - lastPlayed >= 1) { uns = age >= 30 ? 0.7 : 0.35; pr = Math.max(pr, uns); }
     }
     if (rng.chance(pr)) {
+      (p as any).retWhy = uns >= Math.max(hist, base) ? 'unsigned' : hist > base ? 'history' : 'age';
       if (bpmOf(p.z) > 3 || p.awards.some(a => a.includes('MVP'))) famous.push(tagOf(p, Y));
       retirePlayer(lg, p, Y);
     }
@@ -945,7 +952,7 @@ function contracts(lg: League, rng: Rng, log: FreeAgency['log'], decisions: NonN
         t.roster = t.roster.filter(pid => pid !== p.id);
         p.tid = null; p.bird = t.tid;
         // restricted: the user decides on a qualifying offer; otherwise an exclusive re-signing window
-        if (rfaEligible(p, N)) decisions.push({ pid: p.id, kind: 'qo', rec: worthKeeping(lg, p, qoAmount(p), N, t.strategy), sal: qoAmount(p) });
+        if (rfaEligible(p, N, lg)) decisions.push({ pid: p.id, kind: 'qo', rec: worthKeeping(lg, p, qoAmount(p), N, t.strategy), sal: qoAmount(p) });
         else pending.push(p.id);
       }
       continue;
@@ -975,7 +982,7 @@ function contracts(lg: League, rng: Rng, log: FreeAgency['log'], decisions: NonN
         t.roster = t.roster.filter(pid => pid !== p.id);
         p.tid = null;
         // restricted free agent: a qualifying offer keeps the right to match
-        if (rfaEligible(p, N) && worthKeeping(lg, p, qoAmount(p), N, t.strategy)) {
+        if (rfaEligible(p, N, lg) && worthKeeping(lg, p, qoAmount(p), N, t.strategy)) {
           p.rfa = t.tid; p.qo = qoAmount(p);
           log.push({ st: 0, kind: 'qo', pid: p.id, tid: t.tid, sal: p.qo });
         }

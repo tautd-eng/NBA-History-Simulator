@@ -165,6 +165,12 @@ export interface TradeEval {
 const sal = (lg: League, ps: Player[]) => ps.reduce((a, p) => a + p.contract.sal, 0);
 
 /** Rule check shared by AI and user trades. */
+let faCache: { key: string; n: number } | null = null;
+function freeAgentCount(lg: League) {
+  const key = `${lg.season}|${lg.phase}|${lg.day}|${lg.fa?.stage ?? ''}`;
+  if (faCache?.key !== key) faCache = { key, n: Object.values(lg.players).filter(p => isFreeAgent(lg, p)).length };
+  return faCache.n;
+}
 export function tradeRules(lg: League, a: string, b: string, aGets: TradeAsset[], bGets: TradeAsset[]): string | null {
   if (!aGets.length && !bGets.length) return 'The trade is empty.';
   const inA = aGets.filter(x => x.pid).map(x => lg.players[x.pid!]);
@@ -173,8 +179,11 @@ export function tradeRules(lg: League, a: string, b: string, aGets: TradeAsset[]
   for (const [tid, inc, out] of [[a, inA, inB], [b, inB, inA]] as const) {
     const t = lg.teams[tid];
     const size = t.roster.length + inc.length - out.length;
-    if (size > ROSTER_MAX) return `${t.name} would have too many players (${size}, max ${ROSTER_MAX}).`;
-    if (size < ROSTER_MIN - 1) return `${t.name} would have too few players (${size}).`;
+    // AI teams may take an extra body or two and waive their last men afterwards
+    const slack = a === lg.userTid || b === lg.userTid ? 0 : 2;
+    if (size > ROSTER_MAX + slack) return `${t.name} would have too many players (${size}, max ${ROSTER_MAX}).`;
+    // a team may go short only if free agents are there to fill the roster afterwards
+    if (size < ROSTER_MIN - 1 && (size < ROSTER_MIN - 3 || freeAgentCount(lg) < ROSTER_MIN - size + 2)) return `${t.name} would have too few players (${size}).`;
     const payAfter = payroll(lg, tid) + sal(lg, inc) - sal(lg, out);
     const hc = hardCap(lg);
     if (payAfter > hc + 1e-9 && sal(lg, inc) > sal(lg, out) + 1e-9) return `${t.name} would exceed the hard cap (${Math.round(hc * 100)}% of the cap): payroll after the trade would be ${Math.round(payAfter * 100)}%.`;
@@ -247,6 +256,9 @@ export function threshold(lg: League, tid: string, user = false) {
   const t = lg.teams[tid];
   // in the summer market GMs are more open to reshaping their rosters
   const summer = lg.phase === 'freeagency' && !user ? 0.55 : 1;
+  // during the season GMs deal too, most of all in the days before the trade deadline
+  const dl = deadlineDay(lg);
+  const season = lg.phase === 'regular' && !user ? (lg.day >= dl - 12 ? 0.45 : 0.6) : 1;
   const eager = t.mode === 'allin' ? 0.6 : t.mode === 'tank' ? 0.85 : t.mode === 'capclear' ? 0.5 : 1;
   // a sellers' market: the more teams are all in, the more sellers can ask
   let market = 1;
@@ -254,7 +266,7 @@ export function threshold(lg: League, tid: string, user = false) {
     const buyers = Object.values(lg.teams).filter(x => x.active && x.mode === 'allin').length;
     market = Math.max(0.8, Math.min(1.6, 1 + 0.15 * (buyers - 2)));
   }
-  return ((user ? 1.4 : 0.8) + 0.9 * (1 - t.gm.risk)) * summer * eager * market;
+  return ((user ? 1.4 : 0.8) + 0.9 * (1 - t.gm.risk)) * summer * season * eager * market;
 }
 
 // ------------------------------------------------------------------ execution
@@ -289,9 +301,19 @@ export function executeTrade(lg: League, a: string, b: string, aGets: TradeAsset
   return rec;
 }
 
-/** After a trade, a short-handed team signs the best free agent at the minimum. */
+/** After a trade, a short-handed team signs the best free agent at the minimum; a team over the limit waives its last men. */
 export function fillRoster(lg: League, tid: string) {
   const t = lg.teams[tid];
+  faCache = null;
+  while (t.roster.length > ROSTER_MAX && tid !== lg.userTid) {
+    const cut = t.roster.map(pid => lg.players[pid])
+      .sort((x, y) => (playerValue(x, lg.season, t.strategy) - x.contract.sal * 20) - (playerValue(y, lg.season, t.strategy) - y.contract.sal * 20))[0];
+    t.roster = t.roster.filter(pid => pid !== cut.id);
+    cut.tid = null;
+    if (cut.contract.exp >= lg.season && cut.contract.sal > MIN_SAL + 1e-9) (lg.dead ??= []).push({ tid, sal: cut.contract.sal, exp: cut.contract.exp, pid: cut.id });
+    cut.contract = { sal: MIN_SAL, exp: lg.season };
+    lg.news.push({ s: lg.season, t: `The ${t.name} waived ${cut.name} to make room on the roster.` });
+  }
   while (t.roster.length < ROSTER_MIN) {
     const fa = Object.values(lg.players).filter(p => isFreeAgent(lg, p))
       .sort((x, y) => playerValue(y, lg.season, t.strategy) - playerValue(x, lg.season, t.strategy))[0];
@@ -339,8 +361,9 @@ function looksFair(lg: League, aGets: TradeAsset[], bGets: TradeAsset[], loose =
   for (const [give, get] of [[bGets, aGets], [aGets, bGets]] as const) {
     const pl = give.filter(x => x.pid), pk = give.filter(x => x.pick);
     const vGet = neutralValue(lg, get);
-    if (pk.length && neutralValue(lg, pl) >= vGet) return false;
-    if (!loose && neutralValue(lg, give) > vGet * 1.3 + 1.5) return false;
+    // no sweetener when the players alone already cover it (small margin for taste), no clearly lopsided package
+    if (pk.length && neutralValue(lg, pl) >= vGet + 0.6) return false;
+    if (!loose && neutralValue(lg, give) > vGet * 1.4 + 2.2) return false;
   }
   return true;
 }
