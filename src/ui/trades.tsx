@@ -67,7 +67,7 @@ export function Trades({ lg, openPlayer, onDone }: any) {
     return (
       <div className="trade-side">
         <h3>{label}</h3>
-        <p className="dim">{t.roster.length} players · payroll {money(payroll(lg, tid), lg.season)} ({Math.round(payroll(lg, tid) * 100)}% of the cap) · {t.mode === 'allin' ? 'all-in – buying for now' : t.mode === 'tank' ? 'tanking – selling veterans' : t.mode === 'rising' ? 'rising – protecting youth' : t.mode === 'capclear' ? 'clearing salary' : ({ contend: 'contender', middle: 'middle of the pack', rebuild: 'rebuilding' } as any)[t.strategy]}{hardCap(lg) < Infinity ? ` · ${Math.max(0, Math.round((hardCap(lg) - payroll(lg, tid)) * 100))}% left under the hard cap` : ''}</p>
+        <p className="dim">{t.roster.length} players · payroll {money(payroll(lg, tid), lg.season)} ({Math.round(payroll(lg, tid) * 100)}% of the cap) · {t.mode === 'allin' ? 'all-in – buying for now' : t.mode === 'tank' ? 'tanking – selling veterans' : t.mode === 'rising' ? 'rising – protecting youth' : t.mode === 'capclear' ? 'clearing salary' : t.mode === 'retool' ? 'retooling – open to side moves' : ({ contend: 'contender', middle: 'middle of the pack', rebuild: 'rebuilding' } as any)[t.strategy]}{hardCap(lg) < Infinity ? ` · ${Math.max(0, Math.round((hardCap(lg) - payroll(lg, tid)) * 100))}% left under the hard cap` : ''}</p>
         <ul className="pick-list">
           {players.map((p: any) => {
             const k = 'p:' + p.id;

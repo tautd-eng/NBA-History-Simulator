@@ -69,7 +69,7 @@ export interface Team {
   pf: number; pa: number;
   confW: number; confL: number;
   strategy: 'contend' | 'middle' | 'rebuild';
-  mode?: 'allin' | 'tank' | 'rising' | 'capclear'; // all-in, tanking, rising young team, clearing salary
+  mode?: 'allin' | 'tank' | 'rising' | 'capclear' | 'retool'; // all-in, tanking, rising young team, clearing salary, stuck in the middle and retooling
   gm: { risk: number; patience: number; scouting: number };
   paceZ: number;
   active: boolean;

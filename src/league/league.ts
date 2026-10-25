@@ -174,9 +174,11 @@ export function updateModes(lg: League, announce = true) {
     else if (i >= n - Math.max(2, Math.round(n * 0.17)) && (young <= 1 || coreAge >= 27) && !(inSeason && g >= 20 && wp > 0.45)) mode = 'tank';
     else if (pay > hc - 0.02) mode = 'capclear';
     else if (young >= 2 && coreAge <= 25.5 && i >= 3) mode = 'rising';
+    // stuck in the middle: not good enough to contend, too good to tank – the GM keeps making side moves
+    else if (i >= Math.round(n * 0.25) && i < n - Math.max(2, Math.round(n * 0.2)) && (!inSeason || g < 15 || (wp >= 0.38 && wp <= 0.62)) && (t.gm.risk >= 0.35 || (inSeason && g >= 25 && Math.abs(wp - 0.5) < 0.07))) mode = 'retool';
     if (t.tid === lg.userTid) mode = undefined; // the user decides for his own team
     if (announce && mode !== t.mode && mode) {
-      const txt = { allin: 'goes all-in – hunting the missing pieces for a title, at the cost of the future', tank: 'starts tanking – will sell veterans for picks and young players', rising: 'is rising with a young core – adding to it without selling the future', capclear: 'is close to the hard cap – will look to shed salary' }[mode];
+      const txt = { allin: 'goes all-in – hunting the missing pieces for a title, at the cost of the future', tank: 'starts tanking – will sell veterans for picks and young players', retool: 'is stuck in the middle – shopping for side moves to break out', rising: 'is rising with a young core – adding to it without selling the future', capclear: 'is close to the hard cap – will look to shed salary' }[mode];
       lg.news.push({ s: lg.season, t: `${t.name} ${txt}.` });
     }
     t.mode = mode;

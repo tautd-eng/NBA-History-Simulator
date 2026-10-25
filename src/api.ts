@@ -4,8 +4,9 @@ import { League } from './types';
 import { simDay } from './league/league';
 import { initDraft, draftAdvance, enterFreeAgency, faStage, startSeason } from './league/offseason';
 import { fantasyAdvance } from './league/fantasy';
+import { deadlineDay } from './ai/trades';
 
-export type Target = 'day' | 'week' | 'playoffs' | 'seasonEnd' | 'nextSeason' | 'years5';
+export type Target = 'day' | 'week' | 'deadline' | 'playoffs' | 'seasonEnd' | 'nextSeason' | 'years5';
 
 const tick = () => new Promise(r => setTimeout(r, 0));
 
@@ -36,6 +37,7 @@ export async function advance(lg: League, target: Target, onProgress: () => void
     if (lg.ended) return true;
     switch (target) {
       case 'week': return lg.day >= startDay + 7 || (lg.phase !== 'regular' && lg.phase !== 'playoffs');
+      case 'deadline': return lg.phase !== 'regular' || lg.day >= deadlineDay(lg);
       case 'playoffs': return lg.phase !== 'regular';
       case 'seasonEnd': return lg.phase === 'draft';
       case 'nextSeason': return lg.season > startSeason && lg.phase === 'regular';

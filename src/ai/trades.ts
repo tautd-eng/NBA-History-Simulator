@@ -259,7 +259,7 @@ export function threshold(lg: League, tid: string, user = false) {
   // during the season GMs deal too, most of all in the days before the trade deadline
   const dl = deadlineDay(lg);
   const season = lg.phase === 'regular' && !user ? (lg.day >= dl - 12 ? 0.45 : 0.6) : 1;
-  const eager = t.mode === 'allin' ? 0.6 : t.mode === 'tank' ? 0.85 : t.mode === 'capclear' ? 0.5 : 1;
+  const eager = t.mode === 'allin' ? 0.6 : t.mode === 'tank' ? 0.85 : t.mode === 'capclear' ? 0.5 : t.mode === 'retool' ? 0.72 : 1;
   // a sellers' market: the more teams are all in, the more sellers can ask
   let market = 1;
   if (t.mode === 'tank' || t.strategy === 'rebuild') {
@@ -337,7 +337,7 @@ export function aiTradeRound(lg: League, rng: Rng, intensity = 1): TradeRec[] {
   const busy = new Set<string>();
   for (const A of teams) {
     if (busy.has(A.tid)) continue;
-    const urge = A.mode === 'allin' ? 2 : A.mode === 'tank' ? 1.6 : A.mode === 'capclear' ? 2 : 1;
+    const urge = A.mode === 'allin' ? 2 : A.mode === 'tank' ? 1.6 : A.mode === 'capclear' ? 2 : A.mode === 'retool' ? 1.9 : 1;
     if (!rng.chance(Math.min(0.95, (0.1 + 0.2 * A.gm.risk) * intensity * urge))) continue;
     const others = teams.filter(t => t !== A && !busy.has(t.tid));
     const deal = A.mode === 'tank' ? (findSale(lg, A, others, rng) ?? findDeal(lg, A, others, rng))
@@ -399,7 +399,9 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
       // rebuilding and tanking teams keep their young players and prime-age stars
       if ((hB === 'tank' || hB === 'rebuild' || hB === 'rising') && (ageIn(p, S) <= 24 || (ageIn(p, S) <= 27 && vb >= bestB))) continue;
       // contenders look for the piece that improves the roster most (fit), others for value
-      const gain = hA === 'allin' || hA === 'contend' ? fit(p) : va;
+      // contenders and retooling teams look for the piece that improves the roster most (fit), others for value
+      if (A.mode === 'retool' && ageIn(p, S) > 31) continue;
+      const gain = hA === 'allin' || hA === 'contend' || A.mode === 'retool' ? fit(p) : va;
       targets.push({ p, B, edge: gain - vb + rng.normal() * 1.5 + (hB === 'tank' ? 1 : 0) });
     }
   }
@@ -564,7 +566,7 @@ export function aiResponse(lg: League, a: string, b: string, aGets: TradeAsset[]
   if (afterPay(lg, b, inB, outB) > 1.0 && sal(lg, inB) > sal(lg, outB) + 0.02) why.push('don\'t want to take on more salary');
   if (afterPay(lg, b, inB, outB) > hardCap(lg) - 0.03 && sal(lg, inB) > sal(lg, outB)) why.push('getting close to the hard cap');
   if (inB.length >= 2 && outB.length === 1) why.push('several average players don\'t replace one good one');
-  const strat = t.mode === 'capclear' ? 'They are near the hard cap – every dollar saved matters.' : t.mode === 'rising' ? 'A young rising team – they won\'t part with youth and want players who fit a few years out.' : t.mode === 'allin' ? 'They are all-in – only what helps them win now matters.' : t.mode === 'tank' ? 'They are tanking – wins don\'t matter this season, picks and youth do.' : t.strategy === 'rebuild' ? 'They are rebuilding, so they value young players and picks more.' : t.strategy === 'contend' ? 'They are contending and don\'t want to weaken the current roster.' : '';
+  const strat = t.mode === 'capclear' ? 'They are near the hard cap – every dollar saved matters.' : t.mode === 'retool' ? 'They are stuck in the middle and open to side moves – a better fit matters more to them than raw value.' : t.mode === 'rising' ? 'A young rising team – they won\'t part with youth and want players who fit a few years out.' : t.mode === 'allin' ? 'They are all-in – only what helps them win now matters.' : t.mode === 'tank' ? 'They are tanking – wins don\'t matter this season, picks and youth do.' : t.strategy === 'rebuild' ? 'They are rebuilding, so they value young players and picks more.' : t.strategy === 'contend' ? 'They are contending and don\'t want to weaken the current roster.' : '';
   return { accept: false, e, text: `${t.name} decline: ${gap < 3 ? 'close, but they need a little more' : gap < 10 ? 'not enough value' : 'the offer is far from acceptable'}${why.length ? ` (${why.join('; ')})` : ''}. ${strat}`.trim() };
 }
 

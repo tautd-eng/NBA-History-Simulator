@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client';
 import { loadHistory, H, RATING_LABELS, shownOvr as ovrOf, shownFromRaw, shownFromBpm, ratingOf, seasonInfo, bpmOf, LAST_SEASON } from '../data';
 import { setEraCal } from '../engine/game';
 import { newLeague, standings, playoffFormat, realChampion, simDayWatching, watchableToday, playedToday, seasonGames, applySettings, startClutch, finishClutch, todayIndex } from '../league/league';
-import { ensurePicks } from '../ai/trades';
+import { ensurePicks, deadlineDay } from '../ai/trades';
 import { LiveGame } from './live';
 import { SortTable, f1 } from './sorttable';
 import { ClutchGame } from './clutch';
@@ -233,7 +233,7 @@ function TabIcon({ k }: { k: string }) {
 function phaseLabel(lg: any) {
   if (lg.ended) return 'history complete';
   if (lg.phase === 'fantasy') return 'fantasy draft';
-  if (lg.phase === 'regular') return `regular season, day ${lg.day + 1}`;
+  if (lg.phase === 'regular') { const dl = deadlineDay(lg); return `regular season, day ${lg.day + 1} · ${lg.day < dl ? `trade deadline in ${dl - lg.day} day${dl - lg.day === 1 ? '' : 's'}` : lg.day === dl ? 'trade deadline today' : 'past the trade deadline'}`; }
   if (lg.phase === 'playoffs') return 'playoffs';
   if (lg.phase === 'draft') return lg.draftDay?.year === lg.season ? (lg.draftDay.done ? 'draft complete' : lg.draftDay.stage === 'expansion' ? 'expansion draft' : lg.draftDay.stage === 'lottery' ? 'draft lottery' : 'draft day') : 'season over, draft ahead';
   if (lg.phase === 'freeagency') return !lg.fa ? 'offseason' : lg.fa.stage === 0 ? 'contract decisions' : lg.fa.stage <= 3 ? `free agency, wave ${lg.fa.stage}` : 'free agency over';
@@ -255,6 +255,7 @@ function Controls({ lg, busy, run, stop, saved }: any) {
       {(lg.phase === 'regular' || lg.phase === 'playoffs') && <>
         {b('day', 'Day')}
         {b('week', 'Week')}
+        {lg.phase === 'regular' && lg.day < deadlineDay(lg) && b('deadline', 'To trade deadline')}
         {lg.phase === 'regular' && b('playoffs', 'To playoffs')}
         {b('seasonEnd', 'To season end', true)}
       </>}
@@ -782,7 +783,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
   const teams = Object.values(lg.teams).filter((x: any) => x.active).sort((a: any, b: any) => a.name.localeCompare(b.name));
   const roster = t.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
   const pay = payroll(lg, t.tid);
-  const strat = t.mode ? { allin: 'All-in', tank: 'Tanking', rising: 'Rising', capclear: 'Clearing salary' }[t.mode] : { contend: 'Contender', middle: 'Middle of the pack', rebuild: 'Rebuilding' }[t.strategy];
+  const strat = t.mode ? { allin: 'All-in', tank: 'Tanking', rising: 'Rising', capclear: 'Clearing salary', retool: 'Retooling' }[t.mode] : { contend: 'Contender', middle: 'Middle of the pack', rebuild: 'Rebuilding' }[t.strategy];
   const titles = lg.history.filter((s: any) => s.champion === t.tid).map((s: any) => s.season);
   const [view, setView] = useState<'stats' | 'attr' | 'hist' | 'rec'>('stats');
   const inSeason = lg.phase === 'regular' || lg.phase === 'playoffs';
