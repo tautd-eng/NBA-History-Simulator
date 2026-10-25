@@ -181,7 +181,7 @@ export function updateModes(lg: League, announce = true) {
     else if (pay > hc - 0.02) mode = 'capclear';
     else if (young >= 2 && coreAge <= 25.5 && i >= 3) mode = 'rising';
     // stuck in the middle: not good enough to contend, too good to tank – the GM keeps making side moves
-    else if (t.mode === 'retool' ? (i >= Math.round(n * 0.15) && i < n - 2 && (!inSeason || g < 15 || (wp >= 0.33 && wp <= 0.67)))
+    else if (t.mode === 'retool' && inSeason ? (i >= Math.round(n * 0.15) && i < n - 2 && (!inSeason || g < 15 || (wp >= 0.33 && wp <= 0.67)))
       : (i >= Math.round(n * 0.25) && i < n - Math.max(2, Math.round(n * 0.2)) && (!inSeason || g < 15 || (wp >= 0.38 && wp <= 0.62)) && (t.gm.risk >= 0.35 || (inSeason && g >= 25 && Math.abs(wp - 0.5) < 0.07)))) mode = 'retool';
     if (t.tid === lg.userTid) mode = undefined; // the user decides for his own team
     if (announce && mode !== t.mode && mode) {
@@ -193,6 +193,9 @@ export function updateModes(lg: League, announce = true) {
     t.mode = mode;
     if (mode === 'tank') t.strategy = 'rebuild';
   });
+  // only a handful of GMs are restless enough to keep shuffling the deck
+  const ret = order.filter(t => t.mode === 'retool').sort((a, b) => b.gm.risk - a.gm.risk);
+  for (const t of ret.slice(Math.max(6, Math.round(n * 0.27)))) t.mode = undefined;
 }
 
 // ---------------------------------------------------------------- simulation
