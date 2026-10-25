@@ -799,6 +799,17 @@ export function startSeason(lg: League) {
     if (!p.rfa || p.tid || p.retired) continue;
     const t = lg.teams[p.rfa];
     if (t?.active && t.roster.length < ROSTER_MAX) {
+      // nobody sent an offer sheet: an AI team that wants him signs him to a market deal (he has nowhere else to go);
+      // only if it won't pay that does he play the year on the qualifying offer
+      if (t.tid !== lg.userTid) {
+        const ask = Math.min(maxSalary(p, N), askingSalary(p, N) * 0.92);
+        if (ask > (p.qo ?? MIN_SAL) && worthKeeping(lg, p, ask, N, t.strategy) && payroll(lg, t.tid) + ask <= hardCap(lg)) {
+          signWith(lg, p, t.tid, ask, N - 1 + contractYears(p, N, () => rng.next()), rng);
+          lg.fa?.log.push({ st: 3, kind: 'resign', pid: p.id, tid: t.tid, sal: ask, exp: p.contract.exp, desc: 're-signed his restricted free agent' });
+          addTx(p, N, `Re-signed with ${t.name} as a restricted free agent: ${Math.round(ask * 1000) / 10}% of the cap through ${p.contract.exp}`, -1);
+          continue;
+        }
+      }
       const qo = p.qo ?? MIN_SAL;
       signWith(lg, p, t.tid, qo, N);
       lg.fa?.log.push({ st: 3, kind: 'qo', pid: p.id, tid: t.tid, sal: qo, exp: N, desc: 'accepted the qualifying offer (1 yr)' });
@@ -811,10 +822,11 @@ export function startSeason(lg: League) {
       const best = Object.values(lg.players).filter(p => isFreeAgent(lg, p)).sort((a, b) => playerValue(b, N, t.strategy) - playerValue(a, N, t.strategy))[0];
       if (!best) break;
       best.tid = t.tid; t.roster.push(best.id);
-      best.contract = { sal: MIN_SAL, exp: N };
+      const fair = fillSalary(lg, best, t.tid, N);
+      best.contract = { sal: fair, exp: N };
       lockTrade(lg, best);
       filled.push(tagOf(best, N));
-      addTx(best, N, `Signed with ${t.name}: minimum deal (1 yr)`, -1);
+      addTx(best, N, fair > MIN_SAL + 1e-9 ? `Signed with ${t.name}: 1 yr, ${Math.round(fair * 1000) / 10}% of the cap` : `Signed with ${t.name}: minimum deal (1 yr)`, -1);
     }
     const cut: string[] = [];
     while (t.roster.length > ROSTER_MAX) {
@@ -1066,4 +1078,10 @@ export function aiRecallStash(lg: League, rng: Rng, chance = 1) {
     if (!want || !rng.chance(want * chance)) continue;
     recallStash(lg, p.id);
   }
+}
+
+/** A late signing to fill a roster: a good player still costs most of his market value (within the hard cap). */
+export function fillSalary(lg: League, p: Player, tid: string, N: number) {
+  const room = hardCap(lg) - payroll(lg, tid);
+  return Math.max(MIN_SAL, Math.min(askingSalary(p, N) * 0.7, room));
 }

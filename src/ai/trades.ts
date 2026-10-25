@@ -6,7 +6,7 @@ import { tradeLocked, lockLabel } from '../league/contracts';
 import { H, seasonInfo, LAST_SEASON, ovrOf, bpmOf } from '../data';
 import { Rng } from '../rng';
 import { League, Player, Team, Pick, TradeAsset, TradeRec } from '../types';
-import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap } from './value';
+import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap, askingSalary } from './value';
 import { playerParts, moneyWeight, prospectValue, tradeValue, horizonOf, Horizon } from './tradevalue';
 import { posNum } from '../engine/game';
 import { bucket, tagOf, ageIn } from '../players';
@@ -318,8 +318,10 @@ export function fillRoster(lg: League, tid: string) {
     const fa = Object.values(lg.players).filter(p => isFreeAgent(lg, p))
       .sort((x, y) => playerValue(y, lg.season, t.strategy) - playerValue(x, lg.season, t.strategy))[0];
     if (!fa) break;
+    // a good player signed late still costs most of his market value (within the hard cap)
+    const sal = Math.max(MIN_SAL, Math.min(askingSalary(fa, lg.season) * 0.7, hardCap(lg) - payroll(lg, tid)));
     fa.tid = tid; t.roster.push(fa.id);
-    fa.contract = { sal: MIN_SAL, exp: lg.season };
+    fa.contract = { sal, exp: lg.season };
   }
 }
 
