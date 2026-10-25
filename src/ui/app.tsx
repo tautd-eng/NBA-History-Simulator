@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { PlayoffPreviews, SeriesPreview } from './preview';
 import { Linkify, PL, TL, nav } from './nav';
-import { TeamHistory, TeamRecords, LeagueRecords, Retirements } from './history';
+import { TeamHistory, TeamRecords, LeagueRecords, Retirements, SeasonArchive } from './history';
 import { Logo, TLogo, PFace } from './art';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -987,6 +987,7 @@ function HistoryView({ lg, openPlayer }: any) {
     <div className="col">
     <LeagueRecords lg={lg} openPlayer={openPlayer} />
     <Retirements lg={lg} openPlayer={openPlayer} />
+    <SeasonArchive lg={lg} openPlayer={openPlayer} />
     <AwardsExplorer lg={lg} openPlayer={openPlayer} />
     <div className="panel">
       <h2>Seasons</h2>

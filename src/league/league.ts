@@ -711,6 +711,7 @@ function finishSeason(lg: League, rng: Rng) {
     season: S, champion: champ, runnerUp: runner, mvp: mvp?.id, roy: roy?.id, fmvp: fmvp?.id, awards: aw,
     standings: standings(lg).map(t => ({ tid: t.tid, name: t.name, abbr: t.abbr, w: t.w, l: t.l, conf: t.conf })),
     leaders, notes: [], po: finish.by, poRounds: finish.n,
+    bracket: { series: lg.series.map(x => ({ round: x.round, conf: x.conf, hi: x.hi!, lo: x.lo!, hiSeed: x.hiSeed, loSeed: x.loSeed, hw: x.hw, lw: x.lw, winner: x.winner, bestOf: x.bestOf })), playIn: (lg.playIn ?? []).map((g: any) => ({ label: g.label, txt: g.txt, a: g.a, b: g.b, winner: g.winner })) },
     teamStats: Object.fromEntries(activeTeams(lg).filter(t => t.st).map(t => [t.tid, { st: t.st!, opp: t.opp!, gp: t.gp ?? 0, w: t.w, l: t.l, stPo: t.stPo, oppPo: t.oppPo, gpPo: t.gpPo }])),
   };
   lg.history.push(sum);

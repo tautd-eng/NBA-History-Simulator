@@ -116,6 +116,7 @@ export interface SeasonSummary {
   notes: string[];
   po?: Record<string, number>; poRounds?: number; // playoff finish per team (rounds reached, rounds+1 = champion, -1 = play-in)
   teamStats?: Record<string, { st: StatLine; opp: StatLine; gp: number; w: number; l: number; stPo?: StatLine; oppPo?: StatLine; gpPo?: number }>;
+  bracket?: { series: { round: number; conf: string; hi: string; lo: string; hiSeed: number; loSeed: number; hw: number; lw: number; winner?: string; bestOf: number }[]; playIn: { label: string; txt?: string; a: string; b: string; winner?: string }[] };
 }
 
 export interface Pick { season: number; round: number; orig: string; owner: string }

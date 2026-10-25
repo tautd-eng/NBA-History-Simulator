@@ -701,3 +701,11 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .dialog.pv-dialog { width: min(820px, 100%); }
 
 .more-ver { grid-column: 1 / -1; margin: 2px 0 0; text-align: center; font-size: 0.7rem; color: var(--muted); }
+
+/* season archive */
+.arch-stand { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.arch-stand ol { margin: 6px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 2px; font-size: 0.88rem; }
+.arch-stand li.on { font-weight: 700; }
+.arch-roster { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.arch-roster h3 { display: flex; align-items: center; gap: 8px; color: var(--ink); }
+.roster-dialog { width: min(900px, 96vw); max-height: 88vh; overflow: auto; }

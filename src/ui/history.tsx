@@ -76,6 +76,7 @@ function LineList({ lg, rows, openPlayer, fmt, sub }: any) {
 
 // ---------------------------------------------------------------- team
 export function TeamHistory({ lg, tid, openPlayer }: any) {
+  const [open, setOpen] = useState<number | null>(null);
   const lines = useMemo(() => seasonLines(lg).filter(x => x.tid === tid), [lg, tid, lg.history.length, lg.day]);
   const seasons = lg.history.map((h: any) => ({ h, st: h.standings.find((x: any) => x.tid === tid), rank: h.standings.filter((x: any) => x.conf === h.standings.find((y: any) => y.tid === tid)?.conf).findIndex((x: any) => x.tid === tid) + 1 })).filter((x: any) => x.st).reverse();
   const best = (s: number) => {
@@ -98,13 +99,28 @@ export function TeamHistory({ lg, tid, openPlayer }: any) {
         <tbody>{seasons.map(({ h, st, rank }: any) => {
           const b = best(h.season);
           return <tr key={h.season} className={h.champion === tid ? 'mine' : ''}>
-            <td>{sl(h.season)}</td><td className="l">{st.name}</td><td>{st.w}</td><td>{st.l}</td><td>{(st.w / Math.max(1, st.w + st.l)).toFixed(3).replace(/^0/, '')}</td>
+            <td><button className="link" title="Roster that season" onClick={() => setOpen(h.season)}>{sl(h.season)}</button></td><td className="l">{st.name}</td><td>{st.w}</td><td>{st.l}</td><td>{(st.w / Math.max(1, st.w + st.l)).toFixed(3).replace(/^0/, '')}</td>
             <td>{rank || '–'}</td>
             <td className="l">{h.po ? finishLabel(h.po[tid], h.poRounds) : h.champion === tid ? '🏆 Champion' : h.runnerUp === tid ? 'Finals' : '–'}</td>
             <td className="l">{b ? <><PName lg={lg} pid={b.p.id} openPlayer={openPlayer} /> <span className="dim">{f1(b.l.pts / b.l.gp)} ppg</span></> : '–'}</td>
           </tr>;
         })}</tbody>
       </table></div>
+      <p className="note">Tap a season for that year's roster.</p>
+      {open != null && (() => {
+        const h = lg.history.find((x: any) => x.season === open);
+        const st = h?.standings.find((x: any) => x.tid === tid);
+        return (
+          <div className="overlay center" onClick={() => setOpen(null)}>
+            <div className="dialog roster-dialog" role="dialog" aria-label="Season roster" onClick={e => e.stopPropagation()}>
+              <h2>{st?.name ?? tid} · {sl(open)}</h2>
+              <p className="dim">{st ? `${st.w}–${st.l}` : ''}{h?.po ? ` · ${finishLabel(h.po[tid], h.poRounds)}` : ''}</p>
+              <SeasonRoster lg={lg} season={open} tid={tid} openPlayer={openPlayer} />
+              <div className="dialog-actions"><button className="ghost" onClick={() => setOpen(null)}>Close</button></div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }
@@ -245,6 +261,111 @@ export function Retirements({ lg, openPlayer }: any) {
       </div>
       <SortTable cols={cols} rows={rows} initial="peak" limit={300} />
       <p className="note">Players retire in the offseason, right after the draft. Age, a fading game and – with the destiny slider up – the end of their real careers decide it; players left unsigned for a year may also call it a career. Career numbers are this league's regular seasons. Click a name for the full career: draft, teams, trades, awards.</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- season archive: bracket, standings, rosters
+/** Everyone who played for a team in a season (regular season and playoffs), from the players' career lines. */
+export function SeasonRoster({ lg, season, tid, openPlayer }: any) {
+  const rows = useMemo(() => {
+    const live = season === lg.season && (lg.phase === 'regular' || lg.phase === 'playoffs');
+    const m = new Map<string, any>();
+    for (const p of Object.values(lg.players) as any[]) {
+      const lines = p.career.filter((c: any) => c.s === season && c.tid === tid);
+      if (live && p.tid === tid) { if (p.cur.gp) lines.push({ ...p.cur, po: false }); if (p.curPo.gp) lines.push({ ...p.curPo, po: true }); }
+      for (const c of lines) {
+        const r = m.get(p.id) ?? { p, rs: null, po: null, age: c.age ?? (season - Math.floor(p.born)), ovr: c.ovr };
+        if (c.po) r.po = c; else r.rs = c;
+        m.set(p.id, r);
+      }
+    }
+    return [...m.values()].sort((a, b) => (b.rs?.min ?? 0) + (b.po?.min ?? 0) - (a.rs?.min ?? 0) - (a.po?.min ?? 0));
+  }, [lg, season, tid, lg.day]);
+  if (!rows.length) return <p className="note">No player lines for this team and season.</p>;
+  const pg = (l: any, k: string) => (l && l.gp ? (k === 'reb' ? (l.orb + l.drb) / l.gp : l[k] / l.gp).toFixed(1) : '–');
+  return (
+    <div className="tbl-wrap"><table className="tbl">
+      <thead><tr><th className="l">Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>GP</th><th>MPG</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th title="Playoff games">PO GP</th><th title="Playoff points per game">PO PTS</th></tr></thead>
+      <tbody>{rows.map((r: any) => (
+        <tr key={r.p.id}>
+          <td className="l"><button className="link" onClick={() => openPlayer(r.p.id)}>{r.p.name}</button>{r.p.awards?.includes(`${season} Champion`) ? ' 🏆' : ''}</td>
+          <td>{r.p.pos}</td><td>{r.age ?? '–'}</td><td>{r.ovr ?? '–'}</td>
+          <td>{r.rs?.gp ?? 0}</td><td>{pg(r.rs, 'min')}</td><td><b>{pg(r.rs, 'pts')}</b></td><td>{pg(r.rs, 'reb')}</td><td>{pg(r.rs, 'ast')}</td><td>{pg(r.rs, 'stl')}</td><td>{pg(r.rs, 'blk')}</td>
+          <td>{r.po?.gp ?? '–'}</td><td>{pg(r.po, 'pts')}</td>
+        </tr>
+      ))}</tbody>
+    </table></div>
+  );
+}
+
+/** A past season: playoff bracket, final standings and any team's roster. */
+export function SeasonArchive({ lg, openPlayer, initSeason, initTid }: any) {
+  const [y, setY] = useState<number>(initSeason ?? lg.history[lg.history.length - 1]?.season);
+  const h = lg.history.find((x: any) => x.season === y) ?? lg.history[lg.history.length - 1];
+  const [tid, setTid] = useState<string | null>(initTid ?? null);
+  if (!h) return null;
+  const st = (t: string) => h.standings.find((x: any) => x.tid === t);
+  const ab = (t: string) => st(t)?.abbr ?? lg.teams[t]?.abbr ?? t;
+  const pick = (t: string) => setTid(t === tid ? null : t);
+  const b = h.bracket;
+  const rounds = b ? [...new Set(b.series.map((s: any) => s.round))].sort((x: any, z: any) => x - z) as number[] : [];
+  const R = h.poRounds ?? rounds.length;
+  const nameOf = (r: number) => ['Finals', 'Conference finals', 'Conference semifinals', 'First round'][Math.max(0, R - r)] ?? `Round ${r}`;
+  const confs = [...new Set(h.standings.map((x: any) => x.conf))] as string[];
+  const cur = tid ? st(tid) : null;
+  return (
+    <div className="panel">
+      <div className="team-head">
+        <h2>Season archive</h2>
+        <select aria-label="Season" value={h.season} onChange={e => { setY(+e.target.value); }}>
+          {lg.history.slice().reverse().map((x: any) => <option key={x.season} value={x.season}>{sl(x.season)}</option>)}
+        </select>
+      </div>
+      <p className="note">🏆 <b><TL tid={h.champion}>{st(h.champion)?.name ?? ab(h.champion)}</TL></b> beat <TL tid={h.runnerUp}>{st(h.runnerUp)?.name ?? ab(h.runnerUp)}</TL> in the Finals. Tap a team for its roster that season.</p>
+      <h3>Playoffs</h3>
+      {b ? (
+        <>
+          {b.playIn.length > 0 && <div className="playin">{b.playIn.map((g: any, i: number) => <span key={i} className="chip">{g.txt ?? g.label}: {ab(g.a)}–{ab(g.b)}{g.winner ? ` → ${ab(g.winner)}` : ''}</span>)}</div>}
+          <div className="bracket">
+            {rounds.map(r => (
+              <div key={r} className="round">
+                <h3>{nameOf(r)}</h3>
+                {b.series.filter((s: any) => s.round === r).map((s: any, i: number) => (
+                  <div key={i} className="series done">
+                    {[['hi', s.hiSeed, s.hw], ['lo', s.loSeed, s.lw]].map(([k, seed, w]: any) => (
+                      <div key={k} className={`side ${s.winner === s[k] ? 'win' : ''} ${s[k] === tid ? 'mine' : ''}`}>
+                        <span className="seed">{seed}</span>
+                        <button className="link" onClick={() => pick(s[k])}>{ab(s[k])}</button>
+                        <span className="w">{w}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className="note">The bracket of this season was not recorded (it was played before brackets were kept). Playoff finish: {Object.entries(h.po ?? {}).filter(([, v]: any) => v > 0).sort((a: any, z: any) => z[1] - a[1]).map(([t, v]: any, i) => <span key={t}>{i ? ' · ' : ''}<button className="link" onClick={() => pick(t)}>{ab(t)}</button> <span className="dim">{finishLabel(v, h.poRounds)}</span></span>)}</p>
+      )}
+      <h3>Final standings</h3>
+      <div className="arch-stand">
+        {confs.map(c => (
+          <div key={c}>
+            <b className="dim">{c === 'E' ? 'East' : c === 'W' ? 'West' : c}</b>
+            <ol>{h.standings.filter((x: any) => x.conf === c).map((x: any) => (
+              <li key={x.tid} className={x.tid === tid ? 'on' : ''}><button className="link" onClick={() => pick(x.tid)}>{x.name}</button> <span className="dim">{x.w}–{x.l}{h.po?.[x.tid] != null ? ` · ${finishLabel(h.po[x.tid], h.poRounds)}` : ''}</span></li>
+            ))}</ol>
+          </div>
+        ))}
+      </div>
+      {tid && cur && (
+        <div className="arch-roster">
+          <div className="team-head"><h3><TLogo lg={lg} tid={tid} size={22} /> {cur.name} · {sl(h.season)} · {cur.w}–{cur.l}</h3><button className="ghost small" onClick={() => setTid(null)}>Hide</button></div>
+          <SeasonRoster lg={lg} season={h.season} tid={tid} openPlayer={openPlayer} />
+        </div>
+      )}
     </div>
   );
 }
