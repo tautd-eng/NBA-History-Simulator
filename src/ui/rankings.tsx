@@ -111,7 +111,7 @@ function AllPlayers({ lg, openPlayer, openTeam }: any) {
 
 // ---------------------------------------------------------------- power rankings
 const W8 = [36, 34, 32, 30, 28, 24, 20, 16];
-function teamRows(lg: any) {
+export function teamRows(lg: any) {
   const S = lg.season;
   const inSeason = lg.phase === 'regular' || lg.phase === 'playoffs';
   const act = Object.values(lg.teams).filter((t: any) => t.active);

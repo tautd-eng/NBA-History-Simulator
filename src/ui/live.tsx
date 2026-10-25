@@ -18,7 +18,7 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
   const { res, pbp } = data;
   const home = lg.teams[res.home.tid], away = lg.teams[res.away.tid];
   const endT = pbp[pbp.length - 1].t;
-  const [t, setT] = useState(0);
+  const [t, setT] = useState(() => Math.min(data.startAt ?? 0, data.pbp[data.pbp.length - 1].t));
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(24);
   const [view, setView] = useState<'court' | 'chart'>('court');

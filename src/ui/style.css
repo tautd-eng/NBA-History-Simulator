@@ -652,3 +652,24 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
   .tbl { font-size: 0.8rem; }
 }
 .sb-series { font-size: 0.74rem; font-weight: 600; color: var(--accent); white-space: nowrap; margin-top: 2px; }
+
+/* series previews */
+.pv { display: flex; flex-direction: column; gap: 8px; }
+.pv-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pv-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 14px; align-items: start; }
+.pv-mid { grid-column: 1 / -1; order: -1; }
+.pv-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pv-team { display: flex; gap: 8px; align-items: center; }
+.pv-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.78rem; }
+.pv-players { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.84rem; }
+.pv-players li { display: flex; gap: 6px; align-items: center; }
+.pv-inj { font-size: 0.78rem; color: var(--neg); margin: 0; }
+.pv-mid { display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; font-size: 0.82rem; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.pv-odds { display: flex; gap: 10px; align-items: baseline; }
+.pv-odds b { font-size: 1.3rem; font-family: var(--font-display); }
+.pv-bar { width: 100%; height: 6px; border-radius: 3px; background: var(--real); overflow: hidden; }
+.pv-bar span { display: block; height: 100%; background: var(--accent); }
+.pv-tabs { flex-wrap: wrap; margin-bottom: 8px; }
+.series.clickable { cursor: pointer; }
+.series.clickable:hover { outline: 1px solid var(--accent); }
+.dialog.pv-dialog { width: min(820px, 100%); }

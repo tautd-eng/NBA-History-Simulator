@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { PlayoffPreviews, SeriesPreview } from './preview';
 import { Linkify, PL, TL, nav } from './nav';
 import { TeamHistory, TeamRecords, LeagueRecords, Retirements } from './history';
 import { Logo, TLogo, PFace } from './art';
@@ -112,11 +113,11 @@ function App() {
     if (cs) setClutch(cs);
   }
 
-  async function watch(home: string, away: string) {
+  async function watch(home: string, away: string, startAt = 0, show = true) {
     if (!lg || busy) return;
     const w = simDayWatching(lg, home, away);
     bump();
-    if (w) setLive(w);
+    if (w && show) setLive({ ...w, startAt });
     setSaved((await saveLeague(lg)) ? 'ok' : 'fail');
   }
 
@@ -513,6 +514,7 @@ function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sam
         <Standings lg={lg} openTeam={openTeam} />
       </section>
       <section className="col">
+        {lg.phase === 'playoffs' && <PlayoffPreviews lg={lg} />}
         {lg.phase === 'playoffs' && lg.seasonAwards && <RegAwardsCard lg={lg} a={lg.seasonAwards} openPlayer={openPlayer} />}
         {last && (lg.phase === 'draft' || lg.phase === 'offseason') && <SeasonCard lg={lg} s={last} openPlayer={openPlayer} />}
         <TodayGames lg={lg} openGame={openGame} />
@@ -558,6 +560,7 @@ function Standings({ lg, openTeam }: any) {
 }
 
 function Bracket({ lg, openTeam }: any) {
+  const [prev, setPrev] = useState<any>(null);
   const ab = (tid: string) => (tid ? lg.teams[tid].abbr : '…');
   const rounds = [...new Set(lg.series.map((s: any) => s.round))].sort();
   const names = ['First round', 'Conference semifinals', 'Conference finals', 'Finals'];
@@ -577,11 +580,11 @@ function Bracket({ lg, openTeam }: any) {
           <div key={r} className="round">
             <h3>{nameOf(r)}</h3>
             {lg.series.filter((s: any) => s.round === r).map((s: any, i: number) => (
-              <div key={i} className={`series ${s.winner ? 'done' : ''}`}>
+              <div key={i} className={`series ${s.winner ? 'done' : ''} ${s.hi && s.lo ? 'clickable' : ''}`} title={s.hi && s.lo ? 'Series preview' : undefined} onClick={() => s.hi && s.lo && setPrev(s)}>
                 {[['hi', s.hiSeed, s.hw], ['lo', s.loSeed, s.lw]].map(([k, seed, w]: any) => (
                   <div key={k} className={`side ${s.winner && s.winner === s[k] ? 'win' : ''} ${s[k] === lg.userTid ? 'mine' : ''}`}>
                     <span className="seed">{s[k] ? seed : ''}</span>
-                    <button className="link" disabled={!s[k]} onClick={() => openTeam(s[k])}>{ab(s[k])}</button>
+                    <button className="link" disabled={!s[k]} onClick={e => { e.stopPropagation(); openTeam(s[k]); }}>{ab(s[k])}</button>
                     <span className="w">{s[k] ? w : ''}</span>
                   </div>
                 ))}
@@ -590,6 +593,7 @@ function Bracket({ lg, openTeam }: any) {
           </div>
         ))}
       </div>
+      {prev && <div className="overlay center" onClick={() => setPrev(null)}><div className="dialog pv-dialog" role="dialog" aria-label="Series preview" onClick={e => e.stopPropagation()}><SeriesPreview lg={lg} s={prev} /><div className="dialog-actions"><button className="ghost" onClick={() => setPrev(null)}>Close</button></div></div></div>}
     </div>
   );
 }
@@ -665,7 +669,7 @@ function Today({ lg, watch, clutch, busy, openGame }: any) {
     <div className="panel today">
       <div className="today-head">
         <h2>{lg.phase === 'playoffs' ? 'Next playoff games' : 'Today\'s games'}</h2>
-        <span className="dim">Watch a whole game or jump into the last 5 minutes and coach it yourself. The other games wait until you play or sim them.</span>
+        <span className="dim">Watch a game, sim it straight to the result, or jump to the last 5 minutes. Your own games can also be coached in the last 5 minutes. Games wait until you play or sim them.</span>
       </div>
       <ul className="watch-list">
         {sorted.map((g: any) => (
@@ -678,12 +682,10 @@ function Today({ lg, watch, clutch, busy, openGame }: any) {
             </span>
             <span className="wl-actions">
               <button disabled={busy} onClick={() => watch(g.home, g.away)}>Watch live</button>
-              {g.label !== 'Play-in' && (g.home === lg.userTid || g.away === lg.userTid
-                ? <button className="primary" disabled={busy} onClick={() => clutch(g.home, g.away, g.home === lg.userTid ? 'h' : 'a')}>Last 5 min</button>
-                : <>
-                    <button disabled={busy} title={`Coach the ${lg.teams[g.away].name}`} onClick={() => clutch(g.home, g.away, 'a')}>5 min: {lg.teams[g.away].abbr}</button>
-                    <button disabled={busy} title={`Coach the ${lg.teams[g.home].name}`} onClick={() => clutch(g.home, g.away, 'h')}>5 min: {lg.teams[g.home].abbr}</button>
-                  </>)}
+              <button disabled={busy} title="Play this game now and see the result" onClick={() => watch(g.home, g.away, 0, false)}>Sim game</button>
+              <button disabled={busy} title="Watch from 5:00 left in the 4th quarter" onClick={() => watch(g.home, g.away, 2580)}>Go to last 5 min</button>
+              {g.label !== 'Play-in' && (g.home === lg.userTid || g.away === lg.userTid) &&
+                <button className="primary" disabled={busy} title="Coach the last five minutes yourself" onClick={() => clutch(g.home, g.away, g.home === lg.userTid ? 'h' : 'a')}>Coach last 5 min</button>}
             </span>
           </li>
         ))}
