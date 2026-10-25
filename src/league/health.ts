@@ -16,7 +16,7 @@ import { League, Player, StatLine, emptyLine, addLine } from '../types';
 import { ageIn, realTarget, snapRatings } from '../players';
 import { zClamp } from '../ai/value';
 
-export const DEV = { noise: 0.42, ar: 0.55, maxOvrStep: 8, soft: 2.7 };
+export const DEV = { noise: 0.32, ar: 0.55, maxOvrStep: 8, soft: 2.7, maxSkillStep: 0.5, primeDrop: 2.5 };
 /**
  * Leniency for young players: up to maxAge, a season slightly below expectations
  * (performance signal above -deadZone OVR) does not hurt, a flop (below `flop`)
@@ -62,7 +62,7 @@ const OBS: Obs[] = [
   { k: K.blk, log: true, num: l => l.blk, den: l => l.min, prior: 600 },
   { k: K.pf, log: true, num: l => l.pf, den: l => l.min, prior: 600 },
 ];
-export const PERF = { alpha: 1, skill: 0.5, overall: 0.9, maxStep: 12 };
+export const PERF = { alpha: 1, skill: 0.32, overall: 0.9, maxStep: 12 };
 const lgt = (p: number) => Math.log(Math.min(0.995, Math.max(0.005, p)) / (1 - Math.min(0.995, Math.max(0.005, p))));
 
 /** Season line (regular season + playoffs) the player produced in season Y. */
@@ -120,7 +120,7 @@ export function performanceShift(lg: League, Y: number) {
       const sl = f.slope(xs[i]);
       if (sl < 0.03) return;
       const resid = ys[i] - f.fit(xs[i]);
-      const dz = Math.max(-1, Math.min(1, (resid / sl) * ws[i]));
+      const dz = Math.max(-0.7, Math.min(0.7, (resid / sl) * ws[i]));
       out.get(x.p.id)!.dz[o.k] += PERF.skill * dz;
     });
   }
@@ -199,6 +199,19 @@ export function develop(lg: League, rng: Rng) {
     dev.e = eNew;
     // young players who did not flop lose at most a little in one summer
     const maxDrop = age <= 22 ? YOUNG.maxDrop[0] : age <= 24 ? YOUNG.maxDrop[1] : age <= YOUNG.maxAge ? YOUNG.maxDrop[2] : Infinity;
+    // grown players don't swing wildly: one summer moves a single skill by at most maxSkillStep (≈7 rating points)
+    if (age >= 24) for (let i = 0; i < NK; i++) { const dv = p.z[i] - z0[i]; if (Math.abs(dv) > DEV.maxSkillStep) p.z[i] = z0[i] + Math.sign(dv) * DEV.maxSkillStep; }
+    // and in his prime (26–29) a player who did not flop loses at most a few points in one summer
+    // (a bad season – a flop – may cost a little more; serious injuries are handled separately)
+    const primeCap = age >= 25 && age <= 29 ? (flop ? DEV.primeDrop + 1.5 : DEV.primeDrop) : Infinity;
+    if ((flop || maxDrop === Infinity) && primeCap < Infinity) {
+      const o0 = ovrOf(z0), drop = ovrOf(p.z) - o0;
+      if (drop < -primeCap) {
+        let lo = 0, hi = 1;
+        for (let it = 0; it < 12; it++) { const t = (lo + hi) / 2; if (ovrOf(z0.map((v, i) => v + t * (p.z[i] - v))) - o0 >= -primeCap) lo = t; else hi = t; }
+        for (let i = 0; i < NK; i++) p.z[i] = z0[i] + lo * (p.z[i] - z0[i]);
+      }
+    }
     if (!flop && maxDrop < Infinity) {
       const o0 = ovrOf(z0), drop = ovrOf(p.z) - o0;
       if (drop < -maxDrop) {
