@@ -77,13 +77,7 @@ export function SeriesPreview({ lg, s, rows, openGame }: any) {
   const [k, p] = odds.best;
   const fav = odds.hi >= 0.5 ? s.hi : s.lo;
   const started = s.hw + s.lw > 0;
-  const story = (() => {
-    const gap = Math.abs(odds.hi - 0.5);
-    if (s.winner) return `${ab(s.winner)} won the series ${Math.max(s.hw, s.lw)}–${Math.min(s.hw, s.lw)}.`;
-    if (gap < 0.08) return 'A coin flip – these teams are close on paper and home court may decide it.';
-    if (gap < 0.25) return `${ab(fav)} are favoured, but this should go deep.`;
-    return `${ab(fav)} are clear favourites.`;
-  })();
+  const story = useMemo(() => seriesStory(lg, s, rh, rl, odds, wa, wb), [lg, lg.day, s, s.hw, s.lw, rh, rl]);
   return (
     <div className="pv">
       <div className="pv-head">
@@ -101,7 +95,7 @@ export function SeriesPreview({ lg, s, rows, openGame }: any) {
           <div className="dim">Home court: {ab(s.hi)}</div>
         </div>
       </div>
-      <p className="note">{story}</p>
+      <div className="pv-story">{story.map((t: string, i: number) => <p key={i}>{i === 0 ? <b>{t}</b> : t}</p>)}</div>
       <SeriesGames lg={lg} s={s} openGame={openGame} />
     </div>
   );
@@ -145,6 +139,103 @@ export function SeriesDialog({ lg, s, close, openGame }: any) {
   );
 }
 
+const ord = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+const short = (n: string) => n.split(' ').slice(1).join(' ') || n;
+
+/** Last n regular-season results of a team: wins, games. */
+function form(lg: any, tid: string, n = 10) {
+  const gs = lg.schedule.filter((g: any) => g.done && (g.home === tid || g.away === tid)).sort((a: any, b: any) => b.day - a.day).slice(0, n);
+  const w = gs.filter((g: any) => (g.home === tid) === (g.hs > g.as)).length;
+  return { w, g: gs.length };
+}
+
+/** A written preview: the headline, how the teams match up, the star duel, form, injuries and a pick. */
+function seriesStory(lg: any, s: any, rh: any, rl: any, odds: any, wa: number, wb: number): string[] {
+  const T = (tid: string) => lg.teams[tid];
+  const nm = (tid: string) => T(tid).name, ab = (tid: string) => T(tid).abbr;
+  const n = Object.values(lg.teams).filter((t: any) => t.active).length;
+  const out: string[] = [];
+  const fav = odds.hi >= 0.5 ? s.hi : s.lo, dog = fav === s.hi ? s.lo : s.hi;
+  const pf = Math.max(odds.hi, odds.lo);
+  const [k] = odds.best;
+  const pickT = k.startsWith('hi') ? s.hi : s.lo, pickN = k.slice(2);
+  // headline
+  if (s.winner) {
+    const lo = s.winner === s.hi ? s.lo : s.hi;
+    const upset = (s.winner === s.lo && s.loSeed > s.hiSeed);
+    out.push(`${nm(s.winner)} beat ${nm(lo)} ${Math.max(s.hw, s.lw)}–${Math.min(s.hw, s.lw)}${upset ? ' – an upset' : ''}.`);
+  } else if (s.hw + s.lw > 0) {
+    const lead = s.hw === s.lw ? null : s.hw > s.lw ? s.hi : s.lo;
+    const need = Math.ceil(s.bestOf / 2);
+    out.push(lead ? `${nm(lead)} lead ${Math.max(s.hw, s.lw)}–${Math.min(s.hw, s.lw)}${Math.max(s.hw, s.lw) === need - 1 ? ` – one win from the next round` : ''}.` : `All square at ${s.hw}–${s.lw}.`);
+  } else if (pf < 0.58) out.push(`A coin flip: ${nm(s.hi)} and ${nm(s.lo)} are as close as it gets on paper.`);
+  else if (pf < 0.75) out.push(`${nm(fav)} are favoured, but ${nm(dog)} have the tools to make it a long series.`);
+  else out.push(`${nm(fav)} are clear favourites against ${nm(dog)}.`);
+  out.push('¶');
+  // how they match up: offence against defence
+  if (rh && rl && rh.ortg != null) {
+    const desc = (r: any, tid: string) => {
+      const bits: string[] = [];
+      if (r.ortgRk <= 3) bits.push(`the league's ${r.ortgRk === 1 ? 'best' : ord(r.ortgRk)} offence`);
+      if (r.drtgRk <= 3) bits.push(`the ${r.drtgRk === 1 ? 'best' : ord(r.drtgRk) + '-best'} defence`);
+      if (r.ortgRk > n - 3) bits.push('a struggling offence');
+      if (r.drtgRk > n - 3) bits.push('a leaky defence');
+      return bits.length ? `${ab(tid)} bring ${bits.join(' and ')}` : null;
+    };
+    const dh = desc(rh, s.hi), dl = desc(rl, s.lo);
+    const m: string[] = [dh, dl].filter(Boolean) as string[];
+    if (m.length) out.push(m.join('; ') + '.');
+    // the key clash: the better offence against the other side's defence
+    const [o, d] = rh.ortgRk <= rl.ortgRk ? [rh, rl] : [rl, rh];
+    const oT = o === rh ? s.hi : s.lo, dT = o === rh ? s.lo : s.hi;
+    const dd = d.drtgRk;
+    out.push(dd <= 8 ? `The key clash: ${ab(oT)}'s ${ord(o.ortgRk)}-ranked attack (${o.ortg.toFixed(1)}) against a ${ab(dT)} defence ranked ${ord(dd)} (${d.drtg.toFixed(1)}).`
+      : `${ab(oT)} should score: their ${ord(o.ortgRk)}-ranked attack meets a ${ab(dT)} defence that is only ${ord(dd)} in the league.`);
+  }
+  out.push('¶');
+  // stars
+  const top = (tid: string) => T(tid).roster.map((pid: string) => lg.players[pid]).filter((p: any) => !(p.injury > 0)).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
+  const th = top(s.hi), tl = top(s.lo);
+  const per = (p: any) => { const c = p.cur; if (!c.gp) return ''; const pts = c.pts / c.gp, reb = (c.orb + c.drb) / c.gp, ast = c.ast / c.gp; const parts = [`${pts.toFixed(1)} pts`]; if (reb >= 8) parts.push(`${reb.toFixed(1)} reb`); if (ast >= 6) parts.push(`${ast.toFixed(1)} ast`); return ` (${parts.join(', ')})`; };
+  if (th[0] && tl[0]) {
+    out.push(`The marquee duel: ${th[0].name}${per(th[0])} against ${tl[0].name}${per(tl[0])}.`);
+    const stars = (xs: any[]) => xs.filter(p => ovrOf(p.z) >= 85).length;
+    const sh = stars(th), sl2 = stars(tl);
+    if (sh >= 2 && sl2 <= 1) out.push(`${ab(s.hi)} have more star power – ${th.slice(0, sh).map(p => short(p.name)).join(', ')} can each take over a game.`);
+    else if (sl2 >= 2 && sh <= 1) out.push(`${ab(s.lo)} have more star power – ${tl.slice(0, sl2).map(p => short(p.name)).join(', ')} can each take over a game.`);
+    const depth = (xs: any[]) => xs.slice(5, 9).reduce((a, p) => a + ovrOf(p.z), 0) / Math.max(1, Math.min(4, xs.length - 5));
+    const dH = depth(th), dL = depth(tl);
+    if (Math.abs(dH - dL) >= 3) out.push(`The bench favours ${ab(dH > dL ? s.hi : s.lo)}, who can keep the pressure on when the starters rest.`);
+  }
+  // form and the regular season meetings
+  const fh = form(lg, s.hi), fl = form(lg, s.lo);
+  if (fh.g >= 8 && fl.g >= 8) {
+    const hot = (f: any) => f.w >= 7 ? 'hot' : f.w <= 3 ? 'cold' : null;
+    const bits = [[s.hi, fh], [s.lo, fl]].filter(([, f]: any) => hot(f)).map(([t, f]: any) => `${ab(t)} come in ${hot(f)} (${f.w}–${f.g - f.w} in their last ${f.g})`);
+    if (bits.length) out.push(bits.join(', ') + '.');
+  }
+  if (wa + wb > 0) out.push(wa === wb ? `They split the season series ${wa}–${wb}.` : `${ab(wa > wb ? s.hi : s.lo)} won the season series ${Math.max(wa, wb)}–${Math.min(wa, wb)}${Math.min(wa, wb) === 0 && Math.max(wa, wb) >= 2 ? ' without a loss' : ''}.`);
+  // injuries
+  const hurt = (tid: string) => T(tid).roster.map((pid: string) => lg.players[pid]).filter((p: any) => p.injury > 0 && ovrOf(p.z) >= 52).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
+  for (const tid of [s.hi, s.lo]) {
+    const h = hurt(tid);
+    const left = s.bestOf - s.hw - s.lw;
+    if (h.length) out.push(`${ab(tid)} are without ${h.slice(0, 2).map((p: any) => `${p.name} (~${p.injury} g${p.injury >= left ? ', likely out for the series' : ''})`).join(' and ')}.`);
+  }
+  // home court and the pick
+  if (!s.winner) {
+    out.push('¶');
+    out.push(`${ab(s.hi)} have home court: a deciding Game ${s.bestOf} would be played in their building.`);
+    out.push(`Prediction: ${ab(pickT)} in ${pickN}.`);
+  }
+  // sentences → paragraphs (the first is the headline)
+  const paras: string[] = [];
+  let cur: string[] = [];
+  for (const x of out) { if (x === '¶') { if (cur.length) paras.push(cur.join(' ')); cur = []; } else cur.push(x); }
+  if (cur.length) paras.push(cur.join(' '));
+  return paras;
+}
+
 /** Previews for the round being played (and the next one once it is set). */
 export function PlayoffPreviews({ lg, openGame }: any) {
   const rows = useMemo(() => teamRows(lg).rows, [lg, lg.day, lg.phase]);
@@ -168,3 +259,4 @@ export function PlayoffPreviews({ lg, openGame }: any) {
     </div>
   );
 }
+

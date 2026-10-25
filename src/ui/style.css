@@ -715,3 +715,5 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .pv-games ol { margin: 4px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .series-chip { cursor: pointer; border: 1px solid var(--accent); }
 .series-chip:hover { background: var(--accent); color: #fff; }
+.pv-story { display: flex; flex-direction: column; gap: 4px; font-size: 0.88rem; line-height: 1.45; }
+.pv-story p { margin: 0; }
