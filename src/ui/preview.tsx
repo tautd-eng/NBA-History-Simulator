@@ -67,7 +67,7 @@ function TeamSide({ lg, tid, seed, row }: any) {
   );
 }
 
-export function SeriesPreview({ lg, s, rows }: any) {
+export function SeriesPreview({ lg, s, rows, openGame }: any) {
   const byTid = useMemo(() => Object.fromEntries((rows ?? teamRows(lg).rows).map((r: any) => [r.t.tid, r])), [rows, lg, lg.day]);
   if (!s.hi || !s.lo) return null;
   const rh = byTid[s.hi], rl = byTid[s.lo];
@@ -102,12 +102,51 @@ export function SeriesPreview({ lg, s, rows }: any) {
         </div>
       </div>
       <p className="note">{story}</p>
+      <SeriesGames lg={lg} s={s} openGame={openGame} />
+    </div>
+  );
+}
+
+/** Game by game: results so far in the series (tap for the box score). */
+export function SeriesGames({ lg, s, openGame }: any) {
+  const games = (s.games ?? []).map((id: number) => lg.recent.find((r: any) => r.id === id)).filter(Boolean);
+  if (!games.length) return null;
+  const ab = (t: string) => lg.teams[t]?.abbr ?? t;
+  let hw = 0, lw = 0;
+  return (
+    <div className="pv-games">
+      <b className="dim">Series so far</b>
+      <ol>{games.map((r: any, i: number) => {
+        const homeWon = r.home.pts > r.away.pts;
+        const win = homeWon ? r.home.tid : r.away.tid;
+        if (win === s.hi) hw++; else lw++;
+        const st = hw === lw ? `tied ${hw}–${lw}` : `${ab(hw > lw ? s.hi : s.lo)} ${Math.max(hw, lw)}–${Math.min(hw, lw)}`;
+        return (
+          <li key={r.id}>
+            <span className="dim">G{i + 1}</span>{' '}
+            {openGame ? <button className="link" onClick={() => openGame(r.id)}>{ab(r.away.tid)} {r.away.pts} @ {ab(r.home.tid)} {r.home.pts}{r.ot ? ` (${r.ot > 1 ? r.ot + 'OT' : 'OT'})` : ''}</button> : <span>{ab(r.away.tid)} {r.away.pts} @ {ab(r.home.tid)} {r.home.pts}</span>}
+            {' '}<span className="dim">· {ab(win)} win · {st}</span>
+          </li>
+        );
+      })}</ol>
+    </div>
+  );
+}
+
+/** A series in a dialog: preview, odds and every game so far. */
+export function SeriesDialog({ lg, s, close, openGame }: any) {
+  return (
+    <div className="overlay center" onClick={close}>
+      <div className="dialog pv-dialog" role="dialog" aria-label="Series" onClick={e => e.stopPropagation()}>
+        <SeriesPreview lg={lg} s={s} openGame={openGame ? (id: number) => { close(); openGame(id); } : undefined} />
+        <div className="dialog-actions"><button className="ghost" onClick={close}>Close</button></div>
+      </div>
     </div>
   );
 }
 
 /** Previews for the round being played (and the next one once it is set). */
-export function PlayoffPreviews({ lg }: any) {
+export function PlayoffPreviews({ lg, openGame }: any) {
   const rows = useMemo(() => teamRows(lg).rows, [lg, lg.day, lg.phase]);
   const [i, setI] = useState(0);
   const live = lg.series.filter((s: any) => s.hi && s.lo);
@@ -125,7 +164,7 @@ export function PlayoffPreviews({ lg }: any) {
       <div className="seg pv-tabs" role="group" aria-label="Series">
         {list.map((s: any, k: number) => <button key={k} className={cur === s ? 'on' : ''} onClick={() => setI(k)}>{lg.teams[s.hi].abbr}–{lg.teams[s.lo].abbr}{s.winner ? ' ✓' : ''}</button>)}
       </div>
-      {cur && <SeriesPreview lg={lg} s={cur} rows={rows} />}
+      {cur && <SeriesPreview lg={lg} s={cur} rows={rows} openGame={openGame} />}
     </div>
   );
 }

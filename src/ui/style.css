@@ -709,3 +709,9 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .arch-roster { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
 .arch-roster h3 { display: flex; align-items: center; gap: 8px; color: var(--ink); }
 .roster-dialog { width: min(900px, 96vw); max-height: 88vh; overflow: auto; }
+
+/* series game log */
+.pv-games { font-size: 0.85rem; }
+.pv-games ol { margin: 4px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.series-chip { cursor: pointer; border: 1px solid var(--accent); }
+.series-chip:hover { background: var(--accent); color: #fff; }

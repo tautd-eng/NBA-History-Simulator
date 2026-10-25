@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { PlayoffPreviews, SeriesPreview } from './preview';
+import { PlayoffPreviews, SeriesDialog } from './preview';
 import { Linkify, PL, TL, nav } from './nav';
 import { TeamHistory, TeamRecords, LeagueRecords, Retirements, SeasonArchive } from './history';
 import { Logo, TLogo, PFace } from './art';
@@ -541,11 +541,11 @@ function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sam
     <div className="grid-2">
       <section className="col">
         <Today lg={lg} watch={watch} clutch={clutch} busy={busy} openGame={openGame} />
-        {lg.phase === 'playoffs' || (lg.series.length && lg.phase !== 'regular') ? <Bracket lg={lg} openTeam={openTeam} /> : null}
+        {lg.phase === 'playoffs' || (lg.series.length && lg.phase !== 'regular') ? <Bracket lg={lg} openTeam={openTeam} openGame={openGame} /> : null}
         <Standings lg={lg} openTeam={openTeam} />
       </section>
       <section className="col">
-        {lg.phase === 'playoffs' && <PlayoffPreviews lg={lg} />}
+        {lg.phase === 'playoffs' && <PlayoffPreviews lg={lg} openGame={openGame} />}
         {lg.phase === 'playoffs' && lg.seasonAwards && <RegAwardsCard lg={lg} a={lg.seasonAwards} openPlayer={openPlayer} />}
         {last && (lg.phase === 'draft' || lg.phase === 'offseason') && <SeasonCard lg={lg} s={last} openPlayer={openPlayer} />}
         <TodayGames lg={lg} openGame={openGame} />
@@ -590,7 +590,7 @@ function Standings({ lg, openTeam }: any) {
   );
 }
 
-function Bracket({ lg, openTeam }: any) {
+function Bracket({ lg, openTeam, openGame }: any) {
   const [prev, setPrev] = useState<any>(null);
   const ab = (tid: string) => (tid ? lg.teams[tid].abbr : '…');
   const rounds = [...new Set(lg.series.map((s: any) => s.round))].sort();
@@ -611,7 +611,7 @@ function Bracket({ lg, openTeam }: any) {
           <div key={r} className="round">
             <h3>{nameOf(r)}</h3>
             {lg.series.filter((s: any) => s.round === r).map((s: any, i: number) => (
-              <div key={i} className={`series ${s.winner ? 'done' : ''} ${s.hi && s.lo ? 'clickable' : ''}`} title={s.hi && s.lo ? 'Series preview' : undefined} onClick={() => s.hi && s.lo && setPrev(s)}>
+              <div key={i} className={`series ${s.winner ? 'done' : ''} ${s.hi && s.lo ? 'clickable' : ''}`} title={s.hi && s.lo ? 'Series: preview and games' : undefined} onClick={() => s.hi && s.lo && setPrev(s)}>
                 {[['hi', s.hiSeed, s.hw], ['lo', s.loSeed, s.lw]].map(([k, seed, w]: any) => (
                   <div key={k} className={`side ${s.winner && s.winner === s[k] ? 'win' : ''} ${s[k] === lg.userTid ? 'mine' : ''}`}>
                     <span className="seed">{s[k] ? seed : ''}</span>
@@ -624,7 +624,7 @@ function Bracket({ lg, openTeam }: any) {
           </div>
         ))}
       </div>
-      {prev && <div className="overlay center" onClick={() => setPrev(null)}><div className="dialog pv-dialog" role="dialog" aria-label="Series preview" onClick={e => e.stopPropagation()}><SeriesPreview lg={lg} s={prev} /><div className="dialog-actions"><button className="ghost" onClick={() => setPrev(null)}>Close</button></div></div></div>}
+      {prev && <SeriesDialog lg={lg} s={prev} close={() => setPrev(null)} openGame={openGame} />}
     </div>
   );
 }
@@ -696,8 +696,11 @@ function Today({ lg, watch, clutch, busy, openGame }: any) {
   const sorted = [...games].sort((x, y) => Number(mine(y)) - Number(mine(x)));
   const rec = (tid: string) => `${lg.teams[tid].w}–${lg.teams[tid].l}`;
   const b2b = (tid: string, day?: number) => lg.phase === 'regular' && day !== undefined && lg.schedule.some((x: any) => x.day === day - 1 && (x.home === tid || x.away === tid));
+  const [ser, setSer] = useState<any>(null);
+  const seriesOf = (g: any) => lg.phase === 'playoffs' ? lg.series.find((s: any) => (s.hi === g.home && s.lo === g.away) || (s.hi === g.away && s.lo === g.home)) : null;
   return (
     <div className="panel today">
+      {ser && <SeriesDialog lg={lg} s={ser} close={() => setSer(null)} openGame={openGame} />}
       <div className="today-head">
         <h2>{lg.phase === 'playoffs' ? 'Next playoff games' : 'Today\'s games'}</h2>
         <span className="dim">Watch a game, sim it straight to the result, or jump to the last 5 minutes. Your own games can also be coached in the last 5 minutes. Games wait until you play or sim them.</span>
@@ -709,7 +712,7 @@ function Today({ lg, watch, clutch, busy, openGame }: any) {
               <span><TLogo lg={lg} tid={g.away} /><TL tid={g.away} /> <span className="dim">{lg.phase === 'regular' ? rec(g.away) : ''}</span>{b2b(g.away, g.day) && <span className="chip tiny b2b" title="Played yesterday – second game in a row">B2B</span>}</span>
               <span className="at">@</span>
               <span><TLogo lg={lg} tid={g.home} /><TL tid={g.home} /> <span className="dim">{lg.phase === 'regular' ? rec(g.home) : ''}</span>{b2b(g.home, g.day) && <span className="chip tiny b2b" title="Played yesterday – second game in a row">B2B</span>}</span>
-              {g.label && <span className="chip tiny">{g.label}</span>}
+              {g.label && (seriesOf(g) ? <button className="chip tiny series-chip" title="Series: preview and games so far" onClick={() => setSer(seriesOf(g))}>{g.label} ›</button> : <span className="chip tiny">{g.label}</span>)}
             </span>
             <span className="wl-actions">
               <button disabled={busy} onClick={() => watch(g.home, g.away)}>Watch live</button>
