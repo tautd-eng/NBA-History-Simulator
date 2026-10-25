@@ -19,7 +19,16 @@ function looksFor(names: Record<string, string>) {
     let num = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 40, 41, 42, 44, 45, 50, 52, 55][Math.floor(hash01(pid + 'num') * 36)];
     while (u.has(num)) num = (num + 1) % 56;
     u.add(num);
-    out[pid] = { skin: f.skin, hair: f.hair, hairColor: f.hairColor, facial: f.facial, band: f.band, num, ht: p.ht ?? 79 };
+    // body and gear: bigger frames for big men; tube socks in the early years, sleeves and coloured shoes later
+    const h = (k: string) => hash01(pid + k);
+    const pn = ({ PG: 1, SG: 2, G: 1.5, SF: 3, F: 3.5, PF: 4, C: 5 } as any)[p.pos] ?? 3;
+    const era = lg.season;
+    const build = Math.max(0, Math.min(1, (pn - 1) / 4 * 0.7 + h('b') * 0.35));
+    const socks = era < 1992 ? '#f4f4f4' : h('s') < (era >= 2010 ? 0.45 : 0.25) ? '#1c1c1c' : '#f4f4f4';
+    const sockH = era < 1988 ? 12 : era < 2000 ? 7 : h('sh') < 0.5 ? 9 : 5;
+    const shoe = era < 1995 ? (h('sc') < 0.85 ? '#f4f4f4' : '#202020') : h('sc') < 0.45 ? '#f4f4f4' : h('sc') < 0.8 ? '#1c1c1c' : ['#d23a2a', '#2a62d2', '#f2c230', '#30b060'][Math.floor(h('scc') * 4)];
+    const sleeve = era >= 2003 && h('sl') < 0.18 ? (h('sls') < 0.5 ? 1 : -1) : 0;
+    out[pid] = { skin: f.skin, hair: f.hair, hairColor: f.hairColor, facial: f.facial, band: f.band, num, ht: p.ht ?? 79, build, socks, sockH, shoe, sleeve, knee: pn >= 4 && h('k') < 0.3, wrist: h('w') < (era < 1995 ? 0.35 : 0.2) };
   }
   return out;
 }

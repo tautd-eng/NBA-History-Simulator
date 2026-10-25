@@ -10,6 +10,7 @@
 import type { PbpEv } from '../engine/game';
 import { hash01 } from '../rng';
 import { Timeline } from './timeline';
+import { drawAthlete, shade, Body, Hands, AthPose } from './athlete';
 
 export const VW = 320, VH = 180;
 const S = 2; // drawn at 2× so text and overlays stay crisp
@@ -46,7 +47,7 @@ export interface CourtOpts {
   orbReset?: number;            // shot clock after an offensive rebound (24, or 14 from 2018–19)
   season?: number;
 }
-export interface Look { skin: string; hair: string; hairColor: string; facial: string; band: boolean; num: number; ht: number }
+export interface Look extends Body {}
 
 type Side = 'h' | 'a';
 type Pose = 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble';
@@ -61,6 +62,7 @@ interface PSprite {
   pid: string; side: Side; x: number; d: number; vx: number; vd: number; tx: number; td: number;
   spd: number; mul: number; z: number; jt: number; jd: number; jh: number;
   pose: Pose; pt: number; face: number; beh: Beh; skin: string; hair: string | null; leaving?: boolean;
+  ph: number; // stride phase
 }
 interface Fly { x0: number; d0: number; z0: number; x1: number; d1: number; z1: number; peak: number; t: number; dur: number; to?: string; done?: () => void }
 interface Ball { x: number; d: number; z: number; holder: string | null; fly: Fly | null }
@@ -307,7 +309,7 @@ export class PixelCourt {
     const pn = this.o.pos[pid] ?? 3;
     const sp: PSprite = {
       pid, side, x, d, vx: 0, vd: 0, tx: x, td: d, spd: JOG, mul: (1.06 - (pn - 1) * 0.035) * (0.96 + 0.08 * hash01(pid + 'q')),
-      z: 0, jt: 0, jd: 0, jh: 0, pose: 'stand', pt: 0, face: side === 'h' ? 1 : -1, beh: { k: 'spot' },
+      z: 0, jt: 0, jd: 0, jh: 0, pose: 'stand', pt: 0, face: side === 'h' ? 1 : -1, beh: { k: 'spot' }, ph: hash01(pid + 'ph') * 6.28,
       skin: SKIN[Math.floor(r * SKIN.length)], hair: HAIR[Math.floor(hash01(pid + 'h') * HAIR.length)],
     };
     this.players.set(pid, sp);
@@ -449,6 +451,7 @@ export class PixelCourt {
       if (wl > amax) { wx *= amax / wl; wd *= amax / wl; }
       p.vx += wx; p.vd += wd;
       p.x += p.vx * dt; p.d += p.vd * dt;
+      p.ph = (p.ph + hyp(p.vx, p.vd) * dt * (Math.PI * 2 / 8.5)) % (Math.PI * 2); // one stride cycle every ~8.5 ft
       if (Math.abs(p.vx) > 2) p.face = Math.sign(p.vx);
       else if (Math.abs(bp.x - p.x) > 1.5 && this.ball.holder !== pid) p.face = Math.sign(bp.x - p.x);
       if (p.pt > 0) { p.pt -= dt; if (p.pt <= 0) p.pose = 'stand'; }
@@ -1539,11 +1542,11 @@ export class PixelCourt {
     const b = this.ball;
     let ballDrawn = false;
     for (const p of list) {
-      if (!ballDrawn && b.d < p.d) { this.drawBall(); ballDrawn = true; }
+      if (!ballDrawn && b.d < p.d) { this.drawBallArena(); ballDrawn = true; }
       this.drawArenaPlayer(p, time);
     }
-    if (!ballDrawn) this.drawBall();
-    for (const q of this.trail) { ctx.globalAlpha = Math.max(0, 0.7 - q.t * 1.4); this.px(q.x, q.y - 1, 2, 2, '#ffd9a8'); }
+    if (!ballDrawn) this.drawBallArena();
+    for (const q of this.trail) { ctx.globalAlpha = Math.max(0, 0.6 - q.t * 1.4); this.px(q.x, q.y - 1, 1, 1, '#ffd9a8'); }
     ctx.globalAlpha = 1;
     if (this.rimFx) {
       const B = this.basket(this.rimFx.side), r = this.proj(B.x, B.d, 10);
@@ -1553,9 +1556,9 @@ export class PixelCourt {
     }
     if (b.holder && !b.fly) {
       const p = this.players.get(b.holder);
-      if (p) { const q = this.proj(p.x, p.d); const yy = q.y - 36 + Math.round(Math.sin(time * 6)); this.px(q.x - 2, yy, 5, 1, '#ffd34d'); this.px(q.x - 1, yy + 1, 3, 1, '#ffd34d'); this.px(q.x, yy + 2, 1, 1, '#ffd34d'); }
+      if (p) { const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S); const yy = q.y - top - 5 - p.z * 2.1 + Math.round(Math.sin(time * 6)); this.px(q.x - 2, yy, 5, 1, '#ffd34d'); this.px(q.x - 1, yy + 1, 3, 1, '#ffd34d'); this.px(q.x, yy + 2, 1, 1, '#ffd34d'); }
     }
-    if (this.label) { const p = this.players.get(this.label.pid); if (p) { const q = this.proj(p.x, p.d); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y - 40, '#ffffff', 6, true); } }
+    if (this.label) { const p = this.players.get(this.label.pid); if (p) { const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y - top - 10 - p.z * 2.1, '#ffffff', 6, true); } }
     if (this.label2 && this.label2.pid !== this.label?.pid) { const p = this.players.get(this.label2.pid); if (p) { const q = this.proj(p.x, p.d); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y + 5, '#ffb0b0', 5, true); } }
     for (const f of this.floaters) {
       const u = f.t / f.dur, alpha = 1 - Math.max(0, u - 0.7) / 0.3;
@@ -1570,17 +1573,21 @@ export class PixelCourt {
   private drawBench(side: 'h' | 'a', x0: number, time: number) {
     const pids = Object.keys(this.o.side).filter(pid => this.o.side[pid] === side && !this.players.has(pid)).slice(0, 8);
     this.px(x0 - 3, AY0 - 9, Math.max(5, pids.length) * 13 + 4, 5, '#3a2a1c');
+    const ctx = this.ctx;
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
     pids.forEach((pid, i) => {
-      const x = x0 + i * 13 + 4, y = AY0 - 8;
-      this.drawChibi(pid, side, x, y, time, 0.8, true);
+      const { X, Y } = this.toCanvas(x0 + i * 13 + 4, AY0 - 5);
+      const lk = this.looksOf(pid);
+      drawAthlete(ctx, X, Y, { H: this.heightPx(lk) * 0.85, face: hash01(pid + 'f') < 0.5 ? 1 : -1, pose: this.cheer > 0.6 && hash01(pid + 'c') < 0.6 ? 'celebrate' : 'sit', ph: 0, amp: 0, air: false, kit: this.kitOf(side), body: lk, shorts: this.shortsLen(), font: this.font, num: false });
     });
+    ctx.restore();
   }
 
   private looksOf(pid: string): Look {
     const l = this.o.looks?.[pid];
     if (l) return l;
     const r = hash01(pid);
-    return { skin: SKIN[Math.floor(r * SKIN.length)], hair: 'short', hairColor: '#1b1410', facial: 'none', band: false, num: Math.floor(hash01(pid + 'n') * 45), ht: 79 };
+    return { skin: SKIN[Math.floor(r * SKIN.length)], hair: 'short', hairColor: '#1b1410', facial: 'none', band: false, num: Math.floor(hash01(pid + 'n') * 45), ht: 79, build: 0.5 };
   }
 
   /** Big-headed sprite: feet at (x, y); s = scale. */
@@ -1650,14 +1657,74 @@ export class PixelCourt {
     if (!sitting && s >= 1) this.text(String(lk.num), x, y + (tor + 4) * s, trim, 3.6, false);
   }
 
+  /** player height on the canvas (pixels) */
+  private heightPx(lk: Look) { return 66 * (this.z / 1.3) * Math.max(0.86, Math.min(1.14, (lk.ht || 79) / 79)); }
+  private kitOf(side: Side) {
+    const [prim, sec] = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid);
+    return side === 'h'
+      ? { jersey: '#f4f4f2', trim: prim, trim2: sec, shorts: '#f4f4f2' }
+      : { jersey: prim, trim: sec === '#111111' || sec === '#2a2a2a' ? '#f4f4f4' : sec, trim2: shade(prim, 0.55), shorts: prim };
+  }
+  private shortsLen() { const s = this.o.season ?? 2000; return s < 1985 ? 0.3 : s < 1992 ? 0.45 : s < 2000 ? 0.75 : 0.95; }
+  private toCanvas(wx: number, wy: number) { return { X: (wx - this.camX) * this.z * S, Y: (wy - this.camY) * this.z * S }; }
+
   private drawArenaPlayer(p: PSprite, time: number) {
     const q = this.proj(p.x, p.d);
-    const x = Math.round(q.x), y = Math.round(q.y);
-    if (this.hl?.pid === p.pid) { this.ctx.strokeStyle = '#ffd34d'; this.ctx.lineWidth = 1; this.ctx.beginPath(); this.ctx.ellipse(x, y, 7, 2.5, 0, 0, Math.PI * 2); this.ctx.stroke(); }
+    const { X, Y } = this.toCanvas(q.x, q.y);
+    const lk = this.looksOf(p.pid);
+    const pose = this.poseOf(p);
     const sp = Math.hypot(p.vx, p.vd);
-    const lift = Math.round(p.z * 2.1);
-    if (lift > 0) this.px(x - 5, y, 11, 2, 'rgba(0,0,0,0.3)');
-    this.drawChibi(p.pid, p.side, x, y - lift, time, 1, false, this.poseOf(p), sp > 1.5, p.face, sp, lift > 0);
+    const lift = p.z * 2.1 * this.z * S;
+    const H = this.heightPx(lk);
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // shadow on the floor (smaller while in the air)
+    const sh = Math.max(0.5, 1 - lift / 90);
+    ctx.globalAlpha = 0.3 * sh;
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(X, Y, H * 0.17 * sh, H * 0.045 * sh, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    if (this.hl?.pid === p.pid) { ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(X, Y, H * 0.24, H * 0.07, 0, 0, Math.PI * 2); ctx.stroke(); }
+    const B = this.basket(p.side);
+    const face = pose === 'shoot' ? Math.sign(B.x - p.x) || 1 : p.face;
+    const ap: AthPose = pose === 'run' && sp < 1.5 ? 'stand' : (pose as AthPose);
+    const hands = drawAthlete(ctx, X, Y - lift, { H, face, pose: ap, ph: p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font });
+    if (this.ball.holder === p.pid && !this.ball.fly) this.drawHeldBall(hands, Y, pose, H);
+    ctx.restore();
+  }
+
+  /** the ball in the hands: bounced on a dribble, above the head on a shot */
+  private drawHeldBall(h: Hands, floorY: number, pose: Pose, H: number) {
+    const r = H * 0.07;
+    let x = h.front.x, y = h.front.y + r * 0.6;
+    if (pose === 'dribble' || pose === 'run' || pose === 'stand') {
+      const top = h.front.y + r, bottom = floorY - r;
+      const t = Math.abs(Math.sin(this.v * 7.5));
+      y = bottom - (bottom - top) * t;
+    } else if (pose === 'shoot' || pose === 'jump' || pose === 'celebrate') y = h.front.y - r * 0.9;
+    this.ballHD(x, y, r);
+  }
+  private ballHD(x: number, y: number, r: number) {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#5a2208'; ctx.beginPath(); ctx.arc(Math.round(x), Math.round(y), r + 0.8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e8762c'; ctx.beginPath(); ctx.arc(Math.round(x), Math.round(y), r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f7a35e'; ctx.beginPath(); ctx.arc(Math.round(x - r * 0.35), Math.round(y - r * 0.35), r * 0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#5a2208'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); ctx.stroke();
+  }
+  /** loose or flying ball (arena) */
+  private drawBallArena() {
+    const b = this.ball;
+    if (b.holder && !b.fly) return;
+    const g = this.proj(b.x, b.d), p = this.proj(b.x, b.d, b.z);
+    const G = this.toCanvas(g.x, g.y), P = this.toCanvas(p.x, p.y);
+    const ctx = this.ctx;
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const r = this.heightPx({ ht: 79 } as Look) * 0.07;
+    ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(G.x, G.y, r, r * 0.35, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    this.ballHD(P.x, P.y - r, r);
+    ctx.restore();
   }
 
   private drawArenaBasket(side: 'h' | 'a', time: number) {
