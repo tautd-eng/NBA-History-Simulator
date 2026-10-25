@@ -158,7 +158,8 @@ export function updateModes(lg: League, announce = true) {
   const score = new Map(strength.map(({ t }, i) => {
     const sRank = 1 - i / Math.max(1, teams.length - 1);
     const g = t.w + t.l;
-    return [t.tid, inSeason && g >= 15 ? 0.5 * sRank + 0.5 * (t.w / g) : sRank];
+    const wt = inSeason && g >= 5 ? Math.min(0.75, g / 40) : 0; // the record matters more as the season goes on
+    return [t.tid, (1 - wt) * sRank + wt * (g ? t.w / g : 0.5)];
   }));
   const order = [...teams].sort((a, b) => score.get(b.tid)! - score.get(a.tid)!);
   const n = teams.length;
@@ -170,8 +171,12 @@ export function updateModes(lg: League, announce = true) {
     const g = t.w + t.l, wp = g ? t.w / g : 0.5;
     let mode: Team['mode'] = undefined;
     const pay = payroll(lg, t.tid), hc = hardCap(lg);
-    if (t.strategy === 'contend' && (i < 3 || (i < 6 && coreAge >= 29) || (inSeason && g >= 20 && wp >= 0.65))) mode = 'allin';
-    else if (i >= n - Math.max(2, Math.round(n * 0.17)) && (young <= 1 || coreAge >= 27) && !(inSeason && g >= 20 && wp > 0.45)) mode = 'tank';
+    // the standings count as soon as there are a few games: nobody tanks with a winning record, nobody goes all-in while losing
+    // (with some hysteresis, so a team does not flip in and out every two weeks)
+    const winning = t.mode === 'tank' ? inSeason && g >= 10 && wp > 0.5 : inSeason && g >= 6 && wp > 0.4;
+    const losing = t.mode === 'allin' ? inSeason && g >= 15 && wp < 0.42 : inSeason && g >= 10 && wp < 0.5;
+    if (t.strategy === 'contend' && !losing && (i < 3 || (i < 6 && coreAge >= 29) || (inSeason && g >= 20 && wp >= 0.65))) mode = 'allin';
+    else if (i >= n - Math.max(2, Math.round(n * 0.17)) && (young <= 1 || coreAge >= 27) && !winning) mode = 'tank';
     else if (pay > hc - 0.02) mode = 'capclear';
     else if (young >= 2 && coreAge <= 25.5 && i >= 3) mode = 'rising';
     // stuck in the middle: not good enough to contend, too good to tank – the GM keeps making side moves
@@ -181,6 +186,8 @@ export function updateModes(lg: League, announce = true) {
       const txt = { allin: 'goes all-in – hunting the missing pieces for a title, at the cost of the future', tank: 'starts tanking – will sell veterans for picks and young players', retool: 'is stuck in the middle – shopping for side moves to break out', rising: 'is rising with a young core – adding to it without selling the future', capclear: 'is close to the hard cap – will look to shed salary' }[mode];
       lg.news.push({ s: lg.season, t: `${t.name} ${txt}.` });
     }
+    if (announce && t.mode === 'tank' && mode !== 'tank') lg.news.push({ s: lg.season, t: `${t.name} are playing too well to tank – the sell-off is off.` });
+    if (announce && t.mode === 'allin' && mode !== 'allin' && losing) lg.news.push({ s: lg.season, t: `${t.name} are losing – the all-in push is off.` });
     t.mode = mode;
     if (mode === 'tank') t.strategy = 'rebuild';
   });
