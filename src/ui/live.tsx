@@ -4,24 +4,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CourtCanvas, BoxPair, rosterMaps, fmtTxt, mmss, periodName } from './court';
 import { teamColor } from './pixel';
+import { Timeline } from './timeline';
+import { nav } from './nav';
 
 const SPEEDS = [[1, '×1'], [2, '×2'], [4, '×4'], [8, '×8'], [24, '×24'], [72, '×72'], [240, '×240']] as const;
-
-function clockOf(t: number) {
-  let period: number, left: number;
-  if (t <= 2880) { period = Math.min(4, Math.floor(t / 720) + 1); left = period * 720 - t; if (t === 2880) left = 0; }
-  else { const o = t - 2880; period = 5 + Math.min(Math.floor(o / 300), 20); left = (period - 4) * 300 - o; }
-  return { period, left: Math.max(0, left) };
-}
 
 export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
   const { res, pbp } = data;
   const home = lg.teams[res.home.tid], away = lg.teams[res.away.tid];
-  const endT = pbp[pbp.length - 1].t;
-  const [t, setT] = useState(() => Math.min(data.startAt ?? 0, data.pbp[data.pbp.length - 1].t));
+  // broadcast timeline: live play at game speed, extra time for dead balls
+  const tl = useMemo(() => new Timeline(pbp, (nav.lg?.season ?? lg.season) >= 2019 ? 14 : 24), [pbp]);
+  const endV = tl.end;
+  const late = (data.startAt ?? 0) >= 2580;
+  const [v, setV] = useState(() => Math.min(tl.vOfGame(data.startAt ?? 0), endV));
   const [playing, setPlaying] = useState(true);
-  const [speed, setSpeed] = useState(24);
-  const [view, setView] = useState<'court' | 'arena' | 'chart'>(() => (data.startAt ?? 0) >= 2580 ? 'arena' : 'court');
+  const [speed, setSpeed] = useState(late ? 2 : 4);
+  const [view, setView] = useState<'court' | 'arena' | 'chart'>(() => late ? 'arena' : 'court');
+  const t = tl.gameAt(v);
+  const setT = (g: number) => setV(Math.min(endV, tl.vOfGame(g)));
   const raf = useRef(0);
   const holdRef = useRef(hold);
   holdRef.current = hold;
@@ -31,9 +31,9 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
     let last = performance.now();
     const step = (now: number) => {
       const dt = (now - last) / 1000; last = now;
-      setT(x => {
-        const nx = Math.min(endT, x + dt * speed);
-        if (nx >= endT) setPlaying(false);
+      setV(x => {
+        const nx = Math.min(endV, x + dt * speed);
+        if (nx >= endV) setPlaying(false);
         return nx;
       });
       raf.current = requestAnimationFrame(step);
@@ -48,12 +48,12 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
     return () => window.removeEventListener('keydown', k);
   }, []);
 
-  let n = 0;
-  while (n < pbp.length && pbp[n].t <= t) n++;
+  const n = tl.countAt(v);
   const shown = pbp.slice(0, n);
   const lastEv = shown[shown.length - 1] ?? { hs: 0, as: 0 };
-  const done = t >= endT;
-  const { period, left } = done ? { period: pbp[pbp.length - 1].p, left: 0 } : clockOf(t);
+  const done = v >= endV - 1e-6;
+  const endT = pbp[pbp.length - 1].t;
+  const { period, left } = done ? { period: pbp[pbp.length - 1].p, left: 0 } : tl.clockAt(v);
 
   const maps = useMemo(() => rosterMaps([res.home.players, res.away.players].map(b => b.map((p: any) => ({ pid: p.pid, name: p.name }))), pid => lg.players[pid]?.pos ?? 'F'), [res]);
 
@@ -109,7 +109,7 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
           <div className="sb-team home"><span className="sb-pts">{lastEv.hs}</span><span className="sb-name"><span className="full">{home.name}</span><span className="abbr">{home.abbr}</span></span></div>
         </div>
         <div className="live-controls">
-          <button className="primary" onClick={() => { if (done) { setT(0); setPlaying(true); } else setPlaying(p => !p); }}>{done ? 'Watch again' : playing ? 'Pause' : 'Play'}</button>
+          <button className="primary" onClick={() => { if (done) { setV(0); setPlaying(true); } else setPlaying(p => !p); }}>{done ? 'Watch again' : playing ? 'Pause' : 'Play'}</button>
           <div className="seg" role="group" aria-label="Speed">
             {SPEEDS.map(([v, l]) => <button key={v} className={speed === v ? 'on' : ''} onClick={() => setSpeed(v)}>{l}</button>)}
           </div>
@@ -119,14 +119,14 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
             <button className={view === 'chart' ? 'on' : ''} onClick={() => setView('chart')}>Shot chart</button>
           </div>
           <button disabled={done} onClick={() => { const nx = period < 4 ? period * 720 : period === 4 ? 2880 : 2880 + (period - 4) * 300; setT(Math.min(endT, nx)); }}>Next quarter ⏭</button>
-          <button disabled={done || t >= 2580} onClick={() => { setT(Math.min(endT, 2580)); setView('arena'); }}>Last 5 min</button>
-          <button onClick={() => { setT(endT); setPlaying(false); }}>To the end</button>
+          <button disabled={done || t >= 2580} onClick={() => { setT(Math.min(endT, 2580)); setView('arena'); setSpeed(2); }}>Last 5 min</button>
+          <button onClick={() => { setV(endV); setPlaying(false); }}>To the end</button>
           <button className="ghost" onClick={close}>Close</button>
         </div>
         <div className="live-grid">
           <div className="live-left">
             {view !== 'chart' ? (
-              <CourtCanvas mode={view} home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos} events={pbp} upto={n} speed={Math.max(0.55, speed / 16)} />
+              <CourtCanvas mode={view} home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos} events={pbp} v={v} />
             ) : (
               <div className="court-wrap">
                 <svg viewBox="-1 -1 52 36" className="court" role="img" aria-label="Shot chart">

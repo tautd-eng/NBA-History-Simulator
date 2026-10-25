@@ -24,41 +24,38 @@ function looksFor(names: Record<string, string>) {
   return out;
 }
 
-export function CourtCanvas({ home, away, names, sides, pos, events, upto, speed = 1, onIdle, lineups, offense, mode = 'classic' }: any) {
+/**
+ * The pixel court. Live viewer: pass `v` (broadcast time from the timeline). Clutch mode: pass `upto`
+ * (events to play) and the court plays forward on its own at `speed`, calling onIdle when it catches up.
+ */
+export function CourtCanvas({ home, away, names, sides, pos, events, v, upto, speed = 1, onIdle, onShown, mode = 'classic' }: any) {
   const ref = useRef<HTMLCanvasElement>(null);
   const court = useRef<PixelCourt | null>(null);
-  const pushed = useRef(0);
   const idle = useRef(onIdle);
   idle.current = onIdle;
+  const shown = useRef(onShown);
+  shown.current = onShown;
 
   useEffect(() => {
-    const c = new PixelCourt(ref.current!, { home, away, names, side: sides, pos, style: mode, looks: mode === 'arena' ? looksFor(names) : undefined });
+    const season = nav.lg?.season ?? 2000;
+    const c = new PixelCourt(ref.current!, { home, away, names, side: sides, pos, style: mode, looks: mode === 'arena' ? looksFor(names) : undefined, orbReset: season >= 2019 ? 14 : 24, season });
     court.current = c;
     c.onIdle = () => idle.current?.();
-    if (lineups) { c.setLineups(lineups.h, lineups.a, true); c.formation(offense ?? 'h', true); }
-    const e0 = events[upto - 1];
-    if (lineups && e0) c.clock = { period: e0.p, left: e0.c ?? 0, hs: e0.hs, as: e0.as };
-    if (!lineups) c.push(events.slice(0, upto));
-    pushed.current = upto;
+    c.onShown = (n: number) => shown.current?.(n);
+    c.speed = speed;
+    if (upto == null) c.ext = v ?? 0;
+    c.setEvents(events);
+    if (upto != null) c.setUpto(upto);
     try { (document as any).fonts?.load?.('8px "Silkscreen"'); } catch { /* font optional */ }
     c.start();
     return () => c.stop();
   }, [home.tid, away.tid]);
 
-  useEffect(() => { court.current?.setStyle(mode, mode === 'arena' ? looksFor(names) : undefined); }, [mode]);
-
-  useEffect(() => {
-    const c = court.current;
-    if (!c) return;
-    if (upto < pushed.current) {
-      // replay from the start
-      c.players.clear(); c.queue = []; c.anim = null;
-      pushed.current = 0;
-    }
-    if (upto > pushed.current) { c.push(events.slice(pushed.current, upto)); pushed.current = upto; }
-  }, [upto, events]);
-
+  useEffect(() => { const c = court.current; if (c && c.tl && (c.tl.evs !== events || c.tl.items.length !== events.length)) c.setEvents(events); }, [events, events.length]);
+  useEffect(() => { const c = court.current; if (c && upto != null) { if (c.tl?.items.length !== events.length) c.setEvents(events); c.setUpto(upto); } }, [upto]);
+  useEffect(() => { if (court.current && upto == null) court.current.ext = v ?? 0; }, [v]);
   useEffect(() => { if (court.current) court.current.speed = speed; }, [speed]);
+  useEffect(() => { court.current?.setStyle(mode, mode === 'arena' ? looksFor(names) : undefined); }, [mode]);
 
   return <canvas ref={ref} className="pixel-court" aria-label="Court" />;
 }

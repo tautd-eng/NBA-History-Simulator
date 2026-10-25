@@ -25,8 +25,9 @@ export function ClutchGame({ lg, cs, onFinish, close, openPlayer }: any) {
   const [waiting, setWaiting] = useState(false);
   const [autoOff, setAutoOff] = useState(false);
   const [defCall, setDefCall] = useState<'normal' | 'pressure' | 'foul'>('normal');
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(2);
   const [mode, setMode] = useState<'arena' | 'classic'>('arena');
+  const [shownN, setShownN] = useState<number>(cs.state?.logLen ?? 0);
   const [five, setFive] = useState<string[] | null>(null);
   const [pick, setPick] = useState<string | null>(null);
   const [toReq, setToReq] = useState(false);
@@ -97,7 +98,8 @@ export function ClutchGame({ lg, cs, onFinish, close, openPlayer }: any) {
   });
 
   // scoreboard numbers follow the animation: use the last shown event
-  const shownEv = log[Math.max(0, upto - 1)] ?? { hs: st?.hs ?? 0, as: st?.as ?? 0, p: 4, c: 300 };
+  const shownUpto = Math.min(upto, Math.max(startLen.current, shownN));
+  const shownEv = log[Math.max(0, shownUpto - 1)] ?? { hs: st?.hs ?? 0, as: st?.as ?? 0, p: 4, c: 300 };
   const final = cs.result;
   const userRows = (cs.state ? (userSide === 'h' ? cs.state.h : cs.state.a) : []).map((p: any) => ({ ...p }));
   const onIds = five ?? userRows.filter((p: any) => p.on).map((p: any) => p.pid);
@@ -117,7 +119,7 @@ export function ClutchGame({ lg, cs, onFinish, close, openPlayer }: any) {
     if (final) return (side === 'h' ? final.home : final.away).players.filter((p: any) => p.st.min > 0).map((p: any) => ({ pid: p.pid, name: p.name, st: p.st, on: false })).sort((a: any, b: any) => b.st.min - a.st.min);
     return (side === 'h' ? st.h : st.a).filter((p: any) => p.st.min > 0 || p.on).map((p: any) => ({ pid: p.pid, name: p.name, st: p.st, on: p.on })).sort((a: any, b: any) => Number(b.on) - Number(a.on) || b.st.min - a.st.min);
   };
-  const feed = log.slice(startLen.current, upto).slice(-14).reverse();
+  const feed = log.slice(startLen.current, shownUpto).slice(-14).reverse();
   const won = final ? (userSide === 'h' ? final.home.pts > final.away.pts : final.away.pts > final.home.pts) : null;
   const q = st?.q ?? { h: final?.home.q ?? [], a: final?.away.q ?? [] };
 
@@ -135,7 +137,7 @@ export function ClutchGame({ lg, cs, onFinish, close, openPlayer }: any) {
 
         <div className="clutch-stage">
           <CourtCanvas mode={mode} home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos}
-            events={log} upto={upto} speed={speed} onIdle={() => idleRef.current()} lineups={startLineups.current} offense={startOff.current} />
+            events={log} upto={upto} speed={speed} onIdle={() => idleRef.current()} onShown={(n: number) => setShownN(n)} />
           {stage === 'intro' && (
             <div className="stage-card">
               <p className="eyebrow">Last 5 minutes · you coach the {userTeam.name}</p>

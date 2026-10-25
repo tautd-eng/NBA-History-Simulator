@@ -31,6 +31,7 @@ export const C = {
   home: 0.045, def: 0.25, stlDef: 0.06, usgEff: 0.35,
   fatigue: 0.55, fatBase: 0.8, tpa: 0.104, drain: 0.00062, recover: 0.0011,
   possSec: 1.09, putback3: 0.45,
+  fbStl: 0.55, fbDrb: 0.15, fbMake: 0.45, fbThree: 0.6, lateClock: 0.2, // transition and shot-clock pressure
   star: 1.35, stay: 1.2, depth: 10, minAlpha: 1.0, maxMin: 40,
   mmDef: 0.5, mmHt: 0.01, mmUsg: 0.15, mmSize: 0.03, // matchups: own defender's weight, size edge inside, shot selection toward mismatches
 };
@@ -105,7 +106,7 @@ export interface GameOpts { season: number; po: boolean; rng: Rng; pbp?: boolean
 
 /** Interactive control (clutch mode): from `fromRem` seconds left in the 4th quarter the game pauses before every possession. */
 export interface Control { side: 'h' | 'a'; fromRem: number; timeouts: number }
-export type OffCall = 'auto' | 'three' | 'inside' | 'iso' | 'milk' | 'quick';
+export type OffCall = 'auto' | 'three' | 'inside' | 'iso' | 'milk' | 'quick' | 'two4one' | 'hold';
 export type DefCall = 'normal' | 'pressure' | 'foul';
 export interface Decision { off?: OffCall; pid?: string; def?: DefCall; timeout?: boolean; five?: string[] }
 export interface PState { pid: string; name: string; pos: string; e: number; fouls: number; on: boolean; st: StatLine; ovr: number }
@@ -125,7 +126,9 @@ export interface PbpEv {
   hs: number; as: number;
   x?: number; y?: number;
   m?: string;                               // primary defender on the play (matchup)
-  v?: string;                               // turnover type: strip, pick (intercepted pass), bad (pass out of bounds), travel, oob
+  v?: string;                               // turnover type: strip, pick (intercepted pass), bad (pass out of bounds), travel, oob, clock (shot clock)
+  fb?: 1;                                   // fast break
+  call?: string;                            // the offence's situational call (milk, quick, hold, two4one, three)
   d?: [string, string, number][];          // stat deltas [pid, stat, n]
   on?: { h: string[]; a: string[] };       // lineups after a substitution
 }
@@ -258,6 +261,9 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   let elapsed = 0;
   let clutch = false;
   let offCall: OffCall = 'auto', defCall: DefCall = 'normal', isoPid: string | null = null;
+  // how the last possession ended decides whether the next one can be a fast break
+  let ended: 'make' | 'drb' | 'stl' | 'dead' = 'dead';
+  let fastBreak = false, lateClock = false;
   let userFive: string[] | null = null;
   let timeoutsLeft = ctl?.timeouts ?? 0;
 
@@ -312,14 +318,14 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     if (prevH.length && !parts.length) return;
     ev('sub', null, parts.join(' · ') || 'Starting lineups', { on: { h: H.on.map(g => g.p.id), a: A.on.map(g => g.p.id) } });
   };
-  const shotSpot = (three: boolean, actor: GP): { x: number; y: number; rim: boolean } => {
+  const shotSpot = (three: boolean, actor: GP, fb = false): { x: number; y: number; rim: boolean } => {
     if (three) {
       if (cr.chance(0.3)) return { x: cr.chance(0.5) ? 2.5 + cr.next() : 46.5 - cr.next(), y: 2 + cr.next() * 9, rim: false };
       const a = (cr.next() - 0.5) * 2.4;
       const r = 24 + cr.next() * 3;
       return { x: 25 + Math.sin(a) * r, y: 5.25 + Math.cos(a) * r, rim: false };
     }
-    const rim = cr.chance(actor.posNum >= 4 ? 0.62 : 0.42);
+    const rim = cr.chance(fb ? 0.85 : actor.posNum >= 4 ? 0.62 : 0.42);
     const a = (cr.next() - 0.5) * Math.PI * 0.95;
     const r = rim ? 1 + cr.next() * 4 : 8 + cr.next() * 12;
     return { x: 25 + Math.sin(a) * r, y: Math.max(1, 5.25 + Math.cos(a) * r), rim };
@@ -363,19 +369,27 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         if (dec.five) { userFive = dec.five; applyUserFive(); }
         if (off === user) { offCall = dec.off ?? 'auto'; isoPid = dec.pid ?? null; }
         else defCall = dec.def ?? 'normal';
-        aiCalls(off, def, period, rem);
       }
+      aiCalls(off, def, period, rem);
+      // transition: a steal or a long rebound starts a break before the defence is set
+      const pushes = offCall === 'quick' || offCall === 'two4one' ? 1.5 : offCall === 'milk' || offCall === 'hold' ? 0 : 1;
+      fastBreak = defCall !== 'foul' && rem > 4 && rng.chance((ended === 'stl' ? C.fbStl : ended === 'drb' ? C.fbDrb : 0) * pushes * (1 + 0.15 * off.paceZ));
+      ended = 'dead';
       // --- one possession (may contain several plays through offensive rebounds)
       let first = true;
       let possEnded = false;
       while (!possEnded) {
-        let dur = first ? T0 * (0.35 + 1.3 * rng.next()) : T0 * (0.25 + 0.5 * rng.next());
-        if (first && clutch) dur = callDuration(dur, rem);
-        dur = Math.max(2, dur);
+        // possession length: most shots come mid-clock, few with the clock nearly gone
+        let dur = first ? T0 * (0.3 + 0.6 * (rng.next() + rng.next())) : T0 * (0.25 + 0.5 * rng.next());
+        if (first && fastBreak) dur = 2 + 4 * rng.next();
+        else if (first) dur = callDuration(dur, rem);
+        dur = Math.max(2, Math.min(dur, first ? 23.7 : 13.7)); // within the shot clock
+        lateClock = first && !fastBreak && dur >= 19;
         if (dur > rem) dur = rem;
         tick(dur); rem -= dur; elapsed += dur; curRem = rem;
         const res = first && defCall === 'foul' ? intentionalFoul(off, def) : play(off, def, !first);
         first = false;
+        fastBreak = false;
         if (res !== 'orb') possEnded = true;
         if (rem <= 0) possEnded = true;
       }
@@ -416,26 +430,32 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     side.on = five;
   }
   /** The AI side's late-game strategy in interactive games. */
+  /** Situational strategy of every AI-coached side (the user's calls stand in clutch mode). */
   function aiCalls(off: Side, def: Side, period: number, rem: number) {
-    if (!ctl) return;
-    const user = ctl.side === 'h' ? H : A;
-    const late = period >= 4;
-    if (off !== user && late) {
-      const lead = off.pts - def.pts;
-      if (lead > 0 && rem < 60) offCall = 'milk';
-      else if (lead <= 0 && lead >= -2 && rem < 24) offCall = 'milk';
-      else if (lead === -3 && rem < 30) offCall = 'three';
-      else if (lead < -3 && rem < 60) offCall = 'quick';
+    const user = ctl && clutch ? (ctl.side === 'h' ? H : A) : null;
+    const lead = off.pts - def.pts;
+    const late = period >= 4 && Math.abs(lead) <= 15;
+    if (off !== user) {
+      // late game: protect a lead with the whole shot clock, play for the last shot when tied, chase points when behind
+      if (late && lead > 0 && rem < 60) offCall = 'milk';
+      else if (late && lead <= 0 && lead >= -2 && rem < 24) offCall = 'milk';
+      else if (late && lead === -3 && rem < 30) offCall = 'three';
+      else if (late && lead < -3 && rem < 75) offCall = 'quick';
+      // end of a quarter: take a quick shot to get the ball back (2-for-1), or hold for the last shot
+      else if (offCall === 'auto' && rem > 29 && rem < 40) offCall = 'two4one';
+      else if (offCall === 'auto' && rem <= 26 && rem > 3) offCall = 'hold';
     }
-    if (def !== user && late) {
-      const trail = off.pts - def.pts;
-      if (trail >= 3 && trail <= 9 && rem < 40 && rem > 2) defCall = 'foul';
+    if (def !== user && late && period >= 4) {
+      // trailing late: foul to stop the clock and send a poor shooter to the line
+      if (lead >= 3 && lead <= 9 && rem < 40 && rem > 2) defCall = 'foul';
     }
   }
   function callDuration(dur: number, rem: number) {
-    if (defCall === 'foul') return 1.5 + 2.5 * cr.next();
-    if (offCall === 'milk') return rem <= 24 ? Math.max(1, rem - 1 - cr.next() * 1.5) : 18 + cr.next() * 5;
-    if (offCall === 'quick') return 3 + cr.next() * 4;
+    if (defCall === 'foul') return 1.5 + 2.5 * rng.next();
+    if (offCall === 'milk') return rem <= 24 ? Math.max(1, rem - 1 - rng.next() * 1.5) : 18 + rng.next() * 5;
+    if (offCall === 'hold') return Math.max(1, rem - 1 - rng.next() * 2.5);
+    if (offCall === 'quick') return 3 + rng.next() * 4;
+    if (offCall === 'two4one') return Math.max(3, rem - 30 + rng.next() * 2);
     if (defCall === 'pressure') return dur * 0.85;
     return dur;
   }
@@ -464,6 +484,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       if (iso && cr.chance(0.85)) actor = iso;
     }
     const callShift = offCall === 'quick' ? -0.12 : offCall === 'milk' ? -0.03 : offCall === 'inside' ? 0.04 : 0;
+    const fb = fastBreak && !afterOrb, lc = lateClock && !afterOrb;
+    const tag: Partial<PbpEv> = { ...(fb ? { fb: 1 as const } : {}), ...(offCall !== 'auto' && !afterOrb ? { call: offCall } : {}) };
     const fat = C.fatigue * Math.max(0, C.fatBase - actor.e);
     const homeAdv = off.home ? C.home : -C.home;
     const md = guard(actor);
@@ -473,7 +495,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
 
     // turnover
     // ball pressure: his own defender's hands count as much as the team's
-    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + (offCall === 'milk' ? 0.1 : 0));
+    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0));
     if (rng.chance(pTov)) {
       inc(actor, 'tov');
       const sumStl = dOn.reduce((a, g) => a + g.stl, 0);
@@ -481,18 +503,19 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         const st = dOn[rng.weighted(dOn.map(g => g.stl * (g === md ? 2.2 : 1)))];
         inc(st, 'stl');
         // his own man strips him; anyone else jumps a passing lane
-        if (log) ev('tov', off, st === md ? `${short(st.p.name)} strips ${an}` : `${an}'s pass is picked off by ${short(st.p.name)}`, { m: md.p.id, v: st === md ? 'strip' : 'pick' });
+        ended = 'stl';
+        if (log) ev('tov', off, st === md ? `${short(st.p.name)} strips ${an}` : `${an}'s pass is picked off by ${short(st.p.name)}`, { m: md.p.id, v: st === md ? 'strip' : 'pick', ...tag });
       } else if (log) {
         const r = cr.next();
-        const v = r < 0.45 ? 'bad' : r < 0.7 ? 'travel' : 'oob';
-        ev('tov', off, v === 'bad' ? `${an} throws it away` : v === 'travel' ? `${an} travels` : `${an} loses it out of bounds`, { m: md.p.id, v });
+        const v = lc && r < 0.4 ? 'clock' : r < 0.45 ? 'bad' : r < 0.7 ? 'travel' : 'oob';
+        ev('tov', off, v === 'clock' ? `Shot clock violation on ${off === H ? '{h}' : '{a}'}` : v === 'bad' ? `${an} throws it away` : v === 'travel' ? `${an} travels` : `${an} loses it out of bounds`, { m: md.p.id, v, ...tag });
       }
       return 'end';
     }
     // free-throw trip without a field-goal attempt (shooting foul / bonus)
     const defPf = dOn.reduce((a, g) => a + g.pf, 0) / 5;
     const r = Math.max(0, actor.drw - C.andOne * 0.5);
-    const qTrip = Math.min(0.45, (r / (2 + r)) * C.foulTrip * E.ftr * Math.sqrt(defPf / leaguePf) * (offCall === 'inside' ? 1.35 : 1));
+    const qTrip = Math.min(0.45, (r / (2 + r)) * C.foulTrip * E.ftr * Math.sqrt(defPf / leaguePf) * (offCall === 'inside' ? 1.35 : 1) * (fb ? 1.2 : 1));
     if (rng.chance(qTrip)) {
       foulOn(def);
       return ftTrip(off, def, actor, 2);
@@ -501,14 +524,15 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     let tprAdj = sigm(logit(Math.min(0.97, Math.max(0.003, actor.tpr))) + C.tpa + E.tpa);
     if (!afterOrb && offCall === 'three') tprAdj = Math.max(tprAdj, 0.85);
     if (offCall === 'inside') tprAdj *= 0.15;
+    if (fb) tprAdj *= C.fbThree;
     const three = rng.chance(afterOrb ? tprAdj * C.putback3 : tprAdj);
     // defence on the shot: his own defender matters most, help defence (team) the rest; size inside
     const defOn = C.mmDef * md.def + (1 - C.mmDef) * defZ;
     const size = three ? 0 : C.mmHt * Math.max(-8, Math.min(8, actor.p.ht - md.p.ht));
-    const shift = homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + callShift + (defCall === 'pressure' ? 0.08 : 0);
+    const shift = homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + callShift + (defCall === 'pressure' ? 0.08 : 0) + (fb && !three ? C.fbMake : 0) - (lc ? C.lateClock : 0);
     inc(actor, 'fga');
     if (three) inc(actor, 'tpa');
-    const spot = log ? shotSpot(three, actor) : { x: 0, y: 0, rim: false };
+    const spot = log ? shotSpot(three, actor, fb) : { x: 0, y: 0, rim: false };
     let made: boolean;
     let blocker: GP | null = null;
     if (three) {
@@ -531,7 +555,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       const pAst = Math.min(0.95, C.ast * E.ast * mates.reduce((a, g) => a + g.ast, 0) * (three ? 1.18 : 0.94));
       let astTxt = '';
       if (rng.chance(pAst)) { const as = mates[rng.weighted(mates.map(g => g.ast))]; inc(as, 'ast'); astTxt = ` (assist ${short(as.p.name)})`; }
-      ev(three ? 'make3' : 'make2', off, three ? `${an} hits a three${astTxt}` : `${an} scores ${what}${astTxt}`, { x: spot.x, y: spot.y, m: md.p.id });
+      ended = 'make';
+      ev(three ? 'make3' : 'make2', off, three ? `${an} hits a three${astTxt}` : `${an} scores ${fb ? 'on the break' : what}${astTxt}`, { x: spot.x, y: spot.y, m: md.p.id, ...tag });
       if (!three && rng.chance(C.andOne)) {
         foulOn(def);
         ftTrip(off, def, actor, 1);
@@ -539,7 +564,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       }
       return 'end';
     }
-    ev(three ? 'miss3' : 'miss2', off, blocker ? `${short(blocker.p.name)} blocks ${an}` : three ? `${an} misses a three` : `${an} misses ${what === 'at the rim' ? 'at the rim' : what === 'a putback' ? 'the putback' : 'a mid-range jumper'}`, { x: spot.x, y: spot.y, m: md.p.id });
+    ev(three ? 'miss3' : 'miss2', off, blocker ? `${short(blocker.p.name)} blocks ${an}` : three ? `${an} misses a three` : `${an} misses ${what === 'at the rim' ? 'at the rim' : what === 'a putback' ? 'the putback' : 'a mid-range jumper'}`, { x: spot.x, y: spot.y, m: md.p.id, ...tag });
     return rebound(off, def, false);
   }
 
@@ -551,7 +576,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       if (lastMade) { inc(actor, 'ftm'); inc(actor, 'pts'); score(off, 1); }
       ev(lastMade ? 'ft' : 'ftm', off, `${log ? short(actor.p.name) : ''} free throw ${i + 1}/${n}: ${lastMade ? 'good' : 'missed'}`);
     }
-    if (lastMade) return 'end';
+    if (lastMade) { ended = 'make'; return 'end'; }
     return rebound(off, def, true);
   }
 
@@ -566,6 +591,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     }
     const g = def.on[rng.weighted(def.on.map(g => g.drb))];
     inc(g, 'drb');
+    ended = 'drb';
     ev('drb', def, `${log ? short(g.p.name) : ''} grabs the rebound`);
     return 'end';
   }
