@@ -9,6 +9,8 @@ const S = 2; // drawn at 2× so text and overlays stay crisp
 const Z = 1.4; // broadcast camera zoom: follows the ball across the court
 const FAR_Y = 74, NEAR_Y = 168, FAR_L = 50, FAR_R = 270, NEAR_L = 6, NEAR_R = 314;
 const LEN = 94, WID = 50;
+// arena court: flat, seen from the side stands
+const AX0 = 8, AFX = (VW - 16) / 94, AY0 = 62, AFY = 2.0;
 
 // Team colours (franchise id → [primary, secondary]). Plain colours, no marks.
 const COLORS: Record<string, [string, string]> = {
@@ -32,7 +34,10 @@ export interface CourtOpts {
   names: Record<string, string>;
   side: Record<string, 'h' | 'a'>;
   pos: Record<string, number>; // 1 (PG) … 5 (C)
+  style?: 'classic' | 'arena';  // arena: flat broadcast court with big sprites, benches and a score bug
+  looks?: Record<string, Look>; // per player: skin, hair, number
 }
+export interface Look { skin: string; hair: string; hairColor: string; facial: string; band: boolean; num: number; ht: number }
 
 interface PSprite { pid: string; side: 'h' | 'a'; x: number; d: number; tx: number; td: number; z: number; pose: 'run' | 'shoot' | 'stand'; skin: string; hair: string | null; leaving?: boolean }
 interface Ball { x: number; d: number; z: number; holder: string | null; fly: null | { x0: number; d0: number; z0: number; x1: number; d1: number; z1: number; peak: number; t: number; dur: number; done?: () => void } }
@@ -72,6 +77,9 @@ export class PixelCourt {
   rimFx: { side: 'h' | 'a'; made: boolean; t: number } | null = null;
   hl: { pid: string; t: number } | null = null; // shooter highlight
   caption: { text: string; side: 'h' | 'a' | ''; kind: string; t: number } | null = null;
+  z = Z;
+  arena = false;
+  clock: { period: number; left: number; hs: number; as: number } | null = null;
   camX = (VW - VW / Z) / 2;
   camY = VH - VH / Z;
   font = '"Silkscreen", "Courier New", monospace';
@@ -81,6 +89,7 @@ export class PixelCourt {
     this.ctx = canvas.getContext('2d')!;
     this.ctx.imageSmoothingEnabled = false;
     this.o = o;
+    this.setStyle(o.style ?? 'classic', o.looks);
     // crowd
     const pal = ['#d94f4f', '#e8c547', '#4f86d9', '#e6e6e6', '#58b368', '#b05fd1', '#f08a3c', '#7a7a7a', '#2f2f2f'];
     for (let y = 20; y < FAR_Y - 12; y += 4) {
@@ -106,6 +115,7 @@ export class PixelCourt {
 
   // ------------------------------------------------------------ geometry
   proj(x: number, d: number, z = 0) {
+    if (this.arena) return { x: AX0 + x * AFX, y: AY0 + d * AFY - z * 2.1, sc: AFX };
     const t = Math.max(-0.15, Math.min(1.2, d / WID));
     const l = FAR_L + t * (NEAR_L - FAR_L), r = FAR_R + t * (NEAR_R - FAR_R);
     const sc = (r - l) / LEN;
@@ -182,6 +192,14 @@ export class PixelCourt {
   }
 
   // ------------------------------------------------------------ events
+  /** Switch between the classic broadcast court and the arena view. */
+  setStyle(style: 'classic' | 'arena', looks?: Record<string, Look>) {
+    this.arena = style === 'arena';
+    if (looks) this.o.looks = looks;
+    this.z = this.arena ? 1.3 : Z;
+    this.camY = this.arena ? 24 : VH - VH / this.z;
+    this.camX = Math.max(0, Math.min(VW - VW / this.z, this.camX));
+  }
   push(evs: PbpEv[]) { this.queue.push(...evs); this.idleFired = false; }
   get busy() { return !!this.anim || this.queue.length > 0; }
 
@@ -212,6 +230,7 @@ export class PixelCourt {
   }
 
   private startEvent(e: PbpEv) {
+    this.clock = { period: e.p, left: e.c ?? 0, hs: e.hs, as: e.as };
     const steps: Step[] = [];
     let dur = 0.25;
     const k = e.k;
@@ -428,6 +447,7 @@ export class PixelCourt {
 
   /** apply an event without animation (catching up) */
   private snapEvent(e: PbpEv) {
+    this.clock = { period: e.p, left: e.c ?? 0, hs: e.hs, as: e.as };
     if (e.on) this.setLineups(e.on.h, e.on.a, true);
     if (e.k !== 'sub') this.setCaption(e);
     const k = e.k;
@@ -492,7 +512,7 @@ export class PixelCourt {
     if (this.caption) this.caption.t += dt;
     // camera: keep the ball (or the action) in view, pan smoothly
     const bp = this.proj(this.ball.x, this.ball.d);
-    const target = Math.max(0, Math.min(VW - VW / Z, bp.x - VW / Z / 2));
+    const target = Math.max(0, Math.min(VW - VW / this.z, bp.x - VW / this.z / 2));
     this.camX += (target - this.camX) * Math.min(1, dt * 3);
     if (this.label) { this.label.t -= dt; if (this.label.t <= 0) this.label = null; }
     if (this.label2) { this.label2.t -= dt; if (this.label2.t <= 0) this.label2 = null; }
@@ -519,7 +539,9 @@ export class PixelCourt {
 
   draw(time: number) {
     const ctx = this.ctx;
-    ctx.setTransform(S * Z, 0, 0, S * Z, -this.camX * S * Z, -this.camY * S * Z);
+    const Zz = this.z;
+    ctx.setTransform(S * Zz, 0, 0, S * Zz, -this.camX * S * Zz, -this.camY * S * Zz);
+    if (this.arena) { this.drawArena(time); return; }
     // arena
     this.px(0, 0, VW, VH, '#141821');
     this.px(0, 0, VW, 17, '#0c0f15');
@@ -629,18 +651,19 @@ export class PixelCourt {
     for (const f of this.floaters) {
       const u = f.t / f.dur;
       const alpha = 1 - Math.max(0, u - 0.7) / 0.3;
-      if (f.at) { const q = this.proj(f.at.x, f.at.d, f.at.z); this.text(f.text, Math.max(this.camX + 18, Math.min(this.camX + VW / Z - 18, q.x)), Math.max(this.camY + 24, q.y - u * 8), f.color, f.big ? 13 : 9, true, alpha); }
+      if (f.at) { const q = this.proj(f.at.x, f.at.d, f.at.z); this.text(f.text, Math.max(this.camX + 18, Math.min(this.camX + VW / this.z - 18, q.x)), Math.max(this.camY + 24, q.y - u * 8), f.color, f.big ? 13 : 9, true, alpha); }
       else this.text(f.text, VW / 2, (f.big ? 80 : 92) - u * 10, f.color, f.big ? 16 : 8, true, alpha, true);
     }
     this.drawCaption();
   }
 
   /** Top band: what is happening right now, in plain words. */
-  private drawCaption() {
+  private drawCaption(bottom = false) {
     const ctx = this.ctx;
     const c = this.caption;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const H = 17 * S;
+    if (bottom) ctx.translate(0, VH * S - H);
     ctx.fillStyle = 'rgba(10,13,19,0.88)'; ctx.fillRect(0, 0, VW * S, H);
     if (!c) return;
     const fade = Math.min(1, c.t * 6);
@@ -669,6 +692,7 @@ export class PixelCourt {
     ctx.fillStyle = good ? '#d9ffe4' : bad ? '#ffe0e0' : '#f4efe2';
     ctx.fillText(t, x, H / 2 + 1);
     ctx.globalAlpha = 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 
   private drawBasket(side: 'h' | 'a', time: number) {
@@ -729,6 +753,209 @@ export class PixelCourt {
     if (p.hair) this.px(x - 1, Y - 16, 3, 1, p.hair);
   }
 
+  // ------------------------------------------------------------ arena mode
+  private drawArena(time: number) {
+    const ctx = this.ctx;
+    const [hc1, hc2] = teamColor(this.o.home.tid), [ac1] = teamColor(this.o.away.tid);
+    // stands
+    this.px(0, 0, VW, VH, '#151a26');
+    for (const c of this.crowd) {
+      const jump = this.cheer > 0 ? Math.max(0, Math.sin(time * 14 + c.ph)) * 2 * Math.min(1, this.cheer) : Math.sin(time * 1.5 + c.ph) > 0.97 ? 1 : 0;
+      const cy = 22 + (c.y - 20) * 0.4;
+      this.px(c.x, cy - jump, 3, 3, c.c);
+    }
+    // seats row and benches
+    this.px(0, AY0 - 22, VW, 18, '#1d2331');
+    for (let x = 2; x < VW; x += 7) this.px(x, AY0 - 16, 5, 6, '#2a3244');
+    this.drawBench('h', 18, time); this.drawBench('a', VW - 18 - 5 * 13, time);
+    // scorer's table
+    this.px(VW / 2 - 34, AY0 - 20, 68, 14, '#0e1220'); this.px(VW / 2 - 34, AY0 - 20, 68, 3, hc1);
+    this.px(VW / 2 - 30, AY0 - 15, 60, 7, '#1f3a8a');
+    this.px(0, AY0 - 4, VW, 4, '#0b0e14');
+    // floor
+    const fl = this.proj(0, 0), fr = this.proj(LEN, WID);
+    this.px(fl.x - 8, fl.y - 2, fr.x - fl.x + 16, fr.y - fl.y + 12, '#e7c08a');
+    for (let y = Math.floor(fl.y - 2); y < fr.y + 10; y += 3) {
+      const off = (y * 13) % 17;
+      this.px(fl.x - 8, y, fr.x - fl.x + 16, 1, (y % 2) ? '#ecc794' : '#e2b980');
+      for (let x = fl.x - 8 + off; x < fr.x + 8; x += 17) this.px(x, y, 1, 3, '#d6ab73');
+    }
+    // paint (home colour) and lines
+    for (const side of ['h', 'a'] as const) {
+      const B = this.basket(side), s = this.dir(side);
+      const base = B.x + s * 5.25;
+      const a = this.proj(base, 17), b = this.proj(base - s * 19, 33);
+      this.px(Math.min(a.x, b.x), a.y, Math.abs(b.x - a.x), b.y - a.y, hc1);
+    }
+    const L = (pts: [number, number][]) => this.line(pts.map(([x, d]) => { const q = this.proj(x, d); return [q.x, q.y] as [number, number]; }), '#ffffff');
+    const box = (x0: number, d0: number, x1: number, d1: number) => L([[x0, d0], [x1, d0], [x1, d1], [x0, d1], [x0, d0]]);
+    box(0, 0, LEN, WID); L([[47, 0], [47, WID]]);
+    const arc = (cx: number, cd: number, r: number, a0: number, a1: number, n = 40) => { const pts: [number, number][] = []; for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; pts.push([cx + r * Math.cos(a), cd + r * Math.sin(a)]); } L(pts); };
+    for (const side of ['h', 'a'] as const) {
+      const B = this.basket(side), s = this.dir(side);
+      const base = B.x + s * 5.25;
+      box(Math.min(base, base - s * 19), 17, Math.max(base, base - s * 19), 33);
+      arc(base - s * 19, 25, 6, s > 0 ? Math.PI / 2 : -Math.PI / 2, s > 0 ? Math.PI * 1.5 : Math.PI / 2);
+      const a0 = Math.asin(22 / 23.75);
+      L([[base, 3], [base - s * 14, 3]]); L([[base, 47], [base - s * 14, 47]]);
+      arc(B.x, 25, 23.75, s > 0 ? Math.PI - a0 : -a0, s > 0 ? Math.PI + a0 : a0, 60);
+    }
+    // centre circle and emblem
+    arc(47, 25, 6, 0, Math.PI * 2, 50);
+    const cc = this.proj(47, 25);
+    ctx.fillStyle = hc1; ctx.beginPath(); ctx.ellipse(cc.x, cc.y, 10, 7.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = hc2; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(cc.x, cc.y, 10, 7.5, 0, 0, Math.PI * 2); ctx.stroke();
+    this.text(this.o.home.abbr, cc.x, cc.y + 0.5, '#ffffff', 6, false);
+    // shot marks
+    for (const m of this.marks) {
+      const q = this.proj(m.x, m.d);
+      ctx.globalAlpha = Math.max(0, 1 - m.t / 9) * 0.95;
+      if (m.made) { this.px(q.x - 2, q.y - 2, 5, 5, '#0b0d12'); this.px(q.x - 1, q.y - 1, 3, 3, '#3ddc6e'); }
+      else for (let i = -2; i <= 2; i++) { this.px(q.x + i, q.y + i, 1, 1, '#e02828'); this.px(q.x + i, q.y - i, 1, 1, '#e02828'); }
+      ctx.globalAlpha = 1;
+    }
+    // baskets (far side of each hoop drawn before players)
+    this.drawArenaBasket('a', time); this.drawArenaBasket('h', time);
+    const list = [...this.players.values()].sort((p, q) => p.d - q.d);
+    const b = this.ball;
+    let ballDrawn = false;
+    for (const p of list) {
+      if (!ballDrawn && b.d < p.d) { this.drawBall(); ballDrawn = true; }
+      this.drawArenaPlayer(p, time);
+    }
+    if (!ballDrawn) this.drawBall();
+    for (const q of this.trail) { ctx.globalAlpha = Math.max(0, 0.7 - q.t * 1.4); this.px(q.x, q.y - 1, 2, 2, '#ffd9a8'); }
+    ctx.globalAlpha = 1;
+    if (this.rimFx) {
+      const B = this.basket(this.rimFx.side), r = this.proj(B.x, B.d, 10);
+      const u = this.rimFx.t / 0.7;
+      if (this.rimFx.made) { ctx.globalAlpha = 1 - u; const rad = 4 + u * 12; for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; this.px(r.x + Math.cos(a) * rad, r.y + 2 + Math.sin(a) * rad * 0.6, 2, 2, '#5dff8a'); } ctx.globalAlpha = 1; }
+      else if (Math.floor(this.rimFx.t * 12) % 2 === 0) this.px(r.x - 5, r.y - 1, 11, 2, '#ff4d4d');
+    }
+    if (b.holder && !b.fly) {
+      const p = this.players.get(b.holder);
+      if (p) { const q = this.proj(p.x, p.d); const yy = q.y - 36 + Math.round(Math.sin(time * 6)); this.px(q.x - 2, yy, 5, 1, '#ffd34d'); this.px(q.x - 1, yy + 1, 3, 1, '#ffd34d'); this.px(q.x, yy + 2, 1, 1, '#ffd34d'); }
+    }
+    if (this.label) { const p = this.players.get(this.label.pid); if (p) { const q = this.proj(p.x, p.d); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y - 40, '#ffffff', 6, true); } }
+    if (this.label2 && this.label2.pid !== this.label?.pid) { const p = this.players.get(this.label2.pid); if (p) { const q = this.proj(p.x, p.d); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y + 5, '#ffb0b0', 5, true); } }
+    for (const f of this.floaters) {
+      const u = f.t / f.dur, alpha = 1 - Math.max(0, u - 0.7) / 0.3;
+      if (f.at) { const q = this.proj(f.at.x, f.at.d, f.at.z); this.text(f.text, Math.max(this.camX + 18, Math.min(this.camX + VW / this.z - 18, q.x)), Math.max(this.camY + 30, q.y - 14 - u * 8), f.color, f.big ? 12 : 8, true, alpha); }
+      else this.text(f.text, VW / 2, (f.big ? 80 : 92) - u * 10, f.color, f.big ? 16 : 8, true, alpha, true);
+    }
+    this.drawScoreBug();
+    this.drawCaption(true);
+  }
+
+  /** Substitutes sitting on the bench, in team colours. */
+  private drawBench(side: 'h' | 'a', x0: number, time: number) {
+    const pids = Object.keys(this.o.side).filter(pid => this.o.side[pid] === side && !this.players.has(pid)).slice(0, 8);
+    this.px(x0 - 3, AY0 - 9, Math.max(5, pids.length) * 13 + 4, 5, '#3a2a1c');
+    pids.forEach((pid, i) => {
+      const x = x0 + i * 13 + 4, y = AY0 - 8;
+      this.drawChibi(pid, side, x, y, time, 0.8, true);
+    });
+  }
+
+  private looksOf(pid: string): Look {
+    const l = this.o.looks?.[pid];
+    if (l) return l;
+    const r = hash01(pid);
+    return { skin: SKIN[Math.floor(r * SKIN.length)], hair: 'short', hairColor: '#1b1410', facial: 'none', band: false, num: Math.floor(hash01(pid + 'n') * 45), ht: 79 };
+  }
+
+  /** Big-headed sprite: feet at (x, y); s = scale. */
+  private drawChibi(pid: string, side: 'h' | 'a', x: number, y: number, time: number, s = 1, sitting = false, pose: 'run' | 'shoot' | 'stand' = 'stand', moving = false) {
+    const lk = this.looksOf(pid);
+    const [prim, sec] = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid);
+    const jersey = side === 'h' ? '#f6f6f6' : prim, trim = side === 'h' ? prim : sec;
+    const P = (dx: number, dy: number, w: number, h: number, c: string) => this.px(x + dx * s, y + dy * s, Math.max(1, w * s), Math.max(1, h * s), c);
+    const tall = Math.max(-1, Math.min(1, (lk.ht - 79) / 5));
+    const leg = sitting ? 2 : 6 + Math.round(tall);
+    const step = moving ? Math.floor(time * 9 + hash01(pid) * 4) % 2 : 0;
+    const dark = '#16181f';
+    if (!sitting) { P(-5, 0, 11, 2, 'rgba(0,0,0,0.3)'); }
+    // legs and shoes
+    P(-3, -leg + (step ? 1 : 0), 2, leg - 1 - (step ? 1 : 0), lk.skin); P(1, -leg + (step ? 0 : 1), 2, leg - 1 - (step ? 0 : 1), lk.skin);
+    P(-4, -2, 3, 2, dark); P(1, -2, 3, 2, dark);
+    // shorts and jersey
+    const sh = -leg - 4;
+    P(-4, sh, 8, 5, jersey); P(-4, sh + 4, 8, 1, trim);
+    const tor = sh - 8;
+    P(-4, tor, 8, 9, jersey); P(-4, tor, 1, 9, trim); P(3, tor, 1, 9, trim); P(-2, tor, 4, 1, trim);
+    // arms
+    if (pose === 'shoot') { P(-6, tor - 7, 2, 9, lk.skin); P(4, tor - 7, 2, 9, lk.skin); }
+    else { P(-6, tor + 1, 2, 7, lk.skin); P(4, tor + 1, 2, 7, lk.skin); }
+    // head
+    const hy = tor - 9;
+    P(-4, hy, 8, 9, lk.skin);
+    P(-2, hy + 4, 1, 2, dark); P(1, hy + 4, 1, 2, dark);
+    const hcol = lk.hairColor;
+    switch (lk.hair) {
+      case 'bald': break;
+      case 'afro': case 'fro': P(-6, hy - 4, 12, 6, hcol); P(-5, hy + 2, 1, 3, hcol); P(4, hy + 2, 1, 3, hcol); break;
+      case 'dreads': P(-5, hy - 2, 10, 3, hcol); P(-5, hy + 1, 2, 9, hcol); P(3, hy + 1, 2, 9, hcol); break;
+      case 'cornrows': P(-4, hy - 1, 8, 3, hcol); for (let i = -3; i < 4; i += 2) P(i, hy - 1, 1, 3, '#3a2a20'); break;
+      case 'flattop': P(-4, hy - 4, 8, 5, hcol); break;
+      case 'spiky': case 'quiff': P(-4, hy - 2, 8, 3, hcol); P(-3, hy - 4, 2, 2, hcol); P(1, hy - 4, 2, 2, hcol); break;
+      case 'bun': P(-4, hy - 1, 8, 2, hcol); P(-1, hy - 4, 3, 3, hcol); break;
+      case 'mop': case 'curly': P(-5, hy - 2, 10, 4, hcol); P(-5, hy + 2, 2, 3, hcol); break;
+      case 'buzz': case 'fade': P(-4, hy - 1, 8, 2, hcol); break;
+      default: P(-4, hy - 2, 8, 3, hcol);
+    }
+    if (lk.band) P(-4, hy + 1, 8, 1, trim);
+    if (lk.facial === 'beard' || lk.facial === 'goatee' || lk.facial === 'chin') P(-3, hy + 7, 6, 2, lk.facial === 'beard' ? hcol : '#2a1d14');
+    if (lk.facial === 'mustache') P(-2, hy + 6, 4, 1, '#2a1d14');
+    // number
+    if (!sitting && s >= 1) this.text(String(lk.num), x, y + (tor + 4) * s, trim, 3.6, false);
+  }
+
+  private drawArenaPlayer(p: PSprite, time: number) {
+    const q = this.proj(p.x, p.d);
+    const x = Math.round(q.x), y = Math.round(q.y);
+    if (this.hl?.pid === p.pid) { this.ctx.strokeStyle = '#ffd34d'; this.ctx.lineWidth = 1; this.ctx.beginPath(); this.ctx.ellipse(x, y, 7, 2.5, 0, 0, Math.PI * 2); this.ctx.stroke(); }
+    const moving = Math.hypot(p.tx - p.x, p.td - p.d) > 0.3;
+    const jump = p.pose === 'shoot' ? 4 : 0;
+    this.drawChibi(p.pid, p.side, x, y - jump, time, 1, false, p.pose, moving);
+  }
+
+  private drawArenaBasket(side: 'h' | 'a', time: number) {
+    const B = this.basket(side), s = this.dir(side);
+    const pole = this.proj(B.x + s * 6.5, 25), top = this.proj(B.x + s * 6.5, 25, 14);
+    this.px(pole.x - 3, pole.y - 3, 7, 4, '#2b2f38');
+    this.px(pole.x - 1, top.y, 3, pole.y - top.y, '#5d6575');
+    const bb = this.proj(B.x + s * 1.3, 25, 13.5);
+    this.line([[pole.x, top.y + 1], [bb.x, bb.y + 4]], '#5d6575');
+    this.px(bb.x - 1, bb.y - 3, 3, 13, '#eef3f9'); this.px(bb.x - 1, bb.y - 3, 3, 1, '#c33');
+    const r = this.proj(B.x, B.d, 10);
+    this.px(r.x - 4, r.y, 9, 2, '#ff6a1a');
+    const sway = this.net[side] > 0 ? Math.round(Math.sin(time * 40)) : 0;
+    for (let i = 0; i < 5; i++) this.px(r.x - 4 + i * 2 + (i > 2 ? sway : 0), r.y + 2, 1, 5 - (i % 2), '#f2f2f2');
+    this.px(r.x - 3 + sway, r.y + 6, 7, 1, '#f2f2f2');
+  }
+
+  /** Broadcast score bug at the top: team blocks, score, quarter, clock. */
+  private drawScoreBug() {
+    if (!this.clock) return;
+    const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const c = this.clock;
+    const W = 420, H = 34, x0 = (VW * S - W) / 2, y0 = 6;
+    const [hc] = teamColor(this.o.home.tid), [ac] = teamColor(this.o.away.tid);
+    ctx.fillStyle = '#0b0e16'; ctx.fillRect(x0 - 3, y0 - 3, W + 6, H + 6);
+    ctx.fillStyle = '#2d6cdf'; ctx.fillRect(x0 - 3, y0 - 3, W + 6, 2);
+    const seg = (x: number, w: number, bg: string, t: string, color = '#ffffff', align: CanvasTextAlign = 'center') => {
+      ctx.fillStyle = bg; ctx.fillRect(x0 + x, y0, w, H);
+      ctx.fillStyle = color; ctx.font = `20px ${this.font}`; ctx.textAlign = align; ctx.textBaseline = 'middle';
+      ctx.fillText(t, x0 + x + (align === 'center' ? w / 2 : 8), y0 + H / 2 + 1);
+    };
+    seg(0, 90, ac, this.o.away.abbr, '#ffffff', 'left'); seg(90, 46, '#141a28', String(c.as));
+    seg(136, 90, hc, this.o.home.abbr, '#ffffff', 'left'); seg(226, 46, '#141a28', String(c.hs));
+    const q = c.period <= 4 ? `Q${c.period}` : c.period === 5 ? 'OT' : `${c.period - 4}OT`;
+    seg(272, 50, '#0b0e16', q);
+    seg(322, 98, '#0b0e16', `${Math.floor(c.left / 60)}:${String(Math.floor(c.left % 60)).padStart(2, '0')}`, '#ffd34d');
+  }
+
   private text(t: string, x: number, y: number, color: string, size: number, outline: boolean, alpha = 1, screen = false) {
     const ctx = this.ctx;
     ctx.save();
@@ -737,7 +964,7 @@ export class PixelCourt {
     ctx.font = `${size * S}px ${this.font}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const X = Math.round(screen ? x * S : (x - this.camX) * Z * S), Y = Math.round(screen ? y * S : (y - this.camY) * Z * S);
+    const X = Math.round(screen ? x * S : (x - this.camX) * this.z * S), Y = Math.round(screen ? y * S : (y - this.camY) * this.z * S);
     if (outline) {
       ctx.fillStyle = '#0b0d12';
       for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2], [2, 2], [-2, -2], [2, -2], [-2, 2]]) ctx.fillText(t, X + dx, Y + dy);

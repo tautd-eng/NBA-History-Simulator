@@ -2,8 +2,29 @@
 // Shared pieces for the game viewers: the pixel court canvas and box scores of both teams.
 import { useEffect, useRef } from 'react';
 import { PixelCourt, posNumOf } from './pixel';
+import { nav } from './nav';
+import { faceOf } from './art';
+import { hash01 } from '../rng';
 
-export function CourtCanvas({ home, away, names, sides, pos, events, upto, speed = 1, onIdle, lineups, offense }: any) {
+/** Sprite looks (skin, hair, jersey number) from each player's generated face. */
+function looksFor(names: Record<string, string>) {
+  const lg = nav.lg, out: Record<string, any> = {};
+  const used: Record<string, Set<number>> = {};
+  for (const pid of Object.keys(names)) {
+    const p = lg?.players?.[pid];
+    if (!p) continue;
+    const f = faceOf(p, lg.season);
+    const team = p.tid ?? '';
+    const u = (used[team] ??= new Set());
+    let num = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 40, 41, 42, 44, 45, 50, 52, 55][Math.floor(hash01(pid + 'num') * 36)];
+    while (u.has(num)) num = (num + 1) % 56;
+    u.add(num);
+    out[pid] = { skin: f.skin, hair: f.hair, hairColor: f.hairColor, facial: f.facial, band: f.band, num, ht: p.ht ?? 79 };
+  }
+  return out;
+}
+
+export function CourtCanvas({ home, away, names, sides, pos, events, upto, speed = 1, onIdle, lineups, offense, mode = 'classic' }: any) {
   const ref = useRef<HTMLCanvasElement>(null);
   const court = useRef<PixelCourt | null>(null);
   const pushed = useRef(0);
@@ -11,16 +32,20 @@ export function CourtCanvas({ home, away, names, sides, pos, events, upto, speed
   idle.current = onIdle;
 
   useEffect(() => {
-    const c = new PixelCourt(ref.current!, { home, away, names, side: sides, pos });
+    const c = new PixelCourt(ref.current!, { home, away, names, side: sides, pos, style: mode, looks: mode === 'arena' ? looksFor(names) : undefined });
     court.current = c;
     c.onIdle = () => idle.current?.();
     if (lineups) { c.setLineups(lineups.h, lineups.a, true); c.formation(offense ?? 'h', true); }
-    pushed.current = lineups ? upto : 0;
+    const e0 = events[upto - 1];
+    if (lineups && e0) c.clock = { period: e0.p, left: e0.c ?? 0, hs: e0.hs, as: e0.as };
     if (!lineups) c.push(events.slice(0, upto));
+    pushed.current = upto;
     try { (document as any).fonts?.load?.('8px "Silkscreen"'); } catch { /* font optional */ }
     c.start();
     return () => c.stop();
   }, [home.tid, away.tid]);
+
+  useEffect(() => { court.current?.setStyle(mode, mode === 'arena' ? looksFor(names) : undefined); }, [mode]);
 
   useEffect(() => {
     const c = court.current;

@@ -26,6 +26,7 @@ export function ClutchGame({ lg, cs, onFinish, close, openPlayer }: any) {
   const [autoOff, setAutoOff] = useState(false);
   const [defCall, setDefCall] = useState<'normal' | 'pressure' | 'foul'>('normal');
   const [speed, setSpeed] = useState(1);
+  const [mode, setMode] = useState<'arena' | 'classic'>('arena');
   const [five, setFive] = useState<string[] | null>(null);
   const [pick, setPick] = useState<string | null>(null);
   const [toReq, setToReq] = useState(false);
@@ -133,7 +134,7 @@ export function ClutchGame({ lg, cs, onFinish, close, openPlayer }: any) {
         </div>
 
         <div className="clutch-stage">
-          <CourtCanvas home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos}
+          <CourtCanvas mode={mode} home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos}
             events={log} upto={upto} speed={speed} onIdle={() => idleRef.current()} lineups={startLineups.current} offense={startOff.current} />
           {stage === 'intro' && (
             <div className="stage-card">
@@ -191,6 +192,10 @@ export function ClutchGame({ lg, cs, onFinish, close, openPlayer }: any) {
                 <button disabled={!st || st.timeouts <= 0 || toReq} onClick={() => setToReq(true)}>{toReq ? 'Timeout requested' : `Timeout (${st?.timeouts ?? 0})`}</button>
                 <button onClick={() => { clutchAuto(cs); setWaiting(false); setSpeed(8); setRev(r => r + 1); }}>Play to the end ⏭</button>
                 <label className="chk" htmlFor="auto-off"><input id="auto-off" type="checkbox" checked={autoOff} onChange={e => { setAutoOff(e.target.checked); if (e.target.checked && waiting) step({ off: 'auto' }); }} /> AI runs the offense</label>
+                <div className="seg" role="group" aria-label="View">
+                  <button className={mode === 'arena' ? 'on' : ''} onClick={() => setMode('arena')}>Arena</button>
+                  <button className={mode === 'classic' ? 'on' : ''} onClick={() => setMode('classic')}>Court</button>
+                </div>
                 <div className="seg" role="group" aria-label="Animation speed">
                   {[1, 2, 4, 8].map(v => <button key={v} className={speed === v ? 'on' : ''} onClick={() => setSpeed(v)}>×{v}</button>)}
                 </div>

@@ -21,7 +21,7 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
   const [t, setT] = useState(() => Math.min(data.startAt ?? 0, data.pbp[data.pbp.length - 1].t));
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(24);
-  const [view, setView] = useState<'court' | 'chart'>('court');
+  const [view, setView] = useState<'court' | 'arena' | 'chart'>(() => (data.startAt ?? 0) >= 2580 ? 'arena' : 'court');
   const raf = useRef(0);
   const holdRef = useRef(hold);
   holdRef.current = hold;
@@ -115,17 +115,18 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
           </div>
           <div className="seg" role="group" aria-label="View">
             <button className={view === 'court' ? 'on' : ''} onClick={() => setView('court')}>Court</button>
+            <button className={view === 'arena' ? 'on' : ''} onClick={() => setView('arena')}>Arena</button>
             <button className={view === 'chart' ? 'on' : ''} onClick={() => setView('chart')}>Shot chart</button>
           </div>
           <button disabled={done} onClick={() => { const nx = period < 4 ? period * 720 : period === 4 ? 2880 : 2880 + (period - 4) * 300; setT(Math.min(endT, nx)); }}>Next quarter ⏭</button>
-          <button disabled={done || t >= 2580} onClick={() => setT(Math.min(endT, 2580))}>Last 5 min</button>
+          <button disabled={done || t >= 2580} onClick={() => { setT(Math.min(endT, 2580)); setView('arena'); }}>Last 5 min</button>
           <button onClick={() => { setT(endT); setPlaying(false); }}>To the end</button>
           <button className="ghost" onClick={close}>Close</button>
         </div>
         <div className="live-grid">
           <div className="live-left">
-            {view === 'court' ? (
-              <CourtCanvas home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos} events={pbp} upto={n} speed={Math.max(0.55, speed / 16)} />
+            {view !== 'chart' ? (
+              <CourtCanvas mode={view} home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos} events={pbp} upto={n} speed={Math.max(0.55, speed / 16)} />
             ) : (
               <div className="court-wrap">
                 <svg viewBox="-1 -1 52 36" className="court" role="img" aria-label="Shot chart">
