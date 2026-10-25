@@ -36,6 +36,8 @@ import { advance, saveLeague, loadLeague, Target, listSaves, setSlot, newSlotId,
 import { ageIn } from '../players';
 import { payroll, peakBpm, hardCap } from '../ai/value';
 import cal from '../engine/eracal.json';
+declare const __BUILD__: string;
+const BUILD = typeof __BUILD__ !== 'undefined' ? __BUILD__ : 'dev';
 
 setEraCal(cal as any);
 
@@ -128,6 +130,7 @@ function App() {
     saveLeague(l).then(ok => setSaved(ok ? 'ok' : 'fail'));
   }
 
+  const [more, setMore] = useState(false);
   if (!ready) return <div className="loading">Loading league…</div>;
   const switchTo = async (id: string) => {
     setSlot(id);
@@ -155,13 +158,17 @@ function App() {
         <Controls lg={lg} busy={busy} run={run} stop={() => (stop.current = true)} saved={saved} />
       </header>
       <nav className="tabs" aria-label="Sections">
-        {[
-          ['apzvalga', 'Overview'], ['komandos', 'Teams'], ['reitingai', 'Rankings'], ['statistika', 'Stats'], ['mainai', 'Trades'], ['laisvieji', 'Free agents'], ['draftai', 'Draft classes'],
-          ['istorija', 'History'], ['rungtynes', 'Games'],
-        ].map(([k, l]) => (
-          <button key={k} className={tab === k ? 'on' : ''} onClick={() => go(k)} aria-label={l}><TabIcon k={k} /><span className="tl">{l}</span></button>
+        {TABS.map(([k, l, main]) => (
+          <button key={k} className={`${tab === k ? 'on' : ''} ${main ? '' : 'sec'}`} onClick={() => { go(k); setMore(false); }} aria-label={l}><TabIcon k={k} /><span className="tl">{l}</span></button>
         ))}
+        <button className={`more-btn ${more || TABS.some(([k, , m]) => !m && k === tab) ? 'on' : ''}`} onClick={() => setMore(m => !m)} aria-label="More" aria-expanded={more}><TabIcon k="more" /><span className="tl">More</span></button>
       </nav>
+      {more && <div className="more-sheet-bg" onClick={() => setMore(false)}>
+        <div className="more-sheet" role="menu" onClick={e => e.stopPropagation()}>
+          {TABS.filter(([, , m]) => !m).map(([k, l]) => <button key={k} role="menuitem" className={tab === k ? 'on' : ''} onClick={() => { go(k); setMore(false); }}><TabIcon k={k} /><span>{l}</span></button>)}
+          <p className="more-ver">Version {BUILD}</p>
+        </div>
+      </div>}
       <main>
         {lg.phase === 'fantasy' && <FantasyRoom lg={lg} openPlayer={openPlayer} onTick={bump} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'apzvalga' && <Overview lg={lg} openTeam={openTeam} openPlayer={openPlayer} openGame={openGame} watch={watch} clutch={clutchStart} busy={!!busy || !!clutch} sampler={sampler} goFA={() => go('laisvieji')} onTick={bump} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
@@ -175,7 +182,7 @@ function App() {
         {lg.phase !== 'fantasy' && tab === 'rungtynes' && <Games lg={lg} openPlayer={openPlayer} />}
       </main>
       <footer className="foot">
-        <span>Data: Basketball-Reference (via sumitrodatta/bball-reference-datasets). The league is saved in this browser.</span>
+        <span>Data: Basketball-Reference (via sumitrodatta/bball-reference-datasets). The league is saved in this browser. <span className="dim">Version {BUILD}</span></span>
         <span className="foot-actions">
           <button className="ghost small" onClick={() => setShowSettings(true)}>Season format</button>
           <button className="ghost small" onClick={() => setShowSaves(true)}>Saves</button>
@@ -193,6 +200,12 @@ function App() {
   );
 }
 
+/** Sections: [key, label, shown in the phone's bottom bar (the rest go under "More")] */
+const TABS: [string, string, boolean][] = [
+  ['apzvalga', 'Overview', true], ['komandos', 'Teams', true], ['reitingai', 'Rankings', true], ['mainai', 'Trades', true],
+  ['statistika', 'Stats', false], ['laisvieji', 'Free agents', false], ['draftai', 'Draft classes', false], ['istorija', 'History', false], ['rungtynes', 'Games', false],
+];
+
 /** Small line icons for the tab bar (bottom bar on phones). */
 function TabIcon({ k }: { k: string }) {
   const d: Record<string, string> = {
@@ -205,6 +218,7 @@ function TabIcon({ k }: { k: string }) {
     draftai: 'M4 5h16v14H4zM8 9h8M8 13h5',
     istorija: 'M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4',
     rungtynes: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
+    more: 'M5 12h.01M12 12h.01M19 12h.01M4 12a1 1 0 1 0 2 0 1 1 0 0 0-2 0M11 12a1 1 0 1 0 2 0 1 1 0 0 0-2 0M18 12a1 1 0 1 0 2 0 1 1 0 0 0-2 0',
   };
   return <svg className="ti" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d={d[k]} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }

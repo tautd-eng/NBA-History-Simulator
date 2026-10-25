@@ -33,8 +33,50 @@ function FaceEditor({ p, season, onChange }: any) {
 }
 
 const gmsc = (l: any) => l.pts + 0.4 * l.fgm - 0.7 * l.fga - 0.4 * (l.fta - l.ftm) + 0.7 * l.orb + 0.3 * l.drb + l.stl + 0.7 * l.ast + 0.7 * l.blk - 0.4 * l.pf - l.tov;
-const isChamp = (k: string) => k === 'Champion' || k === 'čempionas';
-const awardLabel = (k: string) => ({ čempionas: 'Champion', 'Finalo MVP': 'Finals MVP', '6-as žaidėjas': '6MOY' } as any)[k] ?? k;
+const isChamp = (k: string) => k === 'Champion' || /čemp|cemp/i.test(k);
+const AWARD_NAMES: Record<string, string> = {
+  čempionas: 'Champion', Champion: 'Champion', 'Finalo MVP': 'Finals MVP', '6-as žaidėjas': 'Sixth Man of the Year', '6MOY': 'Sixth Man of the Year',
+  MVP: 'MVP', 'Finals MVP': 'Finals MVP', DPOY: 'Defensive Player of the Year', ROY: 'Rookie of the Year', MIP: 'Most Improved Player',
+  'All-League 1': 'All-League 1st Team', 'All-League 2': 'All-League 2nd Team', 'All-League 3': 'All-League 3rd Team',
+  'All-Defensive 1': 'All-Defensive 1st Team', 'All-Defensive 2': 'All-Defensive 2nd Team', 'All-Rookie 1': 'All-Rookie 1st Team', 'All-Rookie 2': 'All-Rookie 2nd Team',
+};
+const AWARD_SHORT: Record<string, string> = { 'Sixth Man of the Year': '6MOY', 'Defensive Player of the Year': 'DPOY', 'Rookie of the Year': 'ROY', 'Most Improved Player': 'MIP' };
+/** award names, including older saves written in Lithuanian */
+export function awardLabel(k: string) {
+  if (AWARD_NAMES[k]) return AWARD_NAMES[k];
+  const s = k.toLowerCase();
+  const n = /\b(1|i|pirm)/.test(s) ? 1 : /\b(2|ii|antr)/.test(s) ? 2 : /\b(3|iii|treč|trec)/.test(s) ? 3 : 0;
+  const ord = ['', '1st', '2nd', '3rd'][n];
+  if (/čemp|cemp|champ/.test(s)) return 'Champion';
+  if (/final/.test(s)) return 'Finals MVP';
+  if (/naujok|rookie/.test(s)) return n ? `All-Rookie ${ord} Team` : 'Rookie of the Year';
+  if (/gyn|def/.test(s)) return n ? `All-Defensive ${ord} Team` : 'Defensive Player of the Year';
+  if (/6|šešt|sest|sixth/.test(s)) return 'Sixth Man of the Year';
+  if (/pažang|pazang|paženg|pazeng|improv|mip/.test(s)) return 'Most Improved Player';
+  if (/simbol|lygos|league|nba|visų|visu/.test(s) && n) return `All-League ${ord} Team`;
+  if (/naudingiaus|mvp/.test(s)) return 'MVP';
+  return k;
+}
+const AWARD_ORDER = ['Champion', 'MVP', 'Finals MVP', 'Defensive Player of the Year', 'Rookie of the Year', 'Sixth Man of the Year', 'Most Improved Player', 'All-League 1st Team', 'All-League 2nd Team', 'All-League 3rd Team', 'All-Defensive 1st Team', 'All-Defensive 2nd Team', 'All-Rookie 1st Team', 'All-Rookie 2nd Team'];
+/** Awards grouped with a count; hover or tap a chip for the seasons. */
+export function AwardChips({ p }: any) {
+  const [open, setOpen] = useState<string | null>(null);
+  const groups: Record<string, number[]> = {};
+  for (const a of p.awards) { const m = /^(\d{4}) (.*)$/.exec(a); if (m) (groups[awardLabel(m[2])] ??= []).push(+m[1]); }
+  const keys = Object.keys(groups).sort((a, b) => ((AWARD_ORDER.indexOf(a) + 1 || 99) - (AWARD_ORDER.indexOf(b) + 1 || 99)) || a.localeCompare(b));
+  if (!keys.length) return null;
+  const yrs = (k: string) => [...new Set(groups[k])].sort((a, b) => a - b).map(sl).join(', ');
+  return (
+    <div className="awards">
+      <div className="award-chips">{keys.map(k => (
+        <button key={k} type="button" className={`chip award ${k === 'Champion' ? 'gold' : ''} ${open === k ? 'on' : ''}`} title={`${k}: ${yrs(k)}`} aria-expanded={open === k} onClick={() => setOpen(open === k ? null : k)}>
+          {k === 'Champion' ? '🏆 ' : ''}{AWARD_SHORT[k] ?? k}{groups[k].length > 1 ? <b> ×{groups[k].length}</b> : null}
+        </button>
+      ))}</div>
+      {open && <p className="award-years"><b>{open}</b> ({groups[open].length}×): {yrs(open)}</p>}
+    </div>
+  );
+}
 const sl = (s: number) => `${s - 1}–${String(s).slice(2)}`;
 /** Career story: draft, teams, trades, signings, awards, serious injuries. */
 function HistoryTab({ lg, p, openTeam }: any) {
@@ -69,7 +111,7 @@ function HistoryTab({ lg, p, openTeam }: any) {
   }
   // awards summary
   const groups: Record<string, number[]> = {};
-  for (const a of p.awards) { const m = /^(\d{4}) (.*)$/.exec(a); if (m) (groups[m[2]] ??= []).push(+m[1]); }
+  for (const a of p.awards) { const m = /^(\d{4}) (.*)$/.exec(a); if (m) (groups[awardLabel(m[2])] ??= []).push(+m[1]); }
   const order = ['Champion', 'MVP', 'Finals MVP', 'DPOY', 'ROY', '6MOY', 'MIP', 'All-League 1', 'All-League 2', 'All-League 3', 'All-Defensive 1', 'All-Defensive 2', 'All-Rookie 1', 'All-Rookie 2'];
   const keys = Object.keys(groups).sort((a, b) => ((order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99)) || a.localeCompare(b));
   return (
@@ -78,7 +120,7 @@ function HistoryTab({ lg, p, openTeam }: any) {
         <div><span className="dim">Draft</span> {p.draft ? `${p.draft.year}, No. ${p.draft.pick} (round ${p.draft.round}), ${T(p.draft.tid)}` : 'undrafted'}</div>
         <div><span className="dim">In the league since</span> {sl(p.entered)}{p.retired ? ` · retired in ${p.retired}` : ''}</div>
         <div><span className="dim">Teams</span> {stints.length ? stints.map((st, i) => <span key={i}>{i ? ' → ' : ''}<button className="link" onClick={() => openTeam(st.tid)}>{lg.teams[st.tid]?.abbr ?? st.tid}</button> <span className="dim">({st.a === st.b ? sl(st.a) : `${st.a - 1}–${String(st.b).slice(2)}`})</span></span>) : '–'}</div>
-        <div><span className="dim">Awards</span> {keys.length ? keys.map(k => <span key={k} className="chip" title={groups[k].join(', ')}>{k === 'Champion' ? '🏆 Champion' : awardLabel(k)}{groups[k].length > 1 ? ` ×${groups[k].length}` : ''}</span>) : 'none yet'}</div>
+        <div><span className="dim">Awards</span> {keys.length ? <AwardChips p={p} /> : 'none yet'}</div>
       </div>
       <h3>Career events</h3>
       {ev.length ? (
@@ -215,7 +257,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
           </div>
         </div>
         {editFace && <FaceEditor p={p} season={lg.season} onChange={() => bump(x => x + 1)} />}
-        {p.awards.length > 0 && <div className="awards">{p.awards.slice(-14).map((a: string, i: number) => <span key={i} className="chip">{a}</span>)}</div>}
+        {p.awards.length > 0 && <AwardChips p={p} />}
         <h3>Current skills</h3>
         <div className="ratings">
           {RATING_LABELS.map(r => {

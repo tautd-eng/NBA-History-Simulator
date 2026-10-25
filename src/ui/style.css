@@ -181,7 +181,14 @@ main {
 .p-head { display: flex; gap: 14px; align-items: center; padding-right: 40px; }
 .p-head h2 { font-size: 1.9rem; text-transform: none; letter-spacing: 0; }
 .p-head p { margin: 2px 0 0; font-size: 0.86rem; }
-.awards { display: flex; flex-wrap: wrap; gap: 6px; }
+.awards { display: flex; flex-direction: column; gap: 6px; }
+.award-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+button.chip.award { font: inherit; font-size: 0.82rem; cursor: pointer; color: var(--ink); }
+button.chip.award b { color: var(--accent); margin-left: 2px; }
+button.chip.award.gold { border-color: #d9a520; background: color-mix(in srgb, #f5c542 18%, var(--surface)); }
+button.chip.award.on { outline: 2px solid var(--accent); }
+.award-years { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.award-years b { color: var(--ink); }
 .awards .chip { margin: 0; }
 .ratings { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 6px 22px; }
 .rating { display: grid; grid-template-columns: 11.5em 1fr 2em; gap: 8px; align-items: center; font-size: 0.84rem; }
@@ -605,9 +612,10 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 
 /* tab icons: shown on phones only */
 .tabs .ti { display: none; }
+.tabs .more-btn, .more-sheet-bg { display: none; }
 
 /* ---------------------------------------------------------------- phone: app layout */
-@media (max-width: 700px) {
+@media (max-width: 700px), (max-height: 500px) and (max-width: 1000px) {
   body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
   .top { padding-block: 6px; gap: 6px; flex-wrap: nowrap; flex-direction: column; align-items: stretch; }
   .brand { gap: 8px; }
@@ -617,9 +625,8 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
     linear-gradient(0deg, transparent 10px, var(--surface) 10px 12px, transparent 12px); }
   .brand .name { font-size: 1.05rem; }
   .brand .meta { font-size: 0.72rem; }
-  .controls { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-  .controls::-webkit-scrollbar { display: none; }
-  .controls button { white-space: nowrap; padding: 7px 11px; flex: none; }
+  .controls { flex-wrap: wrap; gap: 5px; }
+  .controls button { white-space: nowrap; padding: 7px 10px; flex: 1 0 auto; touch-action: manipulation; }
   .controls .hint.warn { white-space: nowrap; font-size: 0.72rem; }
   /* bottom tab bar */
   .tabs {
@@ -635,6 +642,24 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
     font-family: var(--font-body); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.01em; text-transform: none;
   }
   .tabs .ti { display: block; }
+  .tabs { overflow: visible; }
+  .tabs button { flex: 1 1 0; min-width: 0; }
+  .tabs button.sec { display: none; }
+  .tabs .more-btn { display: flex; }
+  .more-sheet-bg { display: block; position: fixed; inset: 0; z-index: 14; background: rgba(10, 12, 18, 0.35); }
+  .more-sheet {
+    position: fixed; left: 8px; right: 8px; bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px;
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  }
+  .more-sheet button {
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 4px; border: 0; border-radius: 10px;
+    background: var(--sunk); color: var(--ink); font: 600 0.78rem var(--font-body);
+  }
+  .more-sheet button.on { color: var(--accent); outline: 2px solid var(--accent); }
+  .more-sheet .ti { display: block; }
+  /* the header scrolls away on phones so it never covers the page */
+  .top { position: static; }
   .tabs button.on { color: var(--accent); border-top-color: var(--accent); }
   main { padding-block: 12px calc(78px + env(safe-area-inset-bottom, 0px)); padding-inline: 10px; }
   .foot { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important; }
@@ -643,10 +668,11 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
   /* live game and dialogs fill the screen */
   .live { padding-inline: 8px; gap: 8px; }
   .live > * { flex-shrink: 0; }
-  .live-controls { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-  .live-controls::-webkit-scrollbar { display: none; }
+  .live-controls { flex-wrap: wrap; gap: 6px; }
   .live-controls > * { flex: none; }
-  .live-controls .seg { flex-wrap: nowrap; }
+  .live-controls .seg { flex-wrap: wrap; }
+  .seg { flex-wrap: wrap; }
+  button { touch-action: manipulation; }
   .dialog { padding: 14px; }
   .drawer { width: 100% !important; max-width: 100% !important; }
   .tbl { font-size: 0.8rem; }
@@ -673,3 +699,5 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .series.clickable { cursor: pointer; }
 .series.clickable:hover { outline: 1px solid var(--accent); }
 .dialog.pv-dialog { width: min(820px, 100%); }
+
+.more-ver { grid-column: 1 / -1; margin: 2px 0 0; text-align: center; font-size: 0.7rem; color: var(--muted); }

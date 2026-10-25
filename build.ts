@@ -1,6 +1,6 @@
 // Builds dist/nba-istorija.html: one self-contained page (code + history data).
 import { readFileSync, writeFileSync } from 'fs';
-const r = await Bun.build({ entrypoints: ['src/ui/app.tsx'], minify: true, target: 'browser', define: { 'process.env.NODE_ENV': '"production"' } });
+const r = await Bun.build({ entrypoints: ['src/ui/app.tsx'], minify: true, target: 'browser', define: { 'process.env.NODE_ENV': '"production"', __BUILD__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC') } });
 if (!r.success) { console.error(r.logs); process.exit(1); }
 const js = await r.outputs[0].text();
 const css = readFileSync('src/ui/style.css', 'utf8');

@@ -123,8 +123,17 @@ export async function saveLeague(lg: League, id = slot): Promise<boolean> {
     return true;
   } catch { return false; }
 }
+import { awardLabel } from './ui/player';
+/** Older saves: award names from the Lithuanian version. */
+const AWARD_EN: Record<string, string> = { 'čempionas': 'Champion', 'Finalo MVP': 'Finals MVP', '6-as žaidėjas': '6MOY' };
+function migrate(lg: League) {
+  for (const p of Object.values(lg.players) as any[]) {
+    if (!p.awards?.length) continue;
+    p.awards = p.awards.map((a: string) => { const m = /^(\d{4}) (.*)$/.exec(a); if (!m) return a; if (AWARD_EN[m[2]]) return `${m[1]} ${AWARD_EN[m[2]]}`; return /[ąčęėįšųūž]/i.test(m[2]) ? `${m[1]} ${awardLabel(m[2])}` : a; });
+  }
+}
 export async function loadLeague(id = slot): Promise<League | null> {
-  try { return await get<League>(id); } catch { return null; }
+  try { const lg = await get<League>(id); if (lg) migrate(lg); return lg; } catch { return null; }
 }
 export async function deleteSave(id: string) {
   try {
