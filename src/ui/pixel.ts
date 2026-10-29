@@ -70,6 +70,8 @@ interface PSprite {
   rate?: number;  // dribbles per second
   hang?: number;  // hanging on the rim after a dunk (seconds)
   lvx?: number;   // last velocity along the court (to notice a change of direction)
+  ax?: number; ad?: number; // the spot he was sent to (idle shuffles stay around it)
+  next?: [Pose, number];     // the pose that follows the current one
 }
 interface Fly { x0: number; d0: number; z0: number; x1: number; d1: number; z1: number; peak: number; t: number; dur: number; to?: string; done?: () => void; bounce?: boolean }
 interface Ball { x: number; d: number; z: number; holder: string | null; fly: Fly | null }
@@ -83,7 +85,8 @@ interface How { how: 'inbound' | 'rebound' | 'orb' | 'steal' | 'side' | 'period'
 const WALK = 5, JOG = 11, RUN = 16, SPRINT = 22, ACC = 32;
 // half-court spots (feet from the basket along the court, depth across): top, wings, corners, elbows, blocks, slots
 const SP: Record<string, [number, number]> = {
-  top: [25, 25], lw: [21, 7], rw: [21, 43], lc: [3, 3], rc: [3, 47], le: [13, 19], re: [13, 31], lb: [5, 18.5], rb: [5, 31.5], ls: [23, 14], rs: [23, 36],
+  // wings sit at 45 degrees and the slots higher up, so the floor is spread along the court as well as across it
+  top: [27, 25], lw: [16.5, 8], rw: [16.5, 42], lc: [2.5, 3], rc: [2.5, 47], le: [13.5, 18.5], re: [13.5, 31.5], lb: [4.5, 18.5], rb: [4.5, 31.5], ls: [24, 14], rs: [24, 36],
 };
 
 const surname = (n: string) => { const p = n.split(' '); return (p.length > 1 ? p.slice(1).join(' ') : n).toUpperCase(); };
@@ -364,6 +367,7 @@ export class PixelCourt {
   private go(p: PSprite | null, x: number, d: number, spd = RUN) {
     if (!p) return;
     if (p.beh.k === 'arrive' && p.beh.at > this.v) return; // on his way to his shot: nothing else matters now
+    p.ax = x; p.ad = d;
     p.beh = { k: 'spot' }; p.tx = x; p.td = Math.max(-4, Math.min(WID + 4, d)); p.spd = Math.min(spd, 26);
   }
   private jump(p: PSprite | null, h: number, dur: number, pose: Pose = 'jump') {
@@ -444,7 +448,14 @@ export class PixelCourt {
     const bp = this.ballPos();
     for (const p of this.players.values()) {
       const b = p.beh;
-      if (b.k === 'spot') continue;
+      if (b.k === 'spot') {
+        // nobody stands like a statue in live play: small shuffles around his spot
+        if (p.ax !== undefined && this.ball.holder && this.ball.holder !== p.pid && p.pt <= 0 && hyp(p.tx - p.x, p.td - p.d) < 0.6) {
+          const bucket = Math.floor(this.v / 1.7 + hash01(p.pid) * 7);
+          if (hash01(p.pid + '|' + bucket) < 0.55) { p.tx = p.ax + (hash01(p.pid + 'x' + bucket) - 0.5) * 2.2; p.td = (p.ad ?? p.d) + (hash01(p.pid + 'd' + bucket) - 0.5) * 1.6; p.spd = WALK; }
+        }
+        continue;
+      }
       if (b.k === 'arrive') {
         const dist = hyp(b.x - p.x, b.d - p.d), left = b.at - this.v;
         p.tx = b.x; p.td = b.d;
@@ -512,7 +523,7 @@ export class PixelCourt {
       p.ph = (p.ph + hyp(p.vx, p.vd) * dt * (Math.PI * 2 / 8.5)) % (Math.PI * 2); // one stride cycle every ~8.5 ft
       if (Math.abs(p.vx) > 2) p.face = Math.sign(p.vx);
       else if (Math.abs(bp.x - p.x) > 1.5 && this.ball.holder !== pid) p.face = Math.sign(bp.x - p.x);
-      if (p.pt > 0) { p.pt -= dt; if (p.pt <= 0) p.pose = 'stand'; }
+      if (p.pt > 0) { p.pt -= dt; if (p.pt <= 0) { p.pose = 'stand'; if (p.next && p.z < 0.2) { [p.pose, p.pt] = p.next; p.next = undefined; } } }
       if (this.ball.holder === pid && !this.ball.fly) {
         const v = hyp(p.vx, p.vd);
         p.dph = (p.dph ?? 0) + dt * Math.PI * (1.9 + v * 0.09);
@@ -983,7 +994,7 @@ export class PixelCourt {
     if (actor && md && type !== 'roll' && type !== 'pop') add(0, () => this.assign(actor, md));
     const A = () => this.P(actor);
     const DA = () => this.P(md) ?? this.defOf(actor);
-    const name = (p: string | null) => surname(this.o.names[p ?? ''] ?? '').toLowerCase().replace(/^\w/, ch => ch.toUpperCase());
+    const name = (p: string | null) => surname(this.o.names[p ?? ''] ?? '').toLowerCase().replace(/(^|[ -'])\w/g, ch => ch.toUpperCase());
     const cap = (txt: string) => add(P.tD, () => this.call(off, txt));
     if (type !== 'fb' && type !== 'putback' && type !== 'drive') add(P.tD, () => this.respace(off, [actor, creator, screener], JOG, r));
     // ---- the final action
@@ -1131,7 +1142,7 @@ export class PixelCourt {
   private clearOut(add: Add, at: number, off: Side, actor: string | null, r: () => number) {
     add(at, () => {
       const a = this.P(actor); if (!a) return;
-      const weak = a.d < 25 ? ['rc', 'rw', 'rb', 're'] : ['lc', 'lw', 'lb', 'le'];
+      const weak = a.d < 25 ? ['rc', 'rw', 'lc', 'rs'] : ['lc', 'lw', 'rc', 'ls'];
       this.ord(off).filter(p => p.pid !== actor).forEach((p, i) => { const q = this.spot(off, weak[i % 4], 3, r); this.go(p, q.x, q.d, JOG); });
     });
   }
@@ -1211,7 +1222,7 @@ export class PixelCourt {
           // the slam: from above the rim straight through it
           this.ball.holder = null;
           this.ball.fly = { x0: B.x - s * 0.5, d0: B.d, z0: 11.4, x1: made ? B.x : B.x + s * 0.7, d1: B.d, z1: made ? 9.6 : 10.3, peak: 11.4, t: 0, dur: fl };
-          if (made) { a.hang = (ath > 0.45 || star > 0) && r() < 0.7 ? 0.42 : 0.12; this.setPose(a, 'hang', 0.6); }
+          if (made) { a.hang = (ath > 0.45 || star > 0) && r() < 0.7 ? 0.42 : 0.12; this.setPose(a, 'hang', 0.6); if (star > 0 || r() < 0.4) a.next = ['celebrate', 0.9]; }
         } else {
           // makes drop through the middle; misses catch the front or the back of the rim
           const front = r() < 0.6 ? 1 : -1;
@@ -1419,7 +1430,9 @@ export class PixelCourt {
     const next = items[k + 1]?.e;
     const firstFt = !items[k - 1] || (items[k - 1].e.k !== 'ft' && items[k - 1].e.k !== 'ftm');
     add(0, () => { this.ftFormation(side, sh, firstFt ? JOG : WALK); if (this.ball.holder !== sh) { const p = this.P(sh); if (p) { this.ball.holder = null; this.ball.fly = { x0: this.ball.x, d0: this.ball.d, z0: this.ball.z, x1: B.x - s * 15, d1: 25, z1: 5, peak: 7, t: 0, dur: Math.min(0.8, L * 0.3), done: () => this.give(sh) }; } } this.label = sh ? { pid: sh, t: 1.6 } : null; this.hl = sh ? { pid: sh, t: L } : null; });
+    add(L - 1.0, () => { const p = this.P(sh); if (p) { this.give(sh); this.setPose(p, 'gather', 0.2); } });
     add(L - 0.8, () => { const p = this.P(sh); if (p) { this.give(sh); this.jump(p, 0.6, 0.45, 'shoot'); } });
+    add(L - 0.6, () => this.setPose(this.P(sh), 'follow', 0.6));
     add(L - 0.65, () => this.flyBall(B.x, B.d, 10.2, 14, 0.62));
     if (last && !made) add(L - 0.4, () => { for (const p of [...this.on('h'), ...this.on('a')]) if (p.pid !== sh && hyp(p.x - B.x, p.d - B.d) < 16) this.go(p, B.x - s * 4, 25 + (p.d - 25) * 0.4, RUN); });
     add(L, () => {
@@ -1881,7 +1894,7 @@ export class PixelCourt {
     const along = Math.abs(p.vx) * AFX, across = Math.abs(p.vd) * AFY * 2.2;
     const view = pose === 'stance' || pose === 'shoot' || pose === 'layup' || pose === 'dunk' || pose === 'hook' ? 'side' : sp > 3 && across > along * 1.4 ? (p.vd < 0 ? 'back' : 'front') : 'side';
     const nm = (this.o.names[p.pid] ?? '').split(' ').slice(1).join(' ').toUpperCase();
-    const hands = drawAthlete(g, Math.round(X), Math.round(Y - lift), { H, face, pose: ap, ph: p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm, hand: p.hand ?? 1, t: p.pt > 0 ? p.pt : 0 });
+    const hands = drawAthlete(g, Math.round(X), Math.round(Y - lift), { H, face, pose: ap, ph: ap === 'stand' || ap === 'stance' ? time * 2.6 + hash01(p.pid) * 6 : p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm, hand: p.hand ?? 1, t: p.pt > 0 ? p.pt : 0 });
     if (this.ball.holder === p.pid && !this.ball.fly) this.drawHeldBall(p, hands, Y, pose, H);
     // on fire: a flicker of flames around a hot shooter
     if (this.hot.get(p.pid) && !this.ff) {

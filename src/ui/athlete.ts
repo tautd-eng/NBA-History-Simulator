@@ -109,7 +109,12 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
       uA = 0.35; fA = 0.75;
       uB = 0.55 + 0.2 * amp; fB = 1.25; spreadB = 0.5;
       break;
+    case 'stand':
+      hipY += 0.5 * u * (1 + Math.sin(ps)); // breathing
+      uA = 0.12 + 0.03 * Math.sin(ps); uB = -0.12 - 0.03 * Math.sin(ps);
+      break;
     case 'stance':
+      hipY += 0.6 * u * Math.sin(ps * 1.6); // bouncing on his toes
       hipY += 9 * u; lean = 0.28;
       thA = 0.5; bdA = 0.95; thB = -0.5; bdB = 0.35;
       uA = 1.25; fA = 1.55; uB = -1.15; fB = -1.45; spreadA = 1.1; spreadB = 1.1;
