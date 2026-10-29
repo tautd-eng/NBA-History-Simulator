@@ -6,7 +6,7 @@
 // distribution, so league averages come out of the players rather than a table.
 // The constants in C are global calibration knobs, tuned by test/calibrate.ts.
 
-import { Rng } from '../rng';
+import { Rng, hash01 } from '../rng';
 import { K, rate, sigm, logit, bpmOf } from '../data';
 import { shownFromBpm } from '../data';
 import { emptyLine, StatLine, Player, Box } from '../types';
@@ -125,6 +125,7 @@ export interface PbpEv {
   txt: string;
   hs: number; as: number;
   x?: number; y?: number;
+  sk?: string;                              // shot kind (dunk, layup, putback, hook, turnaround, floater, jumper, fadeaway, three, stepback)
   m?: string;                               // primary defender on the play (matchup)
   v?: string;                               // turnover type: strip, pick (intercepted pass), bad (pass out of bounds), travel, oob, clock (shot clock)
   fb?: 1;                                   // fast break
@@ -240,6 +241,7 @@ export function simGame(home: TeamIn, away: TeamIn, o: GameOpts) {
 
 export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<GameState, ReturnType<typeof finishBox>, Decision> {
   const { season, rng } = o;
+  const seasonOf = season;
   const ctl = o.ctl;
   const mk = (t: typeof home, isHome: boolean): Side => ({
     tid: t.tid, gps: t.players.map(p => prep(p, season)), on: [], pts: 0, q: [], home: isHome, paceZ: t.paceZ,
@@ -320,18 +322,51 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     if (prevH.length && !parts.length) return;
     ev('sub', null, parts.join(' · ') || 'Starting lineups', { on: { h: H.on.map(g => g.p.id), a: A.on.map(g => g.p.id) } });
   };
-  const shotSpot = (three: boolean, actor: GP, fb = false): { x: number; y: number; rim: boolean } => {
+  /**
+   * Where the shot comes from and what it looks like (cosmetic stream only – it never changes a result).
+   * Made twos lean toward the rim and missed ones toward mid-range, as in real shot charts; bigs shoot from
+   * the blocks, guards from the elbows and wings; corner and deep threes depend on the role and the era.
+   */
+  const shotSpot = (three: boolean, actor: GP, fb: boolean, afterOrb: boolean, made: boolean, blocked: boolean): { x: number; y: number; rim: boolean; sk: string } => {
+    const big = actor.posNum >= 4, h = hash01(actor.p.id + 'side');
+    // every player has a favourite side of the floor
+    const side = () => (cr.chance(0.5 + (h - 0.5) * 0.5) ? 1 : -1);
+    const at = (ang: number, r: number) => ({ x: 25 + Math.sin(ang) * r, y: Math.max(1, 5.25 + Math.cos(ang) * r) });
+    const season = seasonOf;
     if (three) {
-      if (cr.chance(0.3)) return { x: cr.chance(0.5) ? 2.5 + cr.next() : 46.5 - cr.next(), y: 2 + cr.next() * 9, rim: false };
-      const a = (cr.next() - 0.5) * 2.4;
-      const r = 24 + cr.next() * 3;
-      return { x: 25 + Math.sin(a) * r, y: 5.25 + Math.cos(a) * r, rim: false };
+      const corner = (actor.posNum <= 1.5 ? 0.14 : big ? 0.3 : 0.38) * (season < 1995 ? 0.6 : season < 2010 ? 0.85 : 1.05);
+      if (cr.chance(corner)) { const sd = side(); return { x: sd > 0 ? 47.6 + cr.next() * 1.1 : 2.4 - cr.next() * 1.1, y: 1.5 + cr.next() * 8, rim: false, sk: 'three' }; } // behind the 22-ft corner line
+      const deep = season >= 2013 && actor.usg > 0.24 && actor.p3 > 0.36 ? 0.3 : season >= 2008 ? 0.08 : 0.03;
+      const r = 23.9 + (cr.chance(deep) ? 2.5 + cr.next() * 4.5 : cr.next() * 2.4);
+      const ang = side() * (actor.posNum <= 1.5 ? cr.next() * 0.55 : 0.25 + cr.next() * 0.85);
+      return { ...at(ang, r), rim: false, sk: actor.usg > 0.25 && cr.chance(0.35) ? 'stepback' : 'three' };
     }
-    const rim = cr.chance(fb ? 0.85 : actor.posNum >= 4 ? 0.62 : 0.42);
-    const a = (cr.next() - 0.5) * Math.PI * 0.95;
-    const r = rim ? 1 + cr.next() * 4 : 8 + cr.next() * 12;
-    return { x: 25 + Math.sin(a) * r, y: Math.max(1, 5.25 + Math.cos(a) * r), rim };
+    if (afterOrb) { const p = at((cr.next() - 0.5) * 2.2, 0.8 + cr.next() * 3); return { ...p, rim: true, sk: big && cr.chance(dunkP(actor) * 0.7) && made ? 'dunk' : 'putback' }; }
+    let pRim = fb ? 0.88 : big ? 0.6 : 0.4;
+    // Bayes: P(rim | made) is higher than P(rim) because rim shots go in more often
+    const fgR = 0.62, fgM = 0.4;
+    if (!blocked) pRim = made ? pRim * fgR / (pRim * fgR + (1 - pRim) * fgM) : pRim * (1 - fgR) / (pRim * (1 - fgR) + (1 - pRim) * (1 - fgM));
+    else pRim = Math.max(pRim, 0.75);
+    if (cr.chance(pRim)) {
+      const ang = side() * (0.15 + cr.next() * 1.1), r = 1 + cr.next() * 3.2;
+      const dunk = cr.chance(dunkP(actor) * (fb ? 1.6 : 1) * (made ? 1.25 : 0.12)) && !blocked; // a missed dunk is rare
+      return { ...at(ang, r), rim: true, sk: dunk ? 'dunk' : 'layup' };
+    }
+    if (big) {
+      // post moves from the block, or a face-up jumper from the elbow / short corner for a stretch big
+      if (cr.chance(actor.tpr > 0.12 ? 0.35 : 0.12)) { const ang = side() * (cr.chance(0.5) ? 0.55 + cr.next() * 0.3 : 1.25 + cr.next() * 0.3); return { ...at(ang, 13 + cr.next() * 5), rim: false, sk: 'jumper' }; }
+      const ang = side() * (0.7 + cr.next() * 0.6);
+      return { ...at(ang, 5 + cr.next() * 5), rim: false, sk: cr.chance(0.6) ? 'hook' : 'turnaround' };
+    }
+    if (cr.chance(0.28)) return { ...at(side() * cr.next() * 0.9, 6.5 + cr.next() * 4.5), rim: false, sk: 'floater' };
+    // mid-range: elbows, wings, baseline
+    const spot = cr.next();
+    const ang = side() * (spot < 0.45 ? 0.45 + cr.next() * 0.35 : spot < 0.8 ? 0.9 + cr.next() * 0.4 : 1.35 + cr.next() * 0.2);
+    const r = 14 + cr.next() * 6.5;
+    return { ...at(spot < 0.12 ? 0 : ang, r), rim: false, sk: actor.usg > 0.25 && cr.chance(0.3) ? 'fadeaway' : 'jumper' };
   };
+  /** how likely a finish at the rim is a dunk: size, finishing and era */
+  const dunkP = (g: GP) => Math.max(0.03, Math.min(0.8, (0.12 + 0.05 * (g.p.ht - 77) + 1.4 * (g.p2 - 0.5)) * (seasonOf < 1978 ? 0.5 : 1)));
   const foulOn = (s: Side, weights?: number[]) => {
     const on = s.on;
     const i = rng.weighted(weights ?? on.map(g => g.pf));
@@ -545,7 +580,6 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const shift = homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + callShift + (defCall === 'pressure' ? 0.08 : 0) + (fb && !three ? C.fbMake : 0) - (lc ? C.lateClock : 0);
     inc(actor, 'fga');
     if (three) inc(actor, 'tpa');
-    const spot = log ? shotSpot(three, actor, fb) : { x: 0, y: 0, rim: false };
     let made: boolean;
     let blocker: GP | null = null;
     if (three) {
@@ -559,7 +593,10 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         made = false;
       } else made = rng.chance(Math.min(0.97, pMake / (1 - pBlk)));
     }
+    const spot = log ? shotSpot(three, actor, fb, afterOrb, made, !!blocker) : { x: 0, y: 0, rim: false, sk: '' };
     const what = three ? 'a three' : afterOrb ? 'a putback' : spot.rim ? 'at the rim' : 'a mid-range jumper';
+    const MADE: Record<string, string> = { dunk: fb ? 'throws it down on the break' : afterOrb ? 'slams home the putback' : 'throws it down', layup: fb ? 'scores on the break' : 'scores at the rim', putback: 'scores on the putback', hook: 'hits a hook shot', turnaround: 'hits a turnaround jumper', floater: 'drops in a floater', fadeaway: 'hits a fadeaway', jumper: 'hits a mid-range jumper' };
+    const MISS: Record<string, string> = { dunk: 'misses at the rim', layup: 'misses at the rim', putback: 'misses the putback', hook: 'misses a hook shot', turnaround: 'misses a turnaround', floater: 'misses a floater', fadeaway: 'misses a fadeaway', jumper: 'misses a mid-range jumper' };
     if (made) {
       const pts = three ? 3 : 2;
       inc(actor, 'fgm'); if (three) inc(actor, 'tpm');
@@ -569,7 +606,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       let astTxt = '';
       if (rng.chance(pAst)) { const as = mates[rng.weighted(mates.map(g => g.ast))]; inc(as, 'ast'); astTxt = ` (assist ${short(as.p.name)})`; }
       ended = 'make';
-      ev(three ? 'make3' : 'make2', off, three ? `${an} hits a three${astTxt}` : `${an} scores ${fb ? 'on the break' : what}${astTxt}`, { x: spot.x, y: spot.y, m: md.p.id, ...tag });
+      ev(three ? 'make3' : 'make2', off, three ? `${an} hits a ${spot.sk === 'stepback' && !astTxt ? 'step-back ' : ''}three${astTxt}` : `${an} ${MADE[spot.sk] ?? `scores ${fb ? 'on the break' : what}`}${astTxt}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, m: md.p.id, ...tag });
       if (!three && rng.chance(C.andOne)) {
         foulOn(def);
         ftTrip(off, def, actor, 1);
@@ -577,7 +614,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       }
       return 'end';
     }
-    ev(three ? 'miss3' : 'miss2', off, blocker ? `${short(blocker.p.name)} blocks ${an}` : three ? `${an} misses a three` : `${an} misses ${what === 'at the rim' ? 'at the rim' : what === 'a putback' ? 'the putback' : 'a mid-range jumper'}`, { x: spot.x, y: spot.y, m: md.p.id, ...tag });
+    ev(three ? 'miss3' : 'miss2', off, blocker ? `${short(blocker.p.name)} blocks ${an}${spot.sk ? `'s ${({ dunk: 'dunk attempt', stepback: 'step-back' } as Record<string, string>)[spot.sk] ?? spot.sk}` : ''}` : three ? `${an} misses a three` : `${an} ${MISS[spot.sk] ?? `misses ${what === 'at the rim' ? 'at the rim' : what === 'a putback' ? 'the putback' : 'a mid-range jumper'}`}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, m: md.p.id, ...tag });
     return rebound(off, def, false);
   }
 

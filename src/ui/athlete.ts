@@ -8,8 +8,9 @@ export interface Kit { jersey: string; trim: string; trim2: string; shorts: stri
 export interface Body {
   skin: string; hair: string; hairColor: string; facial: string; band: boolean; num: number; ht: number;
   build?: number; socks?: string; sockH?: number; shoe?: string; sleeve?: number; knee?: boolean; wrist?: boolean;
+  tat?: number; goggles?: boolean; legSleeve?: number; // tattoos (1 one arm, 2 both), goggles, a compression sleeve on one leg (1 front, -1 back)
 }
-export type AthPose = 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'sit';
+export type AthPose = 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'sit' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
 export interface AthOpts {
   H: number;          // standing height in canvas pixels
   face: number;       // 1 = facing right, -1 = left
@@ -23,6 +24,8 @@ export interface AthOpts {
   num?: boolean;      // draw the jersey number
   view?: 'side' | 'front' | 'back'; // profile, facing the camera, or running away from it
   name?: string;      // surname on the back of the jersey
+  hand?: number;      // dribbling hand (1 = front hand)
+  t?: number;         // time left in a timed pose (animations that unfold)
 }
 export interface Hands { front: { x: number; y: number }; back: { x: number; y: number }; head: { x: number; y: number } }
 
@@ -130,6 +133,57 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
       thA = 0.25; bdA = 0.55; thB = -0.1; bdB = 0.35;
       uA = 0.55; fA = 0.2; uB = 0.35; fB = 0.15;
       break;
+    case 'gather': // dip before the jump, ball at the chest
+      hipY += 6 * u; lean = 0.1;
+      thA = 0.35; bdA = 0.8; thB = -0.1; bdB = 0.65;
+      uA = 0.55; fA = 1.9; uB = 0.45; fB = 1.75;
+      break;
+    case 'follow': // follow-through: shooting arm up, wrist snapped down
+      thA = 0.15; bdA = air ? 0.5 : 0.25; thB = -0.05; bdB = air ? 0.6 : 0.2;
+      uA = Math.PI - 0.38; fA = Math.PI - 0.95; uB = Math.PI - 1.2; fB = Math.PI - 0.9;
+      break;
+    case 'fade': // fadeaway: leaning back, arms high
+      thA = 0.35; bdA = 0.55; thB = 0.2; bdB = 0.7; lean = -0.32;
+      uA = Math.PI - 0.15; fA = Math.PI + 0.05; uB = Math.PI - 0.5; fB = Math.PI - 0.2;
+      break;
+    case 'layup': // one knee driving up, ball hand extended to the rim
+      thA = 1.25; bdA = 1.6; thB = -0.25; bdB = 0.35; lean = -0.05;
+      uA = Math.PI - 0.28; fA = Math.PI - 0.12; uB = 0.9; fB = 1.5;
+      break;
+    case 'dunk': // both arms over the head, body arched
+      thA = 0.55; bdA = 1.2; thB = 0.35; bdB = 1.1; lean = -0.12;
+      uA = Math.PI - 0.05; fA = Math.PI + 0.25; uB = Math.PI - 0.2; fB = Math.PI + 0.1;
+      break;
+    case 'hang': // hanging on the rim
+      thA = 0.25; bdA = 0.5; thB = 0.1; bdB = 0.6; lean = 0.05;
+      uA = Math.PI - 0.15; fA = Math.PI - 0.05; uB = Math.PI - 0.25; fB = Math.PI - 0.1;
+      break;
+    case 'hook': // sweeping hook: shooting arm high over the head, the other shielding
+      thA = 0.9; bdA = 1.2; thB = -0.15; bdB = 0.3; lean = -0.18;
+      uA = Math.PI - 0.55; fA = Math.PI - 0.25; uB = 1.35; fB = 1.6; spreadB = 0.9;
+      break;
+    case 'block': case 'reb':
+      thA = 0.25; bdA = 0.7; thB = -0.05; bdB = 0.6;
+      uA = Math.PI - 0.12; fA = Math.PI - 0.04; uB = pose === 'reb' ? Math.PI - 0.3 : 0.6; fB = pose === 'reb' ? Math.PI - 0.15 : 1.1;
+      break;
+    case 'contest': // a hand up in the shooter's face
+      hipY += 4 * u; lean = 0.08;
+      thA = 0.3; bdA = 0.55; thB = -0.3; bdB = 0.3;
+      uA = Math.PI - 0.15; fA = Math.PI - 0.08; uB = -0.6; fB = -0.9; spreadB = 0.8;
+      break;
+    case 'pass': // both arms pushed out toward the target
+      thA = 0.3; bdA = 0.45; thB = -0.25; bdB = 0.3; lean = 0.14;
+      uA = 1.45; fA = 1.6; uB = 1.3; fB = 1.5;
+      break;
+    case 'screen': // feet set wide, arms crossed in front
+      hipY += 3 * u; thA = 0.22; bdA = 0.35; thB = -0.22; bdB = 0.35;
+      uA = 0.35; fA = 1.75; uB = 0.25; fB = 1.9;
+      break;
+    case 'boxout': // low, wide, arms out, backside into the man
+      hipY += 8 * u; lean = 0.2;
+      thA = 0.55; bdA = 0.9; thB = -0.55; bdB = 0.4;
+      uA = 1.0; fA = 1.6; uB = -1.0; fB = -1.5; spreadA = 1.3; spreadB = 1.3;
+      break;
     case 'sit':
       hipY = -22 * u; lean = -0.05;
       thA = Math.PI / 2 - 0.08; bdA = Math.PI / 2 - 0.05; thB = Math.PI / 2 - 0.12; bdB = Math.PI / 2 - 0.1;
@@ -186,6 +240,7 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
       limb(ctx, L.kn.x - bx * 0.7, L.kn.y + 1.5 * u, L.an.x - bx * 0.5, L.an.y - 4 * u, 0.9 * u, 0.7 * u, skinL);
       limb(ctx, L.kn.x - 0.6 * u, L.kn.y - 0.6 * u, L.kn.x + 0.6 * u, L.kn.y - 0.6 * u, 1.2 * u, 1.2 * u, skinD); // kneecap
     }
+    if (b.legSleeve && (b.legSleeve > 0) === !back) { limb(ctx, L.h.x + (L.kn.x - L.h.x) * 0.55, L.h.y + (L.kn.y - L.h.y) * 0.55, L.kn.x, L.kn.y, 7.4 * u * lw, 5.8 * u * lw, back ? '#161616' : '#222'); limb(ctx, L.kn.x, L.kn.y, cx, cy, 5.8 * u * lw, 6.4 * u * lw, back ? '#161616' : '#222'); limb(ctx, cx, cy, L.an.x, L.an.y, 6.4 * u * lw, 4.2 * u, back ? '#161616' : '#222'); }
     if (b.knee) limb(ctx, L.kn.x, L.kn.y - 1.2 * u, L.kn.x + Math.sin(L.sa) * 4 * u * f * sx, L.kn.y + 4 * u, 6.4 * u, 5.8 * u, back ? '#222' : '#333');
     // socks (tube socks with stripes in the early years)
     const sockH = (b.sockH ?? 6) * u;
@@ -239,6 +294,11 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
       const ox = nx2 / nl * w * 0.25, oy = ny2 / nl * w * 0.25;
       limb(ctx, A.s0.x + ox, A.s0.y + oy + 1.5 * u, A.el.x + ox, A.el.y + oy, 0.9 * u, 0.7 * u, skinL);
       limb(ctx, mx - ox, my - oy, A.ha.x - ox, A.ha.y - oy, 0.9 * u, 0.6 * u, skinD);
+    }
+    if (b.tat && !sleeve && (b.tat >= 2 || !back)) {
+      const ink = shade(skin, 0.55);
+      for (const t of [0.25, 0.5, 0.75]) { const tx = A.s0.x + (A.el.x - A.s0.x) * t, ty = A.s0.y + (A.el.y - A.s0.y) * t; oval(ctx, tx, ty, w * 0.32, w * 0.22, ink); }
+      if (b.tat >= 2) for (const t of [0.35, 0.65]) { const tx = A.el.x + (A.ha.x - A.el.x) * t, ty = A.el.y + (A.ha.y - A.el.y) * t; oval(ctx, tx, ty, w * 0.26, w * 0.2, ink); }
     }
     if (b.wrist) { const wx = A.el.x + (A.ha.x - A.el.x) * 0.8, wy = A.el.y + (A.ha.y - A.el.y) * 0.8; limb(ctx, wx, wy, A.ha.x - (A.ha.x - A.el.x) * 0.1, A.ha.y - (A.ha.y - A.el.y) * 0.1, w * 0.86, w * 0.86, k.trim); }
     // hand with fingers toward the end of the forearm
@@ -356,6 +416,7 @@ function drawHead(ctx: Ctx, cx: number, cy: number, u: number, f: number, b: Bod
     rect(ctx, ex - 1.2 * u, cy - 2.4 * u, 2.5 * u, 0.85 * u, brow);
   };
   if (side) eye(cx + f * 2.6 * u); else { eye(cx - 2.3 * u); eye(cx + 2.3 * u); }
+  if (b.goggles) { limb(ctx, cx - rx, cy - 0.6 * u, cx + rx, cy - 0.6 * u, 2.6 * u, 2.6 * u, '#1d1d22'); if (side) oval(ctx, cx + f * 2.6 * u, cy - 0.6 * u, 1.6 * u, 1.3 * u, '#7fb6d9'); else { oval(ctx, cx - 2.3 * u, cy - 0.6 * u, 1.5 * u, 1.2 * u, '#7fb6d9'); oval(ctx, cx + 2.3 * u, cy - 0.6 * u, 1.5 * u, 1.2 * u, '#7fb6d9'); } }
   // nose
   if (side) { rect(ctx, cx + f * 5.2 * u - (f > 0 ? 0 : 1.2 * u), cy + 0.2 * u, 1.2 * u, 2.2 * u, skin); rect(ctx, cx + f * 4.2 * u - (f > 0 ? 0 : 1 * u), cy + 2.1 * u, 1.2 * u, 0.6 * u, skinD); }
   else { rect(ctx, cx - 0.5 * u, cy + 0.2 * u, 1 * u, 2.2 * u, skinD); rect(ctx, cx - 1.1 * u, cy + 2.2 * u, 2.2 * u, 0.6 * u, shade(skin, 0.7)); }

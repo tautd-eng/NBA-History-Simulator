@@ -11,14 +11,13 @@ import type { PbpEv } from '../engine/game';
 import { hash01 } from '../rng';
 import { Timeline } from './timeline';
 import { drawAthleteOutlined as drawAthlete, shade, Body, Hands, AthPose } from './athlete';
+import { AZ, AXC, AFX, AFY, AYF, VZ, aproj, depthScale, renderCourt, renderStands, Layer } from './arena';
 
 export const VW = 320, VH = 180;
 const S = 2; // drawn at 2× so text and overlays stay crisp
 const Z = 1.4; // broadcast camera zoom: follows the ball across the court
 const FAR_Y = 74, NEAR_Y = 168, FAR_L = 50, FAR_R = 270, NEAR_L = 6, NEAR_R = 314;
 const LEN = 94, WID = 50;
-// arena court: flat, seen from the side stands
-const AX0 = 8, AFX = (VW - 16) / 94, AY0 = 62, AFY = 2.0;
 
 // Team colours (franchise id → [primary, secondary]). Plain colours, no marks.
 const COLORS: Record<string, [string, string]> = {
@@ -46,25 +45,33 @@ export interface CourtOpts {
   looks?: Record<string, Look>; // per player: skin, hair, number
   orbReset?: number;            // shot clock after an offensive rebound (24, or 14 from 2018–19)
   season?: number;
+  homeName?: string;            // full team name (painted on the baselines)
 }
-export interface Look extends Body {}
+export interface Look extends Body { ovr?: number; ath?: number }
 
 type Side = 'h' | 'a';
-type Pose = 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble';
+type Pose = 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
 type Beh =
   | { k: 'spot' }
   | { k: 'guard'; man: string; tight: number }
   | { k: 'back'; man: string; slot: number }
   | { k: 'follow'; pid: string; dx: number; dd: number }
   | { k: 'box'; man: string }
-  | { k: 'mark'; pid: string; dist: number };
+  | { k: 'mark'; pid: string; dist: number }
+  | { k: 'arrive'; x: number; d: number; at: number }; // get to a spot by a deadline (broadcast time)
 interface PSprite {
   pid: string; side: Side; x: number; d: number; vx: number; vd: number; tx: number; td: number;
   spd: number; mul: number; z: number; jt: number; jd: number; jh: number;
   pose: Pose; pt: number; face: number; beh: Beh; skin: string; hair: string | null; leaving?: boolean;
   ph: number; // stride phase
+  hand?: number;  // dribbling hand: 1 = front (strong) hand, -1 = the other
+  dph?: number;   // dribble phase
+  xover?: number; // crossover in progress (seconds left)
+  rate?: number;  // dribbles per second
+  hang?: number;  // hanging on the rim after a dunk (seconds)
+  lvx?: number;   // last velocity along the court (to notice a change of direction)
 }
-interface Fly { x0: number; d0: number; z0: number; x1: number; d1: number; z1: number; peak: number; t: number; dur: number; to?: string; done?: () => void }
+interface Fly { x0: number; d0: number; z0: number; x1: number; d1: number; z1: number; peak: number; t: number; dur: number; to?: string; done?: () => void; bounce?: boolean }
 interface Ball { x: number; d: number; z: number; holder: string | null; fly: Fly | null }
 interface Key { at: number; fn: () => void; done?: boolean }
 interface Floater { text: string; color: string; t: number; dur: number; big: boolean; at?: { x: number; d: number; z: number } }
@@ -104,6 +111,7 @@ export class PixelCourt {
   raf = 0;
   crowd: { x: number; y: number; c: string; ph: number }[] = [];
   onIdle: (() => void) | null = null;
+  dbg: ((x: any) => void) | null = null; // test hook
   onShown: ((n: number) => void) | null = null;
   idleFired = true;
   label: { pid: string; t: number } | null = null;
@@ -131,7 +139,15 @@ export class PixelCourt {
   shown = -1;
 
   benchCache = new Map<string, HTMLCanvasElement>();
-  R = 1; // extra resolution (the arena view draws its players in finer detail)
+  R = 1; // extra resolution of the canvas (crisp text and overlays)
+  Rw = 1; // arena: resolution of the pixel buffer the scene is drawn into (scaled up ×R)
+  buf: HTMLCanvasElement | null = null;
+  courtL: Layer | null = null;
+  standsL: (Layer & { cheer: HTMLCanvasElement }) | null = null;
+  shake = 0;
+  hot = new Map<string, boolean>(); // players on fire (three makes in a row)
+  streak = new Map<string, number>();
+  notes = new Map<number, string>(); // what happened, explained (turnovers): shown with the play-by-play line
   canvas: HTMLCanvasElement;
   constructor(canvas: HTMLCanvasElement, o: CourtOpts) {
     this.canvas = canvas;
@@ -172,14 +188,15 @@ export class PixelCourt {
       this.canvas.width = VW * S * R; this.canvas.height = VH * S * R;
       this.ctx.imageSmoothingEnabled = false;
     }
-    this.z = this.arena ? 1.3 : Z;
-    this.camY = this.arena ? 24 : VH - VH / this.z;
-    this.camX = Math.max(0, Math.min(VW - VW / this.z, this.camX));
+    this.z = this.arena ? AZ : Z;
+    this.camY = this.arena ? AYF - 32 : VH - VH / this.z;
+    this.camX = this.arena ? AXC - VW / this.z / 2 : Math.max(0, Math.min(VW - VW / this.z, this.camX));
+    this.benchCache.clear();
   }
 
   // ------------------------------------------------------------ geometry
   proj(x: number, d: number, z = 0) {
-    if (this.arena) return { x: AX0 + x * AFX, y: AY0 + d * AFY - z * 2.1, sc: AFX };
+    if (this.arena) return aproj(x, d, z);
     const t = Math.max(-0.15, Math.min(1.2, d / WID));
     const l = FAR_L + t * (NEAR_L - FAR_L), r = FAR_R + t * (NEAR_R - FAR_R);
     const sc = (r - l) / LEN;
@@ -233,8 +250,25 @@ export class PixelCourt {
     this.cheer = Math.max(0, this.cheer - dt);
     this.net.h = Math.max(0, this.net.h - dt); this.net.a = Math.max(0, this.net.a - dt);
     const bp = this.proj(this.ball.x, this.ball.d);
-    const camT = Math.max(0, Math.min(VW - VW / this.z, bp.x - VW / this.z / 2));
-    this.camX += (camT - this.camX) * Math.min(1, dt * 3);
+    if (this.arena) {
+      // broadcast camera: leads the play toward the basket being attacked, eases in and out
+      // keep the basket being attacked in the picture: frame between the ball and the rim
+      const hold = this.P(this.ball.holder);
+      const off: Side | null = hold ? hold.side : this.ball.fly ? (this.ball.x > 47 ? 'h' : 'a') : null;
+      let fx = this.ball.x;
+      if (off) {
+        const B = this.basket(off);
+        const near = Math.abs(B.x - this.ball.x);
+        fx = near < 44 ? this.ball.x + (B.x - this.ball.x) * 0.42 : this.ball.x + this.dir(off) * 8;
+      }
+      const vw = VW / this.z;
+      const camT = Math.max(-26, Math.min(346 - vw, this.proj(fx, 25).x - vw / 2));
+      this.camX += (camT - this.camX) * Math.min(1, dt * 2.2);
+      this.shake = Math.max(0, this.shake - dt * 2.5);
+    } else {
+      const camT = Math.max(0, Math.min(VW - VW / this.z, bp.x - VW / this.z / 2));
+      this.camX += (camT - this.camX) * Math.min(1, dt * 3);
+    }
   }
 
   private advance(dv: number) {
@@ -283,7 +317,7 @@ export class PixelCourt {
   /** The event at window k happens. */
   private register(k: number) {
     const e = this.tl!.items[k].e;
-    if (e.k !== 'sub' || k > 0) this.setCaption(e);
+    if (e.k !== 'sub' || k > 0) this.setCaption(e, k);
     this.shown = k + 1;
     this.onShown?.(k + 1);
   }
@@ -295,10 +329,11 @@ export class PixelCourt {
     const p = pid ? this.players.get(pid) : null;
     this.say(text, color, false, dur, p ? { x: p.x, d: p.d, z: 22 } : undefined);
   }
-  private setCaption(e: PbpEv) {
+  private setCaption(e: PbpEv, k = -1) {
     const txt = e.txt.replace('{h}', this.o.home.abbr).replace('{a}', this.o.away.abbr);
     const d = e.m && e.k.startsWith('m') ? this.o.names[e.m] : null;
-    this.caption = { text: d ? `${txt} · guarded by ${d.split(' ').slice(-1)[0]}` : txt, side: e.s, kind: e.k, t: 0 };
+    const note = this.notes.get(k);
+    this.caption = { text: note ? note : d ? `${txt} · guarded by ${d.split(' ').slice(-1)[0]}` : txt, side: e.s, kind: e.k, t: 0 };
   }
   /** what the team is doing (shown until the play happens) */
   private call(side: Side, text: string) { this.caption = { text, side, kind: 'call', t: 0 }; }
@@ -318,7 +353,7 @@ export class PixelCourt {
     const r = hash01(pid);
     const pn = this.o.pos[pid] ?? 3;
     const sp: PSprite = {
-      pid, side, x, d, vx: 0, vd: 0, tx: x, td: d, spd: JOG, mul: (1.06 - (pn - 1) * 0.035) * (0.96 + 0.08 * hash01(pid + 'q')),
+      pid, side, x, d, vx: 0, vd: 0, tx: x, td: d, spd: JOG, mul: (1.06 - (pn - 1) * 0.035) * (0.95 + 0.05 * hash01(pid + 'q') + 0.08 * (this.o.looks?.[pid]?.ath ?? 0.5)) * (1 + 0.025 * this.starOf(pid)),
       z: 0, jt: 0, jd: 0, jh: 0, pose: 'stand', pt: 0, face: side === 'h' ? 1 : -1, beh: { k: 'spot' }, ph: hash01(pid + 'ph') * 6.28,
       skin: SKIN[Math.floor(r * SKIN.length)], hair: HAIR[Math.floor(hash01(pid + 'h') * HAIR.length)],
     };
@@ -328,6 +363,7 @@ export class PixelCourt {
   /** send a player somewhere at a given speed */
   private go(p: PSprite | null, x: number, d: number, spd = RUN) {
     if (!p) return;
+    if (p.beh.k === 'arrive' && p.beh.at > this.v) return; // on his way to his shot: nothing else matters now
     p.beh = { k: 'spot' }; p.tx = x; p.td = Math.max(-4, Math.min(WID + 4, d)); p.spd = Math.min(spd, 26);
   }
   private jump(p: PSprite | null, h: number, dur: number, pose: Pose = 'jump') {
@@ -348,12 +384,16 @@ export class PixelCourt {
     b.fly = { x0, d0, z0, x1, d1, z1, peak, t: 0, dur, done, to };
   }
   /** a pass (homes in on the receiver) */
-  private pass(to: string | null | undefined, bounce = false) {
+  private pass(to: string | null | undefined, bounce = false, lob = false) {
     const r = this.P(to);
     if (!r || this.ball.holder === to) return;
+    const passer = this.P(this.ball.holder);
     const from = this.ballPos();
     const dist = hyp(r.x - from.x, r.d - from.d);
-    this.flyBall(r.x, r.d, 5, bounce ? 1 : Math.min(9, 5 + dist * 0.06), Math.max(0.2, 0.08 + dist / 42), () => this.give(to), to);
+    // a crisp chest pass travels flat and fast; bounce passes skip off the floor; lobs float
+    if (passer) { this.setPose(passer, 'pass', 0.28); passer.face = Math.sign(r.x - passer.x) || passer.face; }
+    this.flyBall(r.x, r.d, 4.6, lob ? 9 + dist * 0.08 : bounce ? 0 : 4.9 + dist * 0.012, lob ? 0.35 + dist / 34 : Math.max(0.16, 0.08 + dist / (bounce ? 40 : 50)), () => this.give(to), to);
+    if (bounce && this.ball.fly) this.ball.fly.bounce = true;
   }
   /** defenders take their man (offence pid → defender pid by position, unless a matchup is given) */
   private matchUp(off: Side, force?: [string, string]) {
@@ -405,6 +445,13 @@ export class PixelCourt {
     for (const p of this.players.values()) {
       const b = p.beh;
       if (b.k === 'spot') continue;
+      if (b.k === 'arrive') {
+        const dist = hyp(b.x - p.x, b.d - p.d), left = b.at - this.v;
+        p.tx = b.x; p.td = b.d;
+        p.spd = Math.max(JOG, Math.min(SPRINT * 1.3, dist / Math.max(0.12, left) * 1.25));
+        if (left <= 0) p.beh = { k: 'spot' };
+        continue;
+      }
       if (b.k === 'guard' || b.k === 'box' || b.k === 'back') {
         const man = this.P(b.man);
         if (b.k === 'back') {
@@ -451,13 +498,14 @@ export class PixelCourt {
   private physics(dt: number) {
     const bp = this.ballPos();
     for (const [pid, p] of this.players) {
-      if (p.jd > 0) { p.jt += dt; const u = p.jt / p.jd; if (u >= 1) { p.jd = 0; p.z = 0; } else p.z = p.jh * 4 * u * (1 - u); }
+      if (p.hang && p.hang > 0) p.hang -= dt;
+      else if (p.jd > 0) { p.jt += dt; const u = p.jt / p.jd; if (u >= 1) { p.jd = 0; p.z = 0; } else p.z = p.jh * 4 * u * (1 - u); }
       const dx = p.tx - p.x, dd = p.td - p.d, dist = hyp(dx, dd);
       const vmax = p.spd * p.mul;
       const vdes = dist < 0.08 ? 0 : Math.min(vmax, Math.sqrt(2 * ACC * 0.8 * dist));
       const ux = dist ? dx / dist : 0, ud = dist ? dd / dist : 0;
       let wx = ux * vdes - p.vx, wd = ud * vdes - p.vd;
-      const wl = hyp(wx, wd), amax = ACC * (p.spd >= SPRINT ? 1.15 : 1) * dt * (p.z > 0.3 ? 0.25 : 1);
+      const wl = hyp(wx, wd), amax = ACC * (p.spd >= SPRINT ? 1.15 : 1) * dt * (p.z > 0.3 && p.beh.k !== 'arrive' ? 0.25 : p.z > 0.3 ? 2.5 : 1);
       if (wl > amax) { wx *= amax / wl; wd *= amax / wl; }
       p.vx += wx; p.vd += wd;
       p.x += p.vx * dt; p.d += p.vd * dt;
@@ -465,6 +513,18 @@ export class PixelCourt {
       if (Math.abs(p.vx) > 2) p.face = Math.sign(p.vx);
       else if (Math.abs(bp.x - p.x) > 1.5 && this.ball.holder !== pid) p.face = Math.sign(bp.x - p.x);
       if (p.pt > 0) { p.pt -= dt; if (p.pt <= 0) p.pose = 'stand'; }
+      if (this.ball.holder === pid && !this.ball.fly) {
+        const v = hyp(p.vx, p.vd);
+        p.dph = (p.dph ?? 0) + dt * Math.PI * (1.9 + v * 0.09);
+        if (p.xover && p.xover > 0) p.xover -= dt;
+        else {
+          // crossovers: when he changes direction, and now and then to shake his man
+          const turn = Math.abs(p.vx) > 3 && Math.sign(p.vx) !== Math.sign(p.lvx ?? p.vx);
+          const dm = this.defOf(pid), close = dm ? hyp(dm.x - p.x, dm.d - p.d) < 6 : false;
+          if (turn || (close && hash01(pid + Math.floor(this.v * 3)) < dt * 3 * (0.35 + 0.3 * this.starOf(pid)))) { p.xover = 0.28; p.hand = -(p.hand ?? 1); }
+        }
+        p.lvx = p.vx;
+      } else p.xover = 0;
       if (p.leaving && dist < 1.2) this.players.delete(pid);
     }
     // nobody stands inside anybody else
@@ -472,8 +532,10 @@ export class PixelCourt {
     for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
       const a = ps[i], b = ps[j];
       const dx = b.x - a.x, dd = b.d - a.d, dist = hyp(dx, dd);
-      if (dist < 1.9 && dist > 0.001) {
-        const push = (1.9 - dist) * 0.5 * Math.min(1, dt * 12);
+      // teammates keep their spacing; opponents can get close but not inside each other
+      const min = a.side === b.side ? (a.z > 0.5 || b.z > 0.5 ? 1.9 : 3.4) : 2.1;
+      if (dist < min && dist > 0.001) {
+        const push = (min - dist) * 0.5 * Math.min(1, dt * (a.side === b.side ? 5 : 12));
         a.x -= dx / dist * push; a.d -= dd / dist * push; b.x += dx / dist * push; b.d += dd / dist * push;
       }
     }
@@ -488,7 +550,8 @@ export class PixelCourt {
       if (f.to && u < 0.85) { const r = this.P(f.to); if (r) { f.x1 = r.x; f.d1 = r.d; } }
       b.x = f.x0 + (f.x1 - f.x0) * u; b.d = f.d0 + (f.d1 - f.d0) * u;
       const lin = f.z0 + (f.z1 - f.z0) * u;
-      b.z = lin + 4 * (Math.max(f.peak, f.z0, f.z1) - Math.max(f.z0, f.z1)) * u * (1 - u);
+      if (f.bounce) b.z = u < 0.62 ? f.z0 * (1 - u / 0.62) : f.z1 * (u - 0.62) / 0.38;
+      else b.z = lin + 4 * (Math.max(f.peak, f.z0, f.z1) - Math.max(f.z0, f.z1)) * u * (1 - u);
       if (f.peak >= 11 && !this.ff) { const pp = this.proj(b.x, b.d, b.z); this.trail.push({ x: pp.x, y: pp.y, t: 0 }); }
       if (u >= 1) { b.fly = null; f.done?.(); }
     } else if (b.holder) {
@@ -822,7 +885,10 @@ export class PixelCourt {
       const at = t;
       if (kind < 0.42 && mates.length) {
         // swing it to a wing, everybody shifts
-        const w = mates.filter(p => this.posN(p.pid) <= 3.5)[Math.floor(r() * 3) % Math.max(1, mates.filter(p => this.posN(p.pid) <= 3.5).length)] ?? mates[0];
+        // the ball finds the stars more often
+        const wings = mates.filter(p => this.posN(p.pid) <= 3.5);
+        const star = mates.filter(p => this.starOf(p.pid) > 0).sort((a, b) => this.starOf(b.pid) - this.starOf(a.pid))[0];
+        const w = (star && r() < 0.45 ? star : wings[Math.floor(r() * 3) % Math.max(1, wings.length)]) ?? mates[0];
         const to = w.pid;
         const vhPrev = vh;
         const side1 = r() < 0.5, side2 = r() < 0.5;
@@ -835,6 +901,7 @@ export class PixelCourt {
         const scr = mates.slice().sort((p, q) => this.posN(q.pid) - this.posN(p.pid))[0];
         const cut = mates.find(p => p !== scr) ?? mates[0];
         add(at, () => { const dd = this.defOf(cut.pid); const tgt = dd ?? cut; this.go(scr, tgt.x + (r() - 0.5), tgt.d + (cut.d < 25 ? 2 : -2), JOG); });
+        add(at + 0.75, () => this.setPose(scr, 'screen', 0.8));
         add(at + 0.9, () => { this.go(cut, scr.x - s * 3, scr.d + (cut.d < 25 ? 6 : -6), RUN); });
         add(at + 1.6, () => { const q = this.spot(off, cut.d < 25 ? 'le' : 're', 3, r); this.go(scr, q.x, q.d, JOG); });
       } else if (kind < 0.82) {
@@ -891,11 +958,19 @@ export class PixelCourt {
     // late in the shot clock there is no time for a set play
     const sc0 = items[k].scb - (items[k].g1 - items[k].sc0);
     if (sc0 <= 2.5 && type !== 'putback' && type !== 'fb' && gap > 8) type = rim ? 'drive' : 'pullup';
-    const fl = rim ? 0.5 : three ? 1.0 : 0.8;
+    // stars get the floor cleared for them
+    const starA = actor ? this.starOf(actor) : 0;
+    if (!assist && !fb && ['drive', 'pullup', 'pnrDrive', 'pnrPull'].includes(type) && gap > 7 && r() < (starA === 2 ? 0.7 : starA === 1 ? 0.45 : 0.1)) type = 'iso';
+    // the shot itself, as the play-by-play describes it
+    const sk = e.sk ?? (rim ? 'layup' : three ? 'three' : 'jumper');
+    const motion = type === 'putback' ? (sk === 'dunk' ? 'dunk' : 'tip') : sk === 'dunk' ? 'dunk' : sk === 'layup' || sk === 'putback' ? 'layup' : sk === 'floater' ? 'floater' : sk === 'hook' ? 'hook' : sk === 'fadeaway' || sk === 'turnaround' ? 'fade' : sk === 'stepback' ? 'stepback' : 'jumper';
+    const dist0 = hyp(S.x - B.x, S.d - B.d);
+    const FL: Record<string, number> = { dunk: 0.14, tip: 0.35, layup: 0.45, floater: 0.7, hook: 0.62 };
+    const fl = Math.min(L * 0.45, FL[motion] ?? 0.62 + dist0 * 0.017);
     const release = L - fl;
     const creator = ['roll', 'pop', 'kick', 'cut', 'offscreen'].includes(type) ? (assist ?? pg) : actor;
     const screener = o.filter(p => p.pid !== actor && p.pid !== creator).sort((p, q) => this.posN(q.pid) - this.posN(p.pid))[0]?.pid ?? null;
-    const DUR: Record<string, number> = { putback: 0.35, fb: 0, roll: 2.9, pop: 2.7, pnrDrive: 2.6, pnrPull: 2.5, drive: 2.6, pullup: 1.9, post: 2.8, kick: 2.1, offscreen: 2.1, cut: 1.6 };
+    const DUR: Record<string, number> = { iso: 3.4, putback: 0.35, fb: 0, roll: 2.9, pop: 2.7, pnrDrive: 2.6, pnrPull: 2.5, drive: 2.6, pullup: 1.9, post: 2.8, kick: 2.1, offscreen: 2.1, cut: 1.6 };
     let finDur = DUR[type] ?? 2;
     if (type === 'fb') {
       const hpid = h.pid && this.players.has(h.pid) ? h.pid : this.ball.holder;
@@ -916,6 +991,7 @@ export class PixelCourt {
       case 'roll': case 'pop': {
         cap(`Pick and ${type}: ${name(creator)} & ${name(actor)}`);
         add(T(0), () => { const hnd = this.P(creator), a = A(); if (hnd && a) this.go(a, hnd.x + s * 2, hnd.d + (hnd.d < 25 ? 2.5 : -2.5), RUN / c); });
+        add(T(0.75), () => this.setPose(A(), 'screen', 0.6 * c));
         add(T(1.0), () => {
           const hnd = this.P(creator), dh = this.defOf(creator), a = A();
           if (hnd) this.go(hnd, B.x - s * 15, 25 + (hnd.d < 25 ? 5 : -5), RUN / c);
@@ -927,6 +1003,7 @@ export class PixelCourt {
           const da = DA(), dh = this.defOf(creator);
           if (md && dh && md === dh.pid) { // switch on the screen
             this.assign(actor!, md); if (a) dh.beh = { k: 'mark', pid: a.pid, dist: 2 };
+            this.sayAt(md, 'SWITCH', '#9fd3ff', 1.0);
           } else if (da && a) da.beh = { k: 'follow', pid: a.pid, dx: -s * 2.5, dd: 0.8 };
         });
         add(T(type === 'roll' ? 2.15 : 1.95), () => this.pass(actor, type === 'roll'));
@@ -935,6 +1012,7 @@ export class PixelCourt {
       case 'pnrDrive': case 'pnrPull': {
         cap(`${name(actor)} off the pick${screener ? ' from ' + name(screener) : ''}`);
         add(T(0), () => { const a = A(), x = this.P(screener); if (a && x) this.go(x, a.x + s * 2, a.d + (a.d < 25 ? 2.5 : -2.5), RUN / c); });
+        add(T(0.7), () => this.setPose(this.P(screener), 'screen', 0.8 * c));
         add(T(0.9), () => {
           const a = A(); if (!a) return;
           this.go(a, S.x, S.d, (type === 'pnrDrive' ? SPRINT : RUN) / c);
@@ -955,6 +1033,30 @@ export class PixelCourt {
           const da = DA(); if (da) da.beh = { k: 'follow', pid: a.pid, dx: -s * 2, dd: a.d < 25 ? -1.2 : 1.2 };
         });
         add(T(1.8), () => this.helpSide(off, actor, blocker));
+        break;
+      }
+      case 'iso': {
+        const dm = md ?? this.defOf(actor)?.pid ?? null;
+        const ha = actor ? this.looksOf(actor).ht : 79, hd = dm ? this.looksOf(dm).ht : 79;
+        cap(`ISO: ${name(actor)}${dm ? ' vs ' + name(dm) : ''}${Math.abs(ha - hd) >= 5 ? ' – mismatch!' : ''}`);
+        this.clearOut(add, T(0), off, actor, r);
+        // set up 22+ feet out on the side of the shot, then work his man
+        const dS = hyp(S.x - B.x, S.d - B.d);
+        let ux = (S.x - B.x) / (dS || 1), ud = (S.d - B.d) / (dS || 1);
+        if (dS < 4) { ux = -s; ud = (S.d - 25) / 12; const l = hyp(ux, ud); ux /= l; ud /= l; }
+        const R0 = Math.max(21, dS + 3), ix = B.x + ux * R0, id = Math.max(4, Math.min(46, B.d + ud * R0));
+        add(T(0), () => { this.go(A(), ix, id, JOG / c); const da = DA(); if (da && actor) da.beh = { k: 'guard', man: actor, tight: 1.5 }; });
+        const xo = () => { const a = A(); if (a) { a.xover = 0.28; a.hand = -(a.hand ?? 1); } };
+        add(T(0.95), () => this.go(A(), ix - ux * 1.4, id - ud * 1.4, WALK * 1.4)); // jab step
+        add(T(1.25), () => { this.go(A(), ix, id, WALK); xo(); });
+        add(T(1.7), () => { this.go(A(), ix, id + (id < 25 ? 2 : -2), WALK); xo(); });
+        add(T(2.15), () => { this.go(A(), ix, id, WALK); xo(); }); // hesitation
+        add(T(2.55), () => {
+          const a = A(); if (!a) return;
+          this.go(a, S.x, S.d, rim ? SPRINT : RUN);
+          const da = DA(); if (da) da.beh = { k: 'follow', pid: a.pid, dx: -s * 2, dd: a.d < 25 ? -1 : 1 };
+        });
+        if (rim) add(T(3.0), () => this.helpSide(off, actor, blocker));
         break;
       }
       case 'pullup': {
@@ -1014,7 +1116,7 @@ export class PixelCourt {
         add(0, () => { const a = A(); if (a) this.go(a, S.x, S.d, RUN); this.call(off, `${name(actor)} goes right back up`); });
         break;
     }
-    this.shotKeys(add, k, L, release, fl, actor, md, blocker, made, three, rim, S, off, def, B, s, r, type);
+    this.shotKeys(add, k, L, release, fl, actor, md, blocker, made, three, rim, S, off, def, B, s, r, type, motion);
   }
 
   /** weak-side help: the nearest big rotates to the rim (or the blocker) */
@@ -1034,30 +1136,70 @@ export class PixelCourt {
     });
   }
 
-  private shotKeys(add: Add, k: number, L: number, release: number, fl: number, actor: string | null, md: string | null, blocker: string | null, made: boolean, three: boolean, rim: boolean, S: { x: number; d: number }, off: Side, def: Side, B: { x: number; d: number }, s: number, r: () => number, type: string) {
+  private shotKeys(add: Add, k: number, L: number, release: number, fl: number, actor: string | null, md: string | null, blocker: string | null, made: boolean, three: boolean, rim: boolean, S: { x: number; d: number }, off: Side, def: Side, B: { x: number; d: number }, s: number, r: () => number, type: string, motion = 'jumper') {
     const items = this.tl!.items, e = items[k].e;
+    const lk = actor ? this.looksOf(actor) : null;
+    const ath = lk?.ath ?? 0.5, star = actor ? this.starOf(actor) : 0;
     const A = () => this.P(actor);
     const DA = () => this.P(md) ?? this.defOf(actor);
     const next = items[k + 1]?.e;
     const n2 = items[k + 2]?.e;
     const andOne = next?.k === 'foul' && made && !!n2 && (n2.k === 'ft' || n2.k === 'ftm') && n2.s === off;
-    // gather and rise
-    add(release - (rim ? 0.35 : 0.3), () => {
+    // whatever the play, the shooter gets to his spot in time: the shot comes from where the play-by-play says
+    const gatherAt = release - (rim ? 0.4 : 0.32);
+    const abs = (t: number) => items[k].a + t;
+    // far away (just got the ball back at the other end): head there right from the start
+    add(0, () => { const a = A(); if (a && hyp(a.x - S.x, a.d - S.d) / RUN > gatherAt - 1.9) a.beh = { k: 'arrive', x: S.x, d: S.d, at: abs(gatherAt) }; });
+    for (const lead of type === 'fb' ? [3.2, 1.9, 0.9] : [1.9, 0.9]) add(Math.max(0, gatherAt - lead), () => { const a = A(); if (a && hyp(a.x - S.x, a.d - S.d) > 1.2) a.beh = { k: 'arrive', x: S.x, d: S.d, at: abs(gatherAt) }; });
+    // the move into the shot
+    const showOff = (txt: string) => { if (star > 0 || r() < 0.35) this.sayAt(actor, txt, '#ffd34d', 1.0); };
+    if (motion === 'stepback') add(Math.max(0, release - 0.78), () => {
       const a = A(); if (!a) return;
-      if (this.ball.holder !== actor) this.give(actor);
-      this.go(a, S.x, S.d, rim ? RUN : WALK);
-      this.jump(a, rim ? 3.4 : three ? 2.2 : 2.4, rim ? 0.75 : 0.65, 'shoot');
+      const da = DA(); const away = da ? Math.sign(a.x - da.x) || -s : -s;
+      a.beh = { k: 'spot' }; a.tx = a.x + away * 3.2; a.td = a.d; a.spd = SPRINT; this.jump(a, 0.4, 0.3, 'gather');
+      showOff('STEP-BACK');
+    });
+    const up = motion === 'dunk' ? 0.5 : motion === 'layup' || motion === 'floater' ? 0.45 : motion === 'tip' ? 0.3 : motion === 'hook' ? 0.35 : 0.22;
+    if (motion === 'jumper' || motion === 'stepback' || motion === 'fade') add(release - up - 0.13, () => {
+      const a = A(); if (!a) return;
+      if (this.ball.holder !== actor && !this.ball.fly) this.give(actor);
+      a.beh = { k: 'spot' }; a.tx = a.x; a.td = a.d; this.setPose(a, 'gather', 0.16);
+    });
+    add(release - up, () => {
+      const a = A(); if (!a) return;
+      if (this.ball.holder !== actor && !this.ball.fly) this.give(actor);
       this.label = { pid: a.pid, t: 1.6 }; this.hl = { pid: a.pid, t: 1.6 };
+      switch (motion) {
+        case 'dunk': {
+          // take off a step or two out and glide to the rim
+          a.beh = { k: 'arrive', x: B.x - s * 0.7, d: B.d + Math.max(-0.6, Math.min(0.6, (a.d - B.d) * 0.15)), at: abs(release) };
+          this.jump(a, 3.1 + ath * 1.1, 0.95, 'dunk');
+          break;
+        }
+        case 'layup': a.beh = { k: 'arrive', x: B.x - s * 1.3, d: B.d + Math.max(-1.2, Math.min(1.2, (a.d - B.d) * 0.3)), at: abs(release) }; this.jump(a, 2.6 + ath * 0.6, 0.8, 'layup'); break;
+        case 'floater': this.go(a, a.x + s * 1.5, a.d, JOG); this.jump(a, 1.9, 0.7, 'layup'); break;
+        case 'hook': this.go(a, a.x + s * 0.6, a.d + (B.d - a.d) * 0.1, WALK); this.jump(a, 1.3, 0.6, 'hook'); break;
+        case 'tip': a.beh = { k: 'arrive', x: B.x - s * 1.1, d: B.d, at: abs(release) }; this.jump(a, 3.0, 0.6, 'reb'); break;
+        case 'fade': this.go(a, a.x - s * 2.2, a.d, JOG); this.jump(a, 1.9, 0.68, 'fade'); break;
+        default: this.go(a, a.x, a.d, WALK); this.jump(a, three ? 1.9 : 2.1, 0.62, 'shoot');
+      }
       const da = DA();
       if (da && !blocker) { da.beh = { k: 'mark', pid: a.pid, dist: rim ? 1.4 : 2.6 }; this.label2 = { pid: da.pid, t: 1.4 }; }
     });
-    add(release - 0.08, () => { const da = DA(); if (da && !blocker && hyp(da.x - (A()?.x ?? 0), da.d - (A()?.d ?? 0)) < 6) this.jump(da, rim ? 3 : 2.2, 0.6); });
+    // the defender contests: a jump with a hand up when he is close, a raised hand otherwise
+    add(release - 0.12, () => {
+      const da = DA(), a = A(); if (!da || !a || blocker) return;
+      const dd = hyp(da.x - a.x, da.d - a.d);
+      if (dd < 5) this.jump(da, rim ? 2.8 : 1.8, 0.6, rim ? 'block' : 'contest');
+      else if (dd < 10) this.setPose(da, 'contest', 0.7);
+    });
     // the shot
     add(release, () => {
       const a = A();
+      if (a && this.dbg) this.dbg({ L, release, type, three, rim, dist: hyp(a.x - S.x, a.d - S.d), fromRim: hyp(a.x - B.x, a.d - B.d), want: hyp(S.x - B.x, S.d - B.d) });
       if (blocker) {
         const bp = this.P(blocker);
-        if (bp && a) { this.go(bp, a.x + s * 1.2, a.d, SPRINT); this.jump(bp, 3.6, 0.6); }
+        if (bp && a) { this.go(bp, a.x + s * 1.2, a.d, SPRINT); this.jump(bp, 3.6, 0.6, 'block'); }
         this.flyBall((a?.x ?? S.x) + s * 1.2, a?.d ?? S.d, 11, 12, 0.18, () => {
           this.sayAt(blocker, 'BLOCKED!', '#ff6b6b', 1.3);
           this.flyBall((a?.x ?? S.x) - s * (3 + r() * 6), (a?.d ?? S.d) + (r() - 0.5) * 12, 0.5, 6, 0.55);
@@ -1065,7 +1207,19 @@ export class PixelCourt {
         this.label2 = { pid: blocker, t: 1.5 };
       } else {
         this.trail = [];
-        this.flyBall(B.x, B.d, 10.2, rim ? 12 : three ? 19 : 16, fl);
+        if (motion === 'dunk' && a) {
+          // the slam: from above the rim straight through it
+          this.ball.holder = null;
+          this.ball.fly = { x0: B.x - s * 0.5, d0: B.d, z0: 11.4, x1: made ? B.x : B.x + s * 0.7, d1: B.d, z1: made ? 9.6 : 10.3, peak: 11.4, t: 0, dur: fl };
+          if (made) { a.hang = (ath > 0.45 || star > 0) && r() < 0.7 ? 0.42 : 0.12; this.setPose(a, 'hang', 0.6); }
+        } else {
+          // makes drop through the middle; misses catch the front or the back of the rim
+          const front = r() < 0.6 ? 1 : -1;
+          const tx = made ? B.x : B.x - s * 0.62 * front, td = made ? B.d : B.d + (r() - 0.5) * 0.9;
+          const peak = rim ? 11.6 : motion === 'floater' ? 14.5 : motion === 'hook' ? 13.5 : 12.5 + hyp(S.x - B.x, S.d - B.d) * 0.22;
+          this.flyBall(tx, td, made ? 10.1 : 10.4, peak, fl);
+          if (a && (motion === 'jumper' || motion === 'stepback')) this.setPose(a, 'follow', 0.55);
+        }
       }
     });
     // everyone reacts to the shot: bigs crash, guards get back, the defence boxes out
@@ -1089,6 +1243,8 @@ export class PixelCourt {
         this.net[off] = 0.4;
         this.cheer = off === 'h' ? 1.2 : 0.5;
         this.say(three ? '+3' : '+2', '#5dff8a', true, 1.3, atRim);
+        if (motion === 'dunk') { this.shake = star > 0 || ath > 0.6 ? 0.6 : 0.35; this.cheer = 2; this.net[off] = 0.8; this.sayAt(actor, star > 0 ? 'SLAM!' : 'DUNK!', '#ffd34d', 1.3); }
+        this.scored(actor, three ? 3 : 2, made);
         const lateClose = e.p >= 4 && e.c < 120 && Math.abs(e.hs - e.as) <= 5;
         if (three || lateClose || type === 'fb') { this.setPose(A(), 'celebrate', 1.4); if (lateClose) this.cheer = 2; }
         if (andOne) this.say('AND ONE!', '#ffd34d', false, 1.4, { x: S.x, d: S.d, z: 24 });
@@ -1103,9 +1259,31 @@ export class PixelCourt {
         let tx = B.x - s * (3 + r() * 6), td = B.d + (r() - 0.5) * 12;
         if (reb) { const dx = reb.x - B.x, dd = reb.d - B.d, dist = hyp(dx, dd) || 1; const g = Math.min(dist, 3 + r() * 7); tx = B.x + dx / dist * g; td = B.d + dd / dist * g; }
         this.ball.holder = null;
-        this.ball.fly = { x0: B.x, d0: B.d, z0: 10, x1: tx, d1: td, z1: 7, peak: 13, t: 0, dur: 0.7 };
+        const b = this.ball;
+        this.ball.fly = { x0: b.x, d0: b.d, z0: Math.max(10, b.z), x1: tx, d1: td, z1: 7, peak: 13 + r() * 2, t: 0, dur: 0.7 };
+        this.scored(actor, 0, false);
       }
     });
+  }
+
+  /** running points and hot streaks: stars and hot hands get noticed */
+  private scored(pid: string | null, pts: number, made: boolean) {
+    if (!pid) return;
+    const n = made ? (this.streak.get(pid) ?? 0) + 1 : 0;
+    this.streak.set(pid, n);
+    const was = this.hot.get(pid);
+    this.hot.set(pid, n >= 3);
+    if (!made || this.ff) return;
+    if (n >= 3 && !was) this.sayAt(pid, 'ON FIRE!', '#ff9a2e', 1.6);
+    const tot = this.ptsNow(pid);
+    if (this.starOf(pid) > 0 || tot >= 20) this.say(`${surname(this.o.names[pid] ?? '')} · ${tot} PTS`, this.starOf(pid) > 1 ? '#ffd34d' : '#ffffff', false, 1.6);
+  }
+  /** points so far (play-by-play up to the event on screen) */
+  private ptsNow(pid: string) {
+    let t = 0;
+    const items = this.tl?.items ?? [];
+    for (let i = 0; i <= Math.min(this.cur, items.length - 1); i++) for (const d of items[i].e.d ?? []) if (d[0] === pid && d[1] === 'pts') t += d[2];
+    return t;
   }
 
   // ------------------------------------------------------------ rebounds
@@ -1118,7 +1296,7 @@ export class PixelCourt {
       if (p) this.go(p, f ? f.x1 : this.ball.x, f ? f.d1 : this.ball.d, SPRINT);
       // nobody else chases it: the shooting team's guards are already back
     });
-    add(Math.max(0, L - 0.45), () => { const p = this.P(pid); if (p) { this.jump(p, 3, 0.55); this.label = { pid: p.pid, t: 0.9 }; } });
+    add(Math.max(0, L - 0.45), () => { const p = this.P(pid); if (p) { this.jump(p, 3, 0.55, 'reb'); this.label = { pid: p.pid, t: 0.9 }; } });
     add(L, () => {
       this.give(pid);
       if (e.k === 'orb') this.sayAt(pid, 'OFF. BOARD', '#9fd3ff', 0.9);
@@ -1134,36 +1312,56 @@ export class PixelCourt {
     const pid = this.pidOf(e, 'tov'), stl = this.pidOf(e, 'stl');
     const v = e.v ?? (stl ? 'pick' : 'bad');
     const md = e.m && this.players.has(e.m) ? e.m : null;
-    const finDur = v === 'clock' ? 1 : v === 'pick' || v === 'bad' ? 1.0 : 1.4;
+    const nm = (p: string | null | undefined) => (p ? surname(this.o.names[p] ?? '').toLowerCase().replace(/(^|[ -])\w/g, ch => ch.toUpperCase()) : '');
+    const finDur = v === 'clock' ? 1.2 : v === 'pick' || v === 'bad' ? 1.3 : 1.6;
     const P = this.possession(k, L, finDur, pid, add, r, { fb: !!(e as any).fb });
     const T = (x: number) => P.tD + x * P.sc;
     const A = () => this.P(pid);
+    const pressure = () => this.P(md) ?? this.defOf(pid);
+    // who the pass was meant for: the man the thief was guarding, if he is out there
+    const mates = this.ord(off).filter(p => p.pid !== pid);
+    const stMan = stl ? [...this.match].find(([, d]) => d === stl)?.[0] : null;
+    const tgt = mates.find(p => p.pid === stMan) ?? mates[Math.floor(r() * mates.length)];
+    const why: Record<string, string> = {
+      pick: `${nm(stl)} reads ${nm(pid)}'s pass${tgt ? ` to ${nm(tgt.pid)}` : ''} and jumps the lane`,
+      strip: `${nm(stl)} reaches in and pokes it away from ${nm(pid)} on the drive`,
+      bad: `${nm(pid)}'s pass${tgt ? ` for ${nm(tgt.pid)}` : ''} sails out of bounds${md ? ` – pressure from ${nm(md)}` : ''}`,
+      travel: `${nm(pid)} shuffles his feet under pressure${md ? ` from ${nm(md)}` : ''} – travel`,
+      oob: `${nm(pid)} drives into ${md ? nm(md) : 'traffic'} and loses it over the line`,
+      clock: `${md ? `${nm(md)} and the defence` : 'The defence'} take away every option – no shot in time`,
+    };
+    this.notes.set(k, why[v] ?? '');
     if (v === 'strip' || v === 'travel' || v === 'oob') {
       add(T(0), () => {
         const a = A(); if (!a) return;
-        const d0 = v === 'oob' ? (a.d < 25 ? -1.5 : WID + 1.5) : 25 + (r() - 0.5) * 10;
-        this.go(a, B.x - s * (v === 'oob' ? 6 : 12), d0, RUN / P.sc);
-        const da = this.P(md) ?? this.defOf(pid); if (da) { da.beh = { k: 'follow', pid: a.pid, dx: s * 1.6, dd: 0.6 }; this.label2 = { pid: da.pid, t: 1.4 }; }
-        this.label = { pid: a.pid, t: 1.4 };
+        const d0 = v === 'oob' ? (a.d < 25 ? 0.5 : WID - 0.5) : 25 + (r() - 0.5) * 10;
+        this.go(a, B.x - s * (v === 'oob' ? 8 : 12), d0, RUN / P.sc);
+        const da = pressure(); if (da) { da.beh = { k: 'follow', pid: a.pid, dx: s * 1.4, dd: 0.6 }; this.label2 = { pid: da.pid, t: 1.8 }; }
+        this.label = { pid: a.pid, t: 1.8 };
       });
+      if (v === 'strip') add(L - 0.25, () => { const st = this.P(stl); if (st) { this.setPose(st, 'block', 0.35); const a = A(); if (a) st.face = Math.sign(a.x - st.x) || st.face; } });
+      if (v === 'travel') add(L - 0.5, () => { const a = A(); if (a) { this.go(a, a.x + s * 1.5, a.d, WALK); this.setPose(a, 'gather', 0.45); } });
     }
     if (v === 'pick' || v === 'bad') {
-      const mates = this.ord(off).filter(p => p.pid !== pid);
-      const tgt = mates[Math.floor(r() * mates.length)];
-      add(T(0), () => { this.label = pid ? { pid, t: 1.4 } : null; const st = this.P(stl); if (st && tgt) { const a = A(); if (a) this.go(st, (a.x + tgt.x) / 2 + s * 1.5, (a.d + tgt.d) / 2, RUN); } });
-      add(L - 0.45, () => {
+      add(T(0), () => { this.label = pid ? { pid, t: 2 } : null; const st = this.P(stl); if (st && tgt) { const a = A(); if (a) this.go(st, (a.x + tgt.x) / 2 + s * 2.5, (a.d + tgt.d) / 2, JOG); this.label2 = { pid: st.pid, t: 2 }; } });
+      add(L - 0.5, () => {
         const a = A(), st = this.P(stl);
         if (!a || !tgt) return;
-        if (v === 'pick' && st) { this.go(st, (a.x + tgt.x) / 2, (a.d + tgt.d) / 2, SPRINT); this.flyBall((a.x + tgt.x) / 2, (a.d + tgt.d) / 2, 4, 6, 0.42); }
-        else { const outD = tgt.d < 25 ? -6 : WID + 6; this.flyBall(tgt.x - s * 4, outD, 1, 7, 0.5); }
+        this.setPose(a, 'pass', 0.3);
+        if (v === 'pick' && st) { const ix = a.x + (tgt.x - a.x) * 0.55, id = a.d + (tgt.d - a.d) * 0.55; this.go(st, ix, id, SPRINT * 1.2); this.flyBall(ix, id, 4.2, 4.8, 0.45); }
+        else { const outD = tgt.d < 25 ? -5 : WID + 5; this.flyBall(tgt.x - s * 5, outD, 3, 9, 0.55); this.jump(tgt, 1.8, 0.5, 'reb'); }
       });
     }
     add(L, () => {
       const st = this.P(stl);
-      if (v === 'strip' && st) { this.jump(st, 1.2, 0.4, 'stance'); this.give(stl); this.sayAt(stl, 'STRIPPED!', '#ffd34d', 1.3); }
-      else if (v === 'pick' && st) { this.give(stl); this.sayAt(stl, 'PICKED OFF!', '#ffd34d', 1.3); }
+      if (v === 'strip' && st) {
+        // the ball pops loose and he scoops it up
+        const a = A(); const bx = (a?.x ?? st.x) - s * 2, bd = (a?.d ?? st.d) + (r() - 0.5) * 3;
+        this.flyBall(bx, bd, 0.6, 3, 0.35, () => { this.give(stl); });
+        this.go(st, bx, bd, SPRINT); this.sayAt(stl, 'STRIPPED!', '#ffd34d', 1.3);
+      } else if (v === 'pick' && st) { this.give(stl); this.sayAt(stl, 'STEAL!', '#ffd34d', 1.3); }
       else if (v === 'travel') { this.sayAt(pid, 'TRAVELING', '#ffd34d', 1.2); this.ball.holder = null; this.ball.z = 3; }
-      else if (v === 'clock') { this.say('SHOT CLOCK!', '#ff6b6b', true, 1.4); this.ball.holder = null; }
+      else if (v === 'clock') { this.say('SHOT CLOCK VIOLATION', '#ff6b6b', true, 1.5); this.ball.holder = null; }
       else { this.sayAt(pid, v === 'bad' ? 'BAD PASS' : 'OUT OF BOUNDS', '#ffd34d', 1.2); if (v === 'oob') this.flyBall(this.ball.x, this.ball.d < 25 ? -4 : WID + 4, 0.5, 3, 0.4); }
       // the other team takes over; their guards leak out on a steal
       if (st && (v === 'strip' || v === 'pick')) for (const p of this.on(other(off))) if (p !== st && this.posN(p.pid) <= 2.5) this.go(p, 47 - s * 8, p.d, RUN);
@@ -1177,6 +1375,11 @@ export class PixelCourt {
     const next = items[k + 1]?.e;
     const shooter = next && (next.k === 'ft' || next.k === 'ftm') ? this.pidOf(next, 'fta') : null;
     const prev = items[k - 1]?.e;
+    const nm = (p: string | null | undefined) => (p ? surname(this.o.names[p] ?? '').toLowerCase().replace(/(^|[ -])\w/g, ch => ch.toUpperCase()) : '');
+    const n = e.txt.match(/\((\d+)\)/)?.[1];
+    if (fouler) this.notes.set(k, prev && isShot(prev.k) && prev.k.startsWith('make') && shooter ? `${nm(fouler)} fouls ${nm(shooter)} on the make – and one!${n ? ` (${n} fouls)` : ''}`
+      : shooter ? `${nm(fouler)} fouls ${nm(shooter)}${prev && isShot(prev.k) ? ' on the shot' : ' on the drive'}${n ? ` – his ${n}${n === '1' ? 'st' : n === '2' ? 'nd' : n === '3' ? 'rd' : 'th'} foul` : ''}`
+      : `Foul on ${nm(fouler)}${n ? ` (${n})` : ''}`);
     if (!it.live || it.g1 - it.g0 <= 0) {
       if (prev && isShot(prev.k) && prev.k.startsWith('make') && shooter) add(0.05, () => { const f = this.P(fouler); if (f) this.setPose(f, 'stance', 0.8); });
       else add(0.05, () => this.sayAt(fouler, 'FOUL', '#ffd34d', 1.0));
@@ -1488,117 +1691,116 @@ export class PixelCourt {
   }
 
   // ------------------------------------------------------------ arena mode
+  /** buffer pixels per view unit */
+  private get K() { return this.z * S * this.Rw; }
+  private layers() {
+    if (this.courtL || typeof document === 'undefined') return;
+    const [p, s2] = teamColor(this.o.home.tid);
+    const name = (this.o.homeName ?? this.o.home.abbr).split(' ').slice(-1)[0];
+    this.courtL = renderCourt(this.K, { primary: p, secondary: s2, abbr: this.o.home.abbr, name, season: this.o.season ?? 2000, font: this.font });
+    this.standsL = renderStands(this.K, { primary: p, secondary: s2, font: this.font, label: name.toUpperCase() });
+  }
+  private drawLayer(L: { img: HTMLCanvasElement; x0: number; y0: number }, img = L.img) {
+    const K = this.K;
+    this.ctx.drawImage(img, Math.round((L.x0 - this.camX) * K), Math.round((L.y0 - this.camY) * K));
+  }
+
   private drawArena(time: number) {
-    const ctx = this.ctx;
-    const [hc1, hc2] = teamColor(this.o.home.tid), [ac1] = teamColor(this.o.away.tid);
-    // stands
-    this.px(0, 0, VW, VH, '#151a26');
-    for (const c of this.crowd) {
-      const jump = this.cheer > 0 ? Math.max(0, Math.sin(time * 14 + c.ph)) * 2 * Math.min(1, this.cheer) : Math.sin(time * 1.5 + c.ph) > 0.97 ? 1 : 0;
-      const cy = 22 + (c.y - 20) * 0.4;
-      this.px(c.x, cy - jump, 3, 3, c.c);
+    const main = this.ctx;
+    if (!this.buf && typeof document !== 'undefined') {
+      this.buf = document.createElement('canvas');
+      this.buf.width = VW * S * this.Rw; this.buf.height = VH * S * this.Rw;
     }
-    // seats row and benches
-    this.px(0, AY0 - 22, VW, 18, '#1d2331');
-    for (let x = 2; x < VW; x += 7) this.px(x, AY0 - 16, 5, 6, '#2a3244');
-    this.drawBench('h', 18, time); this.drawBench('a', VW - 18 - 5 * 13, time);
-    // scorer's table
-    this.px(VW / 2 - 34, AY0 - 20, 68, 14, '#0e1220'); this.px(VW / 2 - 34, AY0 - 20, 68, 3, hc1);
-    this.px(VW / 2 - 30, AY0 - 15, 60, 7, '#1f3a8a');
-    this.px(0, AY0 - 4, VW, 4, '#0b0e14');
-    // floor
-    const fl = this.proj(0, 0), fr = this.proj(LEN, WID);
-    this.px(fl.x - 8, fl.y - 2, fr.x - fl.x + 16, fr.y - fl.y + 12, '#e7c08a');
-    for (let y = Math.floor(fl.y - 2); y < fr.y + 10; y += 3) {
-      const off = (y * 13) % 17;
-      this.px(fl.x - 8, y, fr.x - fl.x + 16, 1, (y % 2) ? '#ecc794' : '#e2b980');
-      for (let x = fl.x - 8 + off; x < fr.x + 8; x += 17) this.px(x, y, 1, 3, '#d6ab73');
-    }
-    // paint (home colour) and lines
-    for (const side of ['h', 'a'] as const) {
-      const B = this.basket(side), s = this.dir(side);
-      const base = B.x + s * 5.25;
-      const a = this.proj(base, 17), b = this.proj(base - s * 19, 33);
-      this.px(Math.min(a.x, b.x), a.y, Math.abs(b.x - a.x), b.y - a.y, hc1);
-    }
-    const L = (pts: [number, number][]) => this.line(pts.map(([x, d]) => { const q = this.proj(x, d); return [q.x, q.y] as [number, number]; }), '#ffffff');
-    const box = (x0: number, d0: number, x1: number, d1: number) => L([[x0, d0], [x1, d0], [x1, d1], [x0, d1], [x0, d0]]);
-    box(0, 0, LEN, WID); L([[47, 0], [47, WID]]);
-    const arc = (cx: number, cd: number, r: number, a0: number, a1: number, n = 40) => { const pts: [number, number][] = []; for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; pts.push([cx + r * Math.cos(a), cd + r * Math.sin(a)]); } L(pts); };
-    for (const side of ['h', 'a'] as const) {
-      const B = this.basket(side), s = this.dir(side);
-      const base = B.x + s * 5.25;
-      box(Math.min(base, base - s * 19), 17, Math.max(base, base - s * 19), 33);
-      arc(base - s * 19, 25, 6, s > 0 ? Math.PI / 2 : -Math.PI / 2, s > 0 ? Math.PI * 1.5 : Math.PI / 2);
-      const a0 = Math.asin(22 / 23.75);
-      L([[base, 3], [base - s * 14, 3]]); L([[base, 47], [base - s * 14, 47]]);
-      arc(B.x, 25, 23.75, s > 0 ? Math.PI - a0 : -a0, s > 0 ? Math.PI + a0 : a0, 60);
-    }
-    // centre circle and emblem
-    arc(47, 25, 6, 0, Math.PI * 2, 50);
-    const cc = this.proj(47, 25);
-    ctx.fillStyle = hc1; ctx.beginPath(); ctx.ellipse(cc.x, cc.y, 10, 7.5, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = hc2; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(cc.x, cc.y, 10, 7.5, 0, 0, Math.PI * 2); ctx.stroke();
-    this.text(this.o.home.abbr, cc.x, cc.y + 0.5, '#ffffff', 6, false);
-    // shot marks
-    for (const m of this.marks) {
-      const q = this.proj(m.x, m.d);
-      ctx.globalAlpha = Math.max(0, 1 - m.t / 9) * 0.95;
-      if (m.made) { this.px(q.x - 2, q.y - 2, 5, 5, '#0b0d12'); this.px(q.x - 1, q.y - 1, 3, 3, '#3ddc6e'); }
-      else for (let i = -2; i <= 2; i++) { this.px(q.x + i, q.y + i, 1, 1, '#e02828'); this.px(q.x + i, q.y - i, 1, 1, '#e02828'); }
-      ctx.globalAlpha = 1;
-    }
-    // baskets (far side of each hoop drawn before players)
-    this.drawArenaBasket('a', time); this.drawArenaBasket('h', time);
-    const list = [...this.players.values()].sort((p, q) => p.d - q.d);
-    const b = this.ball;
-    let ballDrawn = false;
-    for (const p of list) {
-      if (!ballDrawn && b.d < p.d) { this.drawBallArena(); ballDrawn = true; }
-      this.drawArenaPlayer(p, time);
-    }
-    if (!ballDrawn) this.drawBallArena();
-    for (const q of this.trail) { ctx.globalAlpha = Math.max(0, 0.6 - q.t * 1.4); this.px(q.x, q.y - 1, 1, 1, '#ffd9a8'); }
-    ctx.globalAlpha = 1;
-    if (this.rimFx) {
-      const B = this.basket(this.rimFx.side), r = this.proj(B.x, B.d, 10);
-      const u = this.rimFx.t / 0.7;
-      if (this.rimFx.made) { ctx.globalAlpha = 1 - u; const rad = 4 + u * 12; for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; this.px(r.x + Math.cos(a) * rad, r.y + 2 + Math.sin(a) * rad * 0.6, 2, 2, '#5dff8a'); } ctx.globalAlpha = 1; }
-      else if (Math.floor(this.rimFx.t * 12) % 2 === 0) this.px(r.x - 5, r.y - 1, 11, 2, '#ff4d4d');
-    }
-    if (b.holder && !b.fly) {
-      const p = this.players.get(b.holder);
-      if (p) {
-        const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S * this.R);
-        const yy = q.y - top - 5 - p.z * 2.1 + Math.round(Math.sin(time * 6));
-        this.px(q.x - 2, yy, 5, 1, '#ffd34d'); this.px(q.x - 1, yy + 1, 3, 1, '#ffd34d'); this.px(q.x, yy + 2, 1, 1, '#ffd34d');
-        // the man with the ball is always named
-        if (this.label?.pid !== p.pid) this.text(surname(this.o.names[p.pid] ?? ''), q.x, yy - 5, '#ffd34d', 5.5, true);
+    if (!this.buf) return;
+    const g = this.buf.getContext('2d')!;
+    g.imageSmoothingEnabled = false;
+    this.ctx = g;
+    try {
+      this.layers();
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.fillStyle = '#0a0d14'; g.fillRect(0, 0, this.buf.width, this.buf.height);
+      // stands (cheering fans bob in waves), courtside, floor
+      if (this.standsL) {
+        if (this.cheer > 0.15) {
+          const L = this.standsL, K = this.K, cols = 24, w = Math.ceil(L.img.width / cols);
+          for (let i = 0; i < cols; i++) {
+            const up = Math.sin(time * 9 + i * 1.7) > -0.2;
+            g.drawImage(up ? L.cheer : L.img, i * w, 0, w, L.img.height, Math.round((L.x0 - this.camX) * K) + i * w, Math.round((L.y0 - this.camY) * K) - (up ? 1 : 0), w, L.img.height);
+          }
+        } else this.drawLayer(this.standsL);
       }
-    }
-    if (this.label) { const p = this.players.get(this.label.pid); if (p) { const q = this.proj(p.x, p.d); const top = this.heightPx(this.looksOf(p.pid)) / (this.z * S * this.R); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y - top - 10 - p.z * 2.1, '#ffffff', 6, true); } }
-    if (this.label2 && this.label2.pid !== this.label?.pid) { const p = this.players.get(this.label2.pid); if (p) { const q = this.proj(p.x, p.d); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y + 5, '#ffb0b0', 5, true); } }
-    for (const f of this.floaters) {
-      const u = f.t / f.dur, alpha = 1 - Math.max(0, u - 0.7) / 0.3;
-      if (f.at) { const q = this.proj(f.at.x, f.at.d, f.at.z); this.text(f.text, Math.max(this.camX + 18, Math.min(this.camX + VW / this.z - 18, q.x)), Math.max(this.camY + 30, q.y - 14 - u * 8), f.color, f.big ? 12 : 8, true, alpha); }
-      else this.text(f.text, VW / 2, (f.big ? 80 : 92) - u * 10, f.color, f.big ? 16 : 8, true, alpha, true);
-    }
+      if (this.courtL) this.drawLayer(this.courtL);
+      this.drawCourtside(time);
+      // recent shots on the floor
+      for (const m of this.marks) {
+        const q = this.proj(m.x, m.d), P = this.toCanvas(q.x, q.y), r = Math.max(2, Math.round(this.K * 0.9));
+        g.globalAlpha = Math.max(0, 1 - m.t / 9) * 0.9;
+        if (m.made) { g.fillStyle = '#0b0d12'; g.fillRect(Math.round(P.X - r - 1), Math.round(P.Y - r * 0.6 - 1), 2 * r + 2, Math.round(r * 1.2) + 2); g.fillStyle = '#3ddc6e'; g.fillRect(Math.round(P.X - r), Math.round(P.Y - r * 0.6), 2 * r, Math.round(r * 1.2)); }
+        else { g.fillStyle = '#e02828'; for (let i = -r; i <= r; i++) { g.fillRect(Math.round(P.X + i), Math.round(P.Y + i * 0.6), 1, 1); g.fillRect(Math.round(P.X + i), Math.round(P.Y - i * 0.6), 1, 1); } }
+        g.globalAlpha = 1;
+      }
+      // shadows first, then everything by depth (the basket's back half, players, the ball, the front of the rim)
+      for (const p of this.players.values()) this.drawShadow(p);
+      this.drawBallShadow();
+      const items: { d: number; f: () => void }[] = [];
+      for (const side of ['a', 'h'] as const) {
+        items.push({ d: 24.6, f: () => this.drawHoop(side, time, false) });
+        items.push({ d: 25.4, f: () => this.drawHoop(side, time, true) });
+      }
+      for (const p of this.players.values()) items.push({ d: p.d, f: () => this.drawArenaPlayer(p, time) });
+      const b = this.ball;
+      if (!(b.holder && !b.fly)) items.push({ d: b.d + 0.01, f: () => this.drawBallArena() });
+      items.sort((a, c) => a.d - c.d);
+      for (const it of items) it.f();
+      // shot trail and rim feedback
+      for (const q of this.trail) { const P = this.toCanvas(q.x, q.y); g.globalAlpha = Math.max(0, 0.55 - q.t * 1.2); g.fillStyle = '#ffd9a8'; g.fillRect(Math.round(P.X), Math.round(P.Y), 2, 2); }
+      g.globalAlpha = 1;
+      if (this.rimFx && !this.rimFx.made && Math.floor(this.rimFx.t * 12) % 2 === 0) {
+        const B = this.basket(this.rimFx.side), r = this.proj(B.x, B.d, 10), P = this.toCanvas(r.x, r.y);
+        g.fillStyle = '#ff4d4d'; g.fillRect(Math.round(P.X - 3 * this.K * 0.6), Math.round(P.Y - 2), Math.round(6 * this.K * 0.6), 3);
+      }
+    } finally { this.ctx = main; }
+    // scale the pixel buffer up, then crisp overlays on top
+    main.setTransform(1, 0, 0, 1, 0, 0);
+    main.imageSmoothingEnabled = false;
+    const shake = this.shake > 0 ? Math.round(Math.sin(time * 70) * this.shake * 6) : 0;
+    main.drawImage(this.buf, 0, shake, this.canvas.width, this.canvas.height);
+    const kk = S * this.z * this.R;
+    main.setTransform(kk, 0, 0, kk, -this.camX * kk, -this.camY * kk);
+    this.drawOverlays(time);
     this.drawScoreBug();
     this.drawCaption(true);
   }
 
+  /** benches, scorer's table and the camera crews along the far sideline */
+  private drawCourtside(time: number) {
+    const g = this.ctx, K = this.K;
+    const [hc1, hc2] = teamColor(this.o.home.tid);
+    const T = (vx: number, vy: number) => this.toCanvas(vx, vy);
+    // scorer's table
+    const a = T(AXC - 22, AYF - 8.2), b = T(AXC + 22, AYF - 3.2);
+    g.fillStyle = '#0d111c'; g.fillRect(Math.round(a.X), Math.round(a.Y), Math.round(b.X - a.X), Math.round(b.Y - a.Y));
+    g.fillStyle = hc1; g.fillRect(Math.round(a.X), Math.round(a.Y), Math.round(b.X - a.X), Math.max(2, Math.round(0.8 * K)));
+    g.fillStyle = '#1f3a8a'; g.fillRect(Math.round(a.X + 2 * K), Math.round(a.Y + 1.6 * K), Math.round(b.X - a.X - 4 * K), Math.round(2 * K));
+    g.font = `${Math.round(1.7 * K)}px ${this.font}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = hc2 === '#111111' ? '#ffffff' : hc2;
+    g.fillText(this.o.home.abbr + ' · ' + this.o.away.abbr, Math.round((a.X + b.X) / 2), Math.round(a.Y + 2.7 * K));
+    // benches
+    this.drawBench('h', AXC - 96, time); this.drawBench('a', AXC + 36, time);
+  }
+
   /** Substitutes sitting on the bench, in team colours. */
   private drawBench(side: 'h' | 'a', x0: number, time: number) {
+    const g = this.ctx, K = this.K;
     const pids = Object.keys(this.o.side).filter(pid => this.o.side[pid] === side && !this.players.has(pid)).slice(0, 8);
-    this.px(x0 - 3, AY0 - 9, Math.max(5, pids.length) * 13 + 4, 5, '#3a2a1c');
-    const ctx = this.ctx;
-    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const n = Math.max(5, pids.length), gap = 7.4;
+    const a = this.toCanvas(x0 - 3, AYF - 5.2), b = this.toCanvas(x0 + n * gap, AYF - 3.6);
+    g.fillStyle = '#3a2a1c'; g.fillRect(Math.round(a.X), Math.round(a.Y), Math.round(b.X - a.X), Math.round(b.Y - a.Y));
+    g.fillStyle = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid)[0]; g.fillRect(Math.round(a.X), Math.round(a.Y), Math.round(b.X - a.X), Math.max(1, Math.round(0.5 * K)));
     pids.forEach((pid, i) => {
-      const { X, Y } = this.toCanvas(x0 + i * 13 + 4, AY0 - 5);
+      const { X, Y } = this.toCanvas(x0 + i * gap + 2, AYF - 4.2);
       const lk = this.looksOf(pid);
       const pose: AthPose = this.cheer > 0.6 && hash01(pid + 'c') < 0.6 ? 'celebrate' : 'sit';
-      const H = this.heightPx(lk) * 0.85;
-      // seated players don't move: keep their picture
+      const H = this.heightPx(lk, -6) * 0.92;
       const key = `${pid}|${pose}|${H.toFixed(1)}`;
       let img = this.benchCache.get(key);
       if (!img && typeof document !== 'undefined') {
@@ -1606,9 +1808,8 @@ export class PixelCourt {
         drawAthlete(c.getContext('2d')!, c.width / 2, c.height - 4, { H, face: hash01(pid + 'f') < 0.5 ? 1 : -1, pose, ph: 0, amp: 0, air: false, kit: this.kitOf(side), body: lk, shorts: this.shortsLen(), font: this.font, num: false, view: 'front' });
         this.benchCache.set(key, img = c);
       }
-      if (img) ctx.drawImage(img, Math.round(X - img.width / 2), Math.round(Y - img.height + 4));
+      if (img) g.drawImage(img, Math.round(X - img.width / 2), Math.round(Y - img.height + 4));
     });
-    ctx.restore();
   }
 
   private looksOf(pid: string): Look {
@@ -1618,75 +1819,23 @@ export class PixelCourt {
     return { skin: SKIN[Math.floor(r * SKIN.length)], hair: 'short', hairColor: '#1b1410', facial: 'none', band: false, num: Math.floor(hash01(pid + 'n') * 45), ht: 79, build: 0.5 };
   }
 
-  /** Big-headed sprite: feet at (x, y); s = scale. */
   /** what the sprite looks like right now */
   private poseOf(p: PSprite): Pose {
     if (p.pt > 0) return p.pose;
     if (p.leaving) return 'stand';
     if (this.ball.holder === p.pid && !this.ball.fly) return 'dribble';
     if (p.beh.k === 'guard' && this.ball.holder === p.beh.man) { const m = this.players.get(p.beh.man); if (m && Math.hypot(m.x - p.x, m.d - p.d) < 7) return 'stance'; }
-    if (p.beh.k === 'box' || p.beh.k === 'mark') return 'stance';
+    // off the ball, a defender near the action stays down in his stance
+    if (p.beh.k === 'guard' && Math.hypot(p.vx, p.vd) < 4) { const h = this.P(this.ball.holder); if (h && h.side !== p.side && Math.hypot(h.x - p.x, h.d - p.d) < 16) return 'stance'; }
+    if (p.beh.k === 'box') return 'boxout';
+    if (p.beh.k === 'mark') return 'stance';
     return Math.hypot(p.vx, p.vd) > 1.5 ? 'run' : 'stand';
   }
 
-  private drawChibi(pid: string, side: 'h' | 'a', x: number, y: number, time: number, s = 1, sitting = false, pose: Pose = 'stand', moving = false, face = 1, speed = 0, air = false) {
-    const lk = this.looksOf(pid);
-    const [prim, sec] = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid);
-    const jersey = side === 'h' ? '#f6f6f6' : prim, trim = side === 'h' ? prim : sec;
-    const P = (dx: number, dy: number, w: number, h: number, c: string) => this.px(x + dx * s, y + dy * s, Math.max(1, w * s), Math.max(1, h * s), c);
-    const tall = Math.max(-1, Math.min(1, (lk.ht - 79) / 5));
-    const leg = sitting ? 2 : 6 + Math.round(tall);
-    const step = moving ? Math.floor(time * (5 + speed * 0.55) + hash01(pid) * 4) % 2 : 0;
-    const dark = '#16181f';
-    if (!sitting && !air) { P(-5, 0, 11, 2, 'rgba(0,0,0,0.3)'); }
-    const low = pose === 'stance' || pose === 'rest' ? 1 : 0;
-    y += low * s;
-    // legs and shoes
-    if (pose === 'stance') { P(-5, -leg + 1, 2, leg - 2, lk.skin); P(3, -leg + 1, 2, leg - 2, lk.skin); P(-6, -2, 3, 2, dark); P(3, -2, 3, 2, dark); }
-    else if (air) { P(-3, -leg + 1, 2, leg - 2, lk.skin); P(1, -leg, 2, leg - 3, lk.skin); P(-4, -2, 3, 2, dark); P(1, -3, 3, 2, dark); }
-    else {
-      P(-3, -leg + (step ? 1 : 0), 2, leg - 1 - (step ? 1 : 0), lk.skin); P(1, -leg + (step ? 0 : 1), 2, leg - 1 - (step ? 0 : 1), lk.skin);
-      P(-4, -2, 3, 2, dark); P(1, -2, 3, 2, dark);
-    }
-    // shorts and jersey
-    const sh = -leg - 4 + low;
-    P(-4, sh, 8, 5, jersey); P(-4, sh + 4, 8, 1, trim);
-    const tor = sh - 8;
-    P(-4, tor, 8, 9, jersey); P(-4, tor, 1, 9, trim); P(3, tor, 1, 9, trim); P(-2, tor, 4, 1, trim);
-    // arms
-    if (pose === 'shoot' || pose === 'jump' || pose === 'celebrate') { P(-6, tor - 7, 2, 9, lk.skin); P(4, tor - 7, 2, 9, lk.skin); }
-    else if (pose === 'stance') { P(-8, tor + 2, 4, 2, lk.skin); P(4, tor + 2, 4, 2, lk.skin); }
-    else if (pose === 'dribble') { if (face > 0) { P(-6, tor + 1, 2, 7, lk.skin); P(4, tor + 2, 3, 6, lk.skin); } else { P(-7, tor + 2, 3, 6, lk.skin); P(4, tor + 1, 2, 7, lk.skin); } }
-    else if (pose === 'rest') { P(-5, tor + 4, 2, 6, lk.skin); P(3, tor + 4, 2, 6, lk.skin); }
-    else { P(-6, tor + 1, 2, 7, lk.skin); P(4, tor + 1, 2, 7, lk.skin); }
-    // head (eyes look the way he faces)
-    const hy = tor - 9;
-    P(-4, hy, 8, 9, lk.skin);
-    const ex = face > 0 ? 0 : -1;
-    if (sitting) { P(-2, hy + 4, 1, 2, dark); P(1, hy + 4, 1, 2, dark); }
-    else { P(-2 + ex + 1, hy + 4, 1, 2, dark); P(1 + ex + 1, hy + 4, 1, 2, dark); }
-    const hcol = lk.hairColor;
-    switch (lk.hair) {
-      case 'bald': break;
-      case 'afro': case 'fro': P(-6, hy - 4, 12, 6, hcol); P(-5, hy + 2, 1, 3, hcol); P(4, hy + 2, 1, 3, hcol); break;
-      case 'dreads': P(-5, hy - 2, 10, 3, hcol); P(-5, hy + 1, 2, 9, hcol); P(3, hy + 1, 2, 9, hcol); break;
-      case 'cornrows': P(-4, hy - 1, 8, 3, hcol); for (let i = -3; i < 4; i += 2) P(i, hy - 1, 1, 3, '#3a2a20'); break;
-      case 'flattop': P(-4, hy - 4, 8, 5, hcol); break;
-      case 'spiky': case 'quiff': P(-4, hy - 2, 8, 3, hcol); P(-3, hy - 4, 2, 2, hcol); P(1, hy - 4, 2, 2, hcol); break;
-      case 'bun': P(-4, hy - 1, 8, 2, hcol); P(-1, hy - 4, 3, 3, hcol); break;
-      case 'mop': case 'curly': P(-5, hy - 2, 10, 4, hcol); P(-5, hy + 2, 2, 3, hcol); break;
-      case 'buzz': case 'fade': P(-4, hy - 1, 8, 2, hcol); break;
-      default: P(-4, hy - 2, 8, 3, hcol);
-    }
-    if (lk.band) P(-4, hy + 1, 8, 1, trim);
-    if (lk.facial === 'beard' || lk.facial === 'goatee' || lk.facial === 'chin') P(-3, hy + 7, 6, 2, lk.facial === 'beard' ? hcol : '#2a1d14');
-    if (lk.facial === 'mustache') P(-2, hy + 6, 4, 1, '#2a1d14');
-    // number
-    if (!sitting && s >= 1) this.text(String(lk.num), x, y + (tor + 4) * s, trim, 3.6, false);
-  }
-
-  /** player height on the canvas (pixels) */
-  private heightPx(lk: Look) { return 66 * this.R * (this.z / 1.3) * Math.max(0.86, Math.min(1.14, (lk.ht || 79) / 79)); }
+  /** 2 = superstar, 1 = star, 0 = everybody else */
+  starOf(pid: string) { const o = this.o.looks?.[pid]?.ovr ?? 0; return o >= 88 ? 2 : o >= 82 ? 1 : 0; }
+  /** player height on the buffer (pixels) at depth d */
+  private heightPx(lk: Look, d = 25) { return ((lk.ht || 79) / 12) * VZ * depthScale(d) * this.K * 1.08; }
   private kitOf(side: Side) {
     const [prim, sec] = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid);
     return side === 'h'
@@ -1694,7 +1843,27 @@ export class PixelCourt {
       : { jersey: prim, trim: sec === '#111111' || sec === '#2a2a2a' ? '#f4f4f4' : sec, trim2: shade(prim, 0.55), shorts: prim };
   }
   private shortsLen() { const s = this.o.season ?? 2000; return s < 1985 ? 0.3 : s < 1992 ? 0.45 : s < 2000 ? 0.75 : 0.95; }
-  private toCanvas(wx: number, wy: number) { const k = this.z * S * this.R; return { X: (wx - this.camX) * k, Y: (wy - this.camY) * k }; }
+  /** view units → buffer pixels */
+  private toCanvas(wx: number, wy: number) { const k = this.K; return { X: (wx - this.camX) * k, Y: (wy - this.camY) * k }; }
+
+  private drawShadow(p: PSprite) {
+    const g = this.ctx;
+    const q = this.proj(p.x, p.d), { X, Y } = this.toCanvas(q.x, q.y);
+    const H = this.heightPx(this.looksOf(p.pid), p.d);
+    const sh = Math.max(0.45, 1 - p.z / 6);
+    g.globalAlpha = 0.32 * sh; g.fillStyle = '#1a0d04';
+    g.beginPath(); g.ellipse(Math.round(X), Math.round(Y), H * 0.2 * sh, H * 0.05 * sh, 0, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 1;
+    if (this.hl?.pid === p.pid) { g.strokeStyle = '#ffd34d'; g.lineWidth = 2; g.beginPath(); g.ellipse(Math.round(X), Math.round(Y), H * 0.26, H * 0.075, 0, 0, Math.PI * 2); g.stroke(); }
+    const star = this.starOf(p.pid);
+    if (star > 0 && this.hl?.pid !== p.pid) { g.globalAlpha = 0.18 + 0.1 * star; g.strokeStyle = '#ffd34d'; g.lineWidth = 1; g.beginPath(); g.ellipse(Math.round(X), Math.round(Y), H * 0.23, H * 0.062, 0, 0, Math.PI * 2); g.stroke(); g.globalAlpha = 1; }
+  }
+  private drawBallShadow() {
+    const b = this.ball; if (b.holder && !b.fly) return;
+    const g = this.ctx, q = this.proj(b.x, b.d), { X, Y } = this.toCanvas(q.x, q.y);
+    const r = this.heightPx({ ht: 79 } as Look, b.d) * 0.06 * Math.max(0.5, 1 - b.z / 25);
+    g.globalAlpha = 0.3; g.fillStyle = '#1a0d04'; g.beginPath(); g.ellipse(Math.round(X), Math.round(Y), r * 1.1, r * 0.4, 0, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
+  }
 
   private drawArenaPlayer(p: PSprite, time: number) {
     const q = this.proj(p.x, p.d);
@@ -1702,76 +1871,132 @@ export class PixelCourt {
     const lk = this.looksOf(p.pid);
     const pose = this.poseOf(p);
     const sp = Math.hypot(p.vx, p.vd);
-    const lift = p.z * 2.1 * this.z * S * this.R;
-    const H = this.heightPx(lk);
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    // shadow on the floor (smaller while in the air)
-    const sh = Math.max(0.5, 1 - lift / 90);
-    ctx.globalAlpha = 0.3 * sh;
-    ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.ellipse(X, Y, H * 0.17 * sh, H * 0.045 * sh, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-    if (this.hl?.pid === p.pid) { ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 2 * this.R; ctx.beginPath(); ctx.ellipse(X, Y, H * 0.24, H * 0.07, 0, 0, Math.PI * 2); ctx.stroke(); }
+    const lift = p.z * VZ * depthScale(p.d) * this.K;
+    const H = this.heightPx(lk, p.d);
+    const g = this.ctx;
     const B = this.basket(p.side);
-    const face = pose === 'shoot' ? Math.sign(B.x - p.x) || 1 : p.face;
+    const face = pose === 'shoot' || pose === 'layup' || pose === 'dunk' ? Math.sign(B.x - p.x) || 1 : p.face;
     const ap: AthPose = pose === 'run' && sp < 1.5 ? 'stand' : (pose as AthPose);
     // running toward or away from the camera shows the front or the back
-    const along = Math.abs(p.vx) * AFX, across = Math.abs(p.vd) * AFY;
-    const view = pose === 'shoot' || pose === 'stance' ? 'side' : sp > 3 && across > along * 1.3 ? (p.vd < 0 ? 'back' : 'front') : 'side';
+    const along = Math.abs(p.vx) * AFX, across = Math.abs(p.vd) * AFY * 2.2;
+    const view = pose === 'stance' || pose === 'shoot' || pose === 'layup' || pose === 'dunk' || pose === 'hook' ? 'side' : sp > 3 && across > along * 1.4 ? (p.vd < 0 ? 'back' : 'front') : 'side';
     const nm = (this.o.names[p.pid] ?? '').split(' ').slice(1).join(' ').toUpperCase();
-    const hands = drawAthlete(ctx, X, Y - lift, { H, face, pose: ap, ph: p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm });
-    if (this.ball.holder === p.pid && !this.ball.fly) this.drawHeldBall(hands, Y, pose, H);
-    ctx.restore();
+    const hands = drawAthlete(g, Math.round(X), Math.round(Y - lift), { H, face, pose: ap, ph: p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm, hand: p.hand ?? 1, t: p.pt > 0 ? p.pt : 0 });
+    if (this.ball.holder === p.pid && !this.ball.fly) this.drawHeldBall(p, hands, Y, pose, H);
+    // on fire: a flicker of flames around a hot shooter
+    if (this.hot.get(p.pid) && !this.ff) {
+      g.globalAlpha = 0.55;
+      for (let i = 0; i < 6; i++) {
+        const fx = X + Math.sin(time * 7 + i * 2.1) * H * 0.18, fy = Y - lift - H * (0.15 + 0.13 * i) + Math.sin(time * 13 + i) * 2;
+        g.fillStyle = i % 2 ? '#ff9a2e' : '#ffd34d'; g.fillRect(Math.round(fx), Math.round(fy), 2, 3);
+      }
+      g.globalAlpha = 1;
+    }
   }
 
-  /** the ball in the hands: bounced on a dribble, above the head on a shot */
-  private drawHeldBall(h: Hands, floorY: number, pose: Pose, H: number) {
-    const r = H * 0.07;
+  /** the ball in the hands: bounced on a dribble (switching hands on a crossover), above the head on a shot */
+  private drawHeldBall(p: PSprite, h: Hands, floorY: number, pose: Pose, H: number) {
+    const r = H * 0.062;
     let x = h.front.x, y = h.front.y + r * 0.6;
     if (pose === 'dribble' || pose === 'run' || pose === 'stand') {
-      const top = h.front.y + r, bottom = floorY - r;
-      const t = Math.abs(Math.sin(this.v * 7.5));
-      y = bottom - (bottom - top) * t;
-    } else if (pose === 'shoot' || pose === 'jump' || pose === 'celebrate') y = h.front.y - r * 0.9;
+      const hand = (p.hand ?? 1) > 0 ? h.front : h.back;
+      const top = hand.y + r, bottom = floorY - r;
+      const t = Math.abs(Math.sin(p.dph ?? this.v * 7.5));
+      x = hand.x; y = bottom - (bottom - top) * t;
+      if (p.xover && p.xover > 0) { const u = 1 - p.xover / 0.28; x = h.back.x + (h.front.x - h.back.x) * ((p.hand ?? 1) > 0 ? u : 1 - u); y = bottom - r * 0.4 - Math.sin(u * Math.PI) * r * 2; }
+    } else if (pose === 'shoot' || pose === 'jump' || pose === 'celebrate' || pose === 'dunk' || pose === 'layup' || pose === 'hook') y = h.front.y - r * 0.9;
+    else if (pose === 'gather') { x = (h.front.x + h.back.x) / 2; y = (h.front.y + h.back.y) / 2 - r * 0.2; }
     this.ballHD(x, y, r);
   }
   private ballHD(x: number, y: number, r: number) {
-    const ctx = this.ctx;
-    ctx.fillStyle = '#5a2208'; ctx.beginPath(); ctx.arc(Math.round(x), Math.round(y), r + 0.8, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#e8762c'; ctx.beginPath(); ctx.arc(Math.round(x), Math.round(y), r, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#f7a35e'; ctx.beginPath(); ctx.arc(Math.round(x - r * 0.35), Math.round(y - r * 0.35), r * 0.35, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#5a2208'; ctx.lineWidth = 0.9 * this.R;
-    ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); ctx.stroke();
+    const g = this.ctx;
+    r = Math.max(2, r);
+    x = Math.round(x); y = Math.round(y);
+    g.fillStyle = '#4a1c06'; g.beginPath(); g.arc(x, y, r + 1, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#e8762c'; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#f7a35e'; g.fillRect(Math.round(x - r * 0.55), Math.round(y - r * 0.6), Math.max(1, Math.round(r * 0.5)), Math.max(1, Math.round(r * 0.45)));
+    g.fillStyle = '#5a2208'; g.fillRect(Math.round(x - r), y, Math.round(2 * r), 1); g.fillRect(x, Math.round(y - r), 1, Math.round(2 * r));
   }
   /** loose or flying ball (arena) */
   private drawBallArena() {
     const b = this.ball;
-    if (b.holder && !b.fly) return;
-    const g = this.proj(b.x, b.d), p = this.proj(b.x, b.d, b.z);
-    const G = this.toCanvas(g.x, g.y), P = this.toCanvas(p.x, p.y);
-    const ctx = this.ctx;
-    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const r = this.heightPx({ ht: 79 } as Look) * 0.07;
-    ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(G.x, G.y, r, r * 0.35, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
-    this.ballHD(P.x, P.y - r, r);
-    ctx.restore();
+    const p = this.proj(b.x, b.d, b.z);
+    const P = this.toCanvas(p.x, p.y);
+    const r = this.heightPx({ ht: 79 } as Look, b.d) * 0.062;
+    this.ballHD(P.X, P.Y - r, r);
   }
 
-  private drawArenaBasket(side: 'h' | 'a', time: number) {
+  /** The hoop seen from the side: stanchion, backboard, rim (back half before the ball, front half and net after). */
+  private drawHoop(side: 'h' | 'a', time: number, front: boolean) {
+    const g = this.ctx, K = this.K;
     const B = this.basket(side), s = this.dir(side);
-    const pole = this.proj(B.x + s * 6.5, 25), top = this.proj(B.x + s * 6.5, 25, 14);
-    this.px(pole.x - 3, pole.y - 3, 7, 4, '#2b2f38');
-    this.px(pole.x - 1, top.y, 3, pole.y - top.y, '#5d6575');
-    const bb = this.proj(B.x + s * 1.3, 25, 13.5);
-    this.line([[pole.x, top.y + 1], [bb.x, bb.y + 4]], '#5d6575');
-    this.px(bb.x - 1, bb.y - 3, 3, 13, '#eef3f9'); this.px(bb.x - 1, bb.y - 3, 3, 1, '#c33');
-    const r = this.proj(B.x, B.d, 10);
-    this.px(r.x - 4, r.y, 9, 2, '#ff6a1a');
-    const sway = this.net[side] > 0 ? Math.round(Math.sin(time * 40)) : 0;
-    for (let i = 0; i < 5; i++) this.px(r.x - 4 + i * 2 + (i > 2 ? sway : 0), r.y + 2, 1, 5 - (i % 2), '#f2f2f2');
-    this.px(r.x - 3 + sway, r.y + 6, 7, 1, '#f2f2f2');
+    const C = (x: number, d: number, z: number) => { const q = this.proj(x, d, z); return this.toCanvas(q.x, q.y); };
+    const rr = 0.75; // rim radius, feet
+    if (!front) {
+      // stanchion: padded base out of bounds, pole, arm
+      const bx = B.x + s * 8.6;
+      const b0 = C(bx - s * 1.3, 25, 0), b1 = C(bx + s * 1.3, 25, 0), bt = C(bx, 25, 2.6);
+      const [pc] = teamColor(this.o.home.tid);
+      const bw = Math.round(Math.abs(b1.X - b0.X)), bxl = Math.round(Math.min(b0.X, b1.X));
+      g.fillStyle = '#262b36'; g.fillRect(bxl, Math.round(bt.Y), bw, Math.round(b0.Y - bt.Y));
+      g.fillStyle = pc; g.fillRect(bxl, Math.round(bt.Y), bw, Math.max(2, Math.round(0.45 * K)));
+      g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(bxl, Math.round(b0.Y) - 2, bw, 2);
+      const p0 = C(bx, 25, 3.2), p1 = C(bx, 25, 12.6);
+      const pw = Math.max(3, Math.round(0.35 * K));
+      g.fillStyle = '#4d5462'; g.fillRect(Math.round(p0.X - pw / 2), Math.round(p1.Y), pw, Math.round(p0.Y - p1.Y));
+      g.fillStyle = '#6c7586'; g.fillRect(Math.round(p0.X - pw / 2), Math.round(p1.Y), 1, Math.round(p0.Y - p1.Y));
+      // arm to the backboard
+      const a0 = C(bx, 25, 12.4), a1 = C(B.x + s * 1.4, 25, 11.6);
+      g.strokeStyle = '#4d5462'; g.lineWidth = Math.max(2, Math.round(0.3 * K)); g.beginPath(); g.moveTo(Math.round(a0.X), Math.round(a0.Y)); g.lineTo(Math.round(a1.X), Math.round(a1.Y)); g.stroke();
+      // backboard: glass edge-on, frame, the shooter's square
+      const bb = (d: number, z: number) => C(B.x + s * 1.25, d, z);
+      const q = [bb(22, 13.5), bb(28, 13.5), bb(28, 10), bb(22, 10)];
+      g.fillStyle = 'rgba(210,230,255,0.35)'; g.beginPath(); q.forEach((v, i) => (i ? g.lineTo(v.X, v.Y) : g.moveTo(v.X, v.Y))); g.closePath(); g.fill();
+      g.strokeStyle = '#f2f5fa'; g.lineWidth = Math.max(1, Math.round(0.18 * K)); g.stroke();
+      const sq = [bb(24, 11.5), bb(26, 11.5), bb(26, 10), bb(24, 10)];
+      g.strokeStyle = '#e03b3b'; g.lineWidth = 1; g.beginPath(); sq.forEach((v, i) => (i ? g.lineTo(v.X, v.Y) : g.moveTo(v.X, v.Y))); g.closePath(); g.stroke();
+      // back half of the rim
+      g.fillStyle = '#c94f12';
+      for (let i = 0; i <= 24; i++) { const a = Math.PI + Math.PI * i / 24; const v = C(B.x + Math.cos(a) * rr, 25 + Math.sin(a) * rr, 10); g.fillRect(Math.round(v.X - 1), Math.round(v.Y), 2, 2); }
+      return;
+    }
+    // net: strings from the rim to a narrower ring, swaying after a make
+    const sway = this.net[side] > 0 ? Math.sin(time * 38) * this.net[side] * 2.2 : 0;
+    const drop = this.net[side] > 0 ? this.net[side] * 0.8 : 0;
+    g.fillStyle = 'rgba(245,245,245,0.92)';
+    for (let i = 0; i < 12; i++) {
+      const a = Math.PI * 2 * i / 12;
+      const top = C(B.x + Math.cos(a) * rr, 25 + Math.sin(a) * rr, 10);
+      const bot = C(B.x + Math.cos(a) * rr * 0.55, 25 + Math.sin(a) * rr * 0.55, 8.2 - drop);
+      const n = Math.max(3, Math.round(Math.abs(bot.Y - top.Y)));
+      for (let j = 0; j <= n; j++) { const u = j / n; g.fillRect(Math.round(top.X + (bot.X - top.X) * u + sway * u), Math.round(top.Y + (bot.Y - top.Y) * u), 1, 1); }
+    }
+    for (const zz of [9.4, 8.8]) for (let i = 0; i < 16; i++) { const a = Math.PI * 2 * i / 16, f = zz > 9 ? 0.8 : 0.66; const v = C(B.x + Math.cos(a) * rr * f, 25 + Math.sin(a) * rr * f, zz - drop * (10 - zz) / 1.8); g.fillRect(Math.round(v.X + sway * (10 - zz) / 1.8), Math.round(v.Y), 1, 1); }
+    // front half of the rim
+    g.fillStyle = '#ff6a1a';
+    for (let i = 0; i <= 24; i++) { const a = Math.PI * i / 24; const v = C(B.x + Math.cos(a) * rr, 25 + Math.sin(a) * rr, 10); g.fillRect(Math.round(v.X - 1), Math.round(v.Y), 2, 2); }
+  }
+
+  /** crisp overlays drawn at full resolution: the ball handler's name, labels, floaters */
+  private drawOverlays(time: number) {
+    const b = this.ball;
+    const topOf = (p: PSprite) => { const q = this.proj(p.x, p.d); return { x: q.x, y: q.y - ((this.looksOf(p.pid).ht || 79) / 12) * VZ * depthScale(p.d) - p.z * VZ * depthScale(p.d) }; };
+    if (b.holder && !b.fly) {
+      const p = this.players.get(b.holder);
+      if (p) {
+        const t = topOf(p);
+        const yy = t.y - 3 + Math.round(Math.sin(time * 6) * 0.6);
+        this.px(t.x - 1.5, yy, 3, 1, '#ffd34d'); this.px(t.x - 0.5, yy + 1, 1, 1, '#ffd34d');
+        if (this.label?.pid !== p.pid) this.text(surname(this.o.names[p.pid] ?? ''), t.x, yy - 3.5, this.starOf(p.pid) > 0 ? '#ffd34d' : '#ffffff', 5, true);
+      }
+    }
+    if (this.label) { const p = this.players.get(this.label.pid); if (p) { const t = topOf(p); this.text(surname(this.o.names[p.pid] ?? ''), t.x, t.y - 5, '#ffffff', 6, true); } }
+    if (this.label2 && this.label2.pid !== this.label?.pid) { const p = this.players.get(this.label2.pid); if (p) { const q = this.proj(p.x, p.d); this.text(surname(this.o.names[p.pid] ?? ''), q.x, q.y + 4, '#ffb0b0', 5, true); } }
+    for (const f of this.floaters) {
+      const u = f.t / f.dur, alpha = 1 - Math.max(0, u - 0.7) / 0.3;
+      if (f.at) { const q = this.proj(f.at.x, f.at.d, f.at.z); this.text(f.text, Math.max(this.camX + 22, Math.min(this.camX + VW / this.z - 22, q.x)), Math.max(this.camY + 22, q.y - 6 - u * 6), f.color, f.big ? 11 : 7, true, alpha); }
+      else this.text(f.text, VW / 2, (f.big ? 70 : 84) - u * 10, f.color, f.big ? 16 : 8, true, alpha, true);
+    }
   }
 
   /** Broadcast score bug at the top: team blocks, score, quarter, clock, shot clock. */

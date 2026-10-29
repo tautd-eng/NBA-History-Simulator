@@ -26,6 +26,7 @@ export class Timeline {
     let v = 0, g = 0, debt = 0;
     let sc0 = 0, scb = 24;
     let prev: PbpEv | null = null;
+    let poss: string = '', fresh = false;
     for (let i = 0; i < this.evs.length; i++) {
       const e = this.evs[i];
       const gap = Math.max(0, e.t - g);
@@ -35,7 +36,9 @@ export class Timeline {
         // live play; earlier inserted time (rebounds) is paid back from the next possession
         len = Math.max(gap * 0.55, gap - debt);
         debt = Math.max(0, debt - (gap - len));
-        const min = isShot(k) ? 1.5 : k === 'tov' || k === 'foul' ? 1.2 : 0.4;
+        // the ball changed hands: the new offence has to cross the floor before it can shoot
+      const turned = fresh && poss === e.s;
+      const min = isShot(k) ? ((e as any).fb ? 3.4 : turned ? 3.7 : 1.5) : k === 'tov' ? (turned ? 2.4 : 1.2) : k === 'foul' ? 1.2 : 0.4;
         if (len < min) { debt += min - len; len = min; }
       } else if (k === 'orb' || k === 'drb') { len = prev && (prev.k === 'ftm') ? 1.0 : 1.1; debt += len; }
       else if (k === 'foul') len = prev && isShot(prev.k) ? 0.9 : 1.1;
@@ -52,6 +55,13 @@ export class Timeline {
       if (k === 'make2' || k === 'make3' || k === 'drb' || k === 'tov' || k === 'period' || (k === 'ft' && this.lastFt(i))) { sc0 = g; scb = 24; }
       else if (k === 'orb') { sc0 = g; scb = this.orbReset; }
       prev = e;
+      // who has the ball after this event
+      const was = poss;
+      if (k === 'drb' || k === 'orb') poss = e.s;
+      else if (k === 'make2' || k === 'make3' || k === 'tov' || (k === 'ft' && this.lastFt(i))) poss = e.s === 'h' ? 'a' : e.s === 'a' ? 'h' : poss;
+      else if (k === 'period') poss = '';
+      if (poss !== was) fresh = !!was;
+      else if (isShot(k) || k === 'tov' || k === 'ft' || k === 'ftm') fresh = false;
     }
     this.items = items;
     this.end = v;
