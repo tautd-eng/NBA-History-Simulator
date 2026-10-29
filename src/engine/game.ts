@@ -387,8 +387,14 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         else if (first) dur = callDuration(dur, rem);
         dur = Math.max(2, Math.min(dur, first ? 23.7 : 13.7)); // within the shot clock
         lateClock = first && !fastBreak && dur >= 19;
+        if (first && offCall === 'milk' && off.pts > def.pts && rem <= 24 && defCall !== 'foul' && period >= 4) dur = rem; // run it all out
         if (dur > rem) dur = rem;
         tick(dur); rem -= dur; elapsed += dur; curRem = rem;
+        // ahead with the shot clock turned off and nobody fouling: dribble out the clock, no shot
+        if (first && offCall === 'milk' && off.pts > def.pts && rem <= 0 && defCall !== 'foul' && period >= 4) {
+          ev('hold', off, `${off === H ? '{h}' : '{a}'} dribble out the clock`);
+          possEnded = true; break;
+        }
         const res = first && defCall === 'foul' ? intentionalFoul(off, def) : play(off, def, !first);
         first = false;
         fastBreak = false;
@@ -396,7 +402,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         if (rem <= 0) possEnded = true;
       }
       // silent (non-shooting, non-bonus) fouls by the defence
-      if (rng.chance(C.silentPf * E.pf * leaguePf * 10)) foulOn(def);
+      if (rem > 0 && rng.chance(C.silentPf * E.pf * leaguePf * 10)) foulOn(def);
       offense = def;
       // dead ball: coaches may substitute
       const ph = H.on, pa = A.on;
@@ -439,17 +445,22 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const late = period >= 4 && Math.abs(lead) <= 15;
     if (off !== user) {
       // late game: protect a lead with the whole shot clock, play for the last shot when tied, chase points when behind
+      // behind, the deficit and the clock decide: two points are enough for a small gap, a big one needs threes
+      const d = -lead;
       if (late && lead > 0 && rem < 60) offCall = 'milk';
-      else if (late && lead <= 0 && lead >= -2 && rem < 24) offCall = 'milk';
-      else if (late && lead === -3 && rem < 30) offCall = 'three';
-      else if (late && lead < -3 && rem < 75) offCall = 'quick';
+      else if (late && d >= 0 && d <= 2 && rem < 24) offCall = 'milk';
+      else if (late && d === 3 && rem < 35) offCall = 'three';
+      else if (late && d >= 4 && d <= 6 && rem < 22) offCall = 'three';
+      else if (late && d >= 4 && d <= 6 && rem < 50) offCall = 'quick';
+      else if (late && d >= 7 && rem < 45) offCall = 'three';
+      else if (late && d >= 7 && rem < 100) offCall = 'quick';
       // end of a quarter: take a quick shot to get the ball back (2-for-1), or hold for the last shot
       else if (offCall === 'auto' && rem > 29 && rem < 40) offCall = 'two4one';
       else if (offCall === 'auto' && rem <= 26 && rem > 3) offCall = 'hold';
     }
     if (def !== user && late && period >= 4) {
       // trailing late: foul to stop the clock and send a poor shooter to the line
-      if (lead >= 3 && lead <= 9 && rem < 40 && rem > 2) defCall = 'foul';
+      if (((lead >= 4 && lead <= 9 && rem < 45) || (lead === 3 && rem < 40 && rem > 24)) && rem > 2) defCall = 'foul';
     }
   }
   function callDuration(dur: number, rem: number) {

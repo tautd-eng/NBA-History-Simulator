@@ -176,7 +176,9 @@ export function updateModes(lg: League, announce = true) {
     // (with some hysteresis, so a team does not flip in and out every two weeks)
     const winning = t.mode === 'tank' ? inSeason && g >= 10 && wp > 0.5 : inSeason && g >= 6 && wp > 0.4;
     const losing = t.mode === 'allin' ? inSeason && g >= 15 && wp < 0.42 : inSeason && g >= 10 && wp < 0.5;
-    if (t.strategy === 'contend' && !losing && (i < 3 || (i < 6 && coreAge >= 29) || (inSeason && g >= 20 && wp >= 0.65))) mode = 'allin';
+    // a hot start convinces any front office that this is the year – whatever the plan was in the summer
+    const hot = inSeason && !losing && i < Math.max(6, Math.round(n * 0.25)) && ((g >= 10 && wp >= 0.64) || (g >= 20 && wp >= 0.6) || (t.mode === 'allin' && g >= 10 && wp >= 0.55));
+    if ((t.strategy === 'contend' && !losing && (i < 3 || (i < 6 && coreAge >= 29) || (inSeason && g >= 20 && wp >= 0.62))) || hot) mode = 'allin';
     else if (i >= n - Math.max(2, Math.round(n * 0.17)) && (young <= 1 || coreAge >= 27) && !winning) mode = 'tank';
     else if (pay > hc - 0.02) mode = 'capclear';
     else if (young >= 2 && coreAge <= 25.5 && i >= 3) mode = 'rising';
@@ -192,8 +194,11 @@ export function updateModes(lg: League, announce = true) {
     if (announce && t.mode === 'allin' && mode !== 'allin' && losing) lg.news.push({ s: lg.season, t: `${t.name} are losing – the all-in push is off.` });
     t.mode = mode;
     if (mode === 'tank') t.strategy = 'rebuild';
+    if (mode === 'allin' && t.tid !== lg.userTid) t.strategy = 'contend';
   });
   // only a handful of GMs are restless enough to keep shuffling the deck
+  // and only so many teams can believe they are a title team at once
+  for (const t of order.filter(t => t.mode === 'allin').slice(Math.max(6, Math.round(n * 0.24)))) t.mode = undefined;
   const ret = order.filter(t => t.mode === 'retool').sort((a, b) => b.gm.risk - a.gm.risk);
   for (const t of ret.slice(Math.max(6, Math.round(n * 0.27)))) t.mode = undefined;
 }

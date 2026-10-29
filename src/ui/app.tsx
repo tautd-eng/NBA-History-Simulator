@@ -2,6 +2,7 @@
 import { PlayoffPreviews, SeriesDialog } from './preview';
 import { Linkify, PL, TL, nav } from './nav';
 import { TeamHistory, TeamRecords, LeagueRecords, Retirements, SeasonArchive } from './history';
+import { StandingsHistory, TeamStatsExplorer, FaMoves } from './leaguehist';
 import { Logo, TLogo, PFace } from './art';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -185,7 +186,7 @@ function App() {
         {lg.phase !== 'fantasy' && tab === 'mainai' && <Trades lg={lg} openPlayer={openPlayer} onDone={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'komandos' && <TeamView lg={lg} tid={team ?? 'LAL'} setTid={setTeam} openPlayer={openPlayer} openGame={openGame} />}
         {lg.phase !== 'fantasy' && tab === 'draftai' && <div className="col"><Drafts lg={lg} openPlayer={openPlayer} openTeam={openTeam} />{lg.fantasy?.done && <FantasyResults lg={lg} openPlayer={openPlayer} />}</div>}
-        {lg.phase !== 'fantasy' && tab === 'istorija' && <HistoryView lg={lg} openPlayer={openPlayer} />}
+        {lg.phase !== 'fantasy' && tab === 'istorija' && <HistoryView lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'statistika' && <StatsView lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'rungtynes' && <Games lg={lg} openPlayer={openPlayer} />}
       </main>
@@ -557,8 +558,25 @@ function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sam
   );
 }
 
+/** Current streak and last-ten record of every team, from this season's finished games. */
+function streakOf(lg: any) {
+  const res: Record<string, boolean[]> = {};
+  const games = lg.schedule.filter((g: any) => g.done && g.hs != null).sort((a: any, b: any) => a.day - b.day || a.id - b.id);
+  for (const g of games) { (res[g.home] ??= []).push(g.hs > g.as); (res[g.away] ??= []).push(g.as > g.hs); }
+  const out: Record<string, { strk: string; n: number; win: boolean; l10: string }> = {};
+  for (const [tid, r] of Object.entries(res)) {
+    if (!r.length) continue;
+    const last = r[r.length - 1];
+    let n = 0; for (let i = r.length - 1; i >= 0 && r[i] === last; i--) n++;
+    const ten = r.slice(-10), w = ten.filter(Boolean).length;
+    out[tid] = { strk: `${last ? 'W' : 'L'}${n}`, n, win: last, l10: `${w}–${ten.length - w}` };
+  }
+  return out;
+}
+
 function Standings({ lg, openTeam }: any) {
   const f = playoffFormat(lg.season, lg);
+  const form = useMemo(() => streakOf(lg), [lg, lg.day]);
   return (
     <div className="panel">
       <h2>Standings</h2>
@@ -567,9 +585,11 @@ function Standings({ lg, openTeam }: any) {
           <div key={c} className="tbl-wrap">
             <table className="tbl">
               <caption>{c === 'E' ? 'Eastern Conference' : 'Western Conference'}</caption>
-              <thead><tr><th>#</th><th className="l">Team</th><th>W</th><th>L</th><th>%</th><th>+/−</th></tr></thead>
+              <thead><tr><th>#</th><th className="l">Team</th><th>W</th><th>L</th><th>%</th><th title="Games behind the conference leader">GB</th><th title="Current streak">Strk</th><th title="Last 10 games">L10</th><th>+/−</th></tr></thead>
               <tbody>
-                {standings(lg, c).map((t: any, i: number) => {
+                {standings(lg, c).map((t: any, i: number, arr: any[]) => {
+                  const gb = ((arr[0].w - t.w) + (t.l - arr[0].l)) / 2;
+                  const fm = form[t.tid];
                   const cut = i + 1 === f.perConf || (f.playIn && i + 1 === 10);
                   return (
                     <tr key={t.tid} className={`${t.tid === lg.userTid ? 'mine' : ''} ${cut ? 'cut' : ''}`}>
@@ -577,6 +597,9 @@ function Standings({ lg, openTeam }: any) {
                       <td className="l"><TLogo lg={lg} tid={t.tid} /><button className="link" onClick={() => openTeam(t.tid)}>{t.name}</button></td>
                       <td>{t.w}</td><td>{t.l}</td>
                       <td>{pct(t.w, t.w + t.l)}</td>
+                      <td className="dim">{gb > 0 ? gb.toFixed(1).replace('.0', '') : '–'}</td>
+                      <td className={fm ? (fm.win ? (fm.n >= 3 ? 'pos' : '') : (fm.n >= 3 ? 'neg' : '')) : 'dim'}>{fm ? fm.strk : '–'}</td>
+                      <td className="dim">{fm ? fm.l10 : '–'}</td>
                       <td className={t.pf - t.pa >= 0 ? 'pos' : 'neg'}>{t.w + t.l ? ((t.pf - t.pa) / (t.w + t.l)).toFixed(1) : '–'}</td>
                     </tr>
                   );
@@ -1025,9 +1048,19 @@ function AwardsExplorer({ lg, openPlayer }: any) {
   );
 }
 
-function HistoryView({ lg, openPlayer }: any) {
+function HistoryView({ lg, openPlayer, openTeam }: any) {
+  const [tab, setTab] = useState<'main' | 'stand' | 'tstats' | 'fa'>('main');
+  const tabs = (
+    <div className="seg hist-tabs" role="group" aria-label="History section">
+      {([['main', 'Champions & records'], ['stand', 'Standings'], ['tstats', 'Team stats'], ['fa', 'Free agency']] as const).map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
+    </div>
+  );
+  if (tab !== 'main') return <div className="col">{tabs}{tab === 'stand' ? <StandingsHistory lg={lg} openTeam={openTeam} /> : tab === 'tstats' ? <TeamStatsExplorer lg={lg} openTeam={openTeam} /> : <FaMoves lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}</div>;
+  return <HistoryMain lg={lg} openPlayer={openPlayer} tabs={tabs} />;
+}
+function HistoryMain({ lg, openPlayer, tabs }: any) {
   const P = (pid: string) => pid ? <button className="link" onClick={() => openPlayer(pid)}>{lg.players[pid].name}</button> : '–';
-  if (!lg.history.length) return <div className="col"><div className="panel empty"><h2>History</h2><p>Once the first season ends, you'll see champions and awards here.</p></div><LeagueRecords lg={lg} openPlayer={openPlayer} /></div>;
+  if (!lg.history.length) return <div className="col">{tabs}<div className="panel empty"><h2>History</h2><p>Once the first season ends, you'll see champions and awards here.</p></div><LeagueRecords lg={lg} openPlayer={openPlayer} /></div>;
   const titles: Record<string, number> = {};
   for (const s of lg.history) titles[s.champion] = (titles[s.champion] ?? 0) + 1;
   const mvps: Record<string, number> = {};
@@ -1035,6 +1068,7 @@ function HistoryView({ lg, openPlayer }: any) {
   const topMvp = Object.entries(mvps).sort((a, b) => b[1] - a[1]).slice(0, 3);
   return (
     <div className="col">
+    {tabs}
     <LeagueRecords lg={lg} openPlayer={openPlayer} />
     <Retirements lg={lg} openPlayer={openPlayer} />
     <SeasonArchive lg={lg} openPlayer={openPlayer} />

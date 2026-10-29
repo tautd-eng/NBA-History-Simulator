@@ -162,7 +162,7 @@ export interface Lottery {
 /** Free agency: stage 1..3 open, 4 = finished (ready to start the season). */
 export interface FreeAgency {
   stage: number; pending: string[]; mle: string[];
-  log: { st: number; kind: 'sign' | 'resign' | 'trade' | 'release' | 'leave' | 'option' | 'qo' | 'match' | 'sheet'; pid?: string; tid?: string; sal?: number; exp?: number; desc?: string; user?: boolean }[];
+  log: { st: number; kind: 'sign' | 'resign' | 'trade' | 'release' | 'leave' | 'option' | 'qo' | 'match' | 'sheet'; pid?: string; tid?: string; sal?: number; exp?: number; desc?: string; user?: boolean; from?: string }[];
   /** stage 0: the user's contract decisions (team options, qualifying offers) with the GM's recommendation */
   decisions?: { pid: string; kind: 'team' | 'qo'; rec: boolean; choice?: boolean; sal: number }[];
   /** offer sheets to the user's restricted free agents, waiting for match / no match */
@@ -173,6 +173,8 @@ export interface FantasyDraft { order: string[]; rounds: number; picks: { round:
 
 export interface League {
   version: number;
+  /** free-agency moves of past summers, by season: [pid, kind, to tid, from tid, salary, last season, OVR (shown), age] */
+  faHist?: Record<number, [string, string, string, string, number, number, number, number][]>;
   seed: number;
   rng: [number, number, number, number];
   destiny: number;

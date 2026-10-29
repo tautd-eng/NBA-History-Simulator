@@ -194,7 +194,14 @@ function changes(lg: any, S: number) {
   for (const p of Object.values(lg.players) as any[]) {
     if (p.prospect) continue;
     const now = p.ovrHist?.find((h: any) => h[0] === S), prev = p.ovrHist?.find((h: any) => h[0] === S - 1);
-    if (!now || !prev) continue;
+    if (!now) continue;
+    if (!prev) {
+      // a rookie: nothing to compare yet, but he is part of the picture
+      if (p.entered !== S) continue;
+      const tid = S === lg.season ? p.tid : (p.career.find((c: any) => c.s === S && !c.po)?.tid ?? null);
+      out.push({ key: p.id, p, tid, age: ageIn(p, S), before: null, after: shownFromRaw(now[1]), d: null, attr: [], l: null, gms: null, rookie: true, retired: !!p.retired && p.retired < S });
+      continue;
+    }
     const rn = p.rh?.find((r: any) => r[0] === S), rp = p.rh?.find((r: any) => r[0] === S - 1);
     const attr = rn && rp ? RATING_LABELS.map((L, i) => ({ i, L, d: rn[i + 1] - rp[i + 1] })).filter(x => !x.L.tendency && x.d !== 0) : [];
     attr.sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
@@ -217,10 +224,12 @@ function Progression({ lg, openPlayer, openTeam }: any) {
   const [minOvr, setMinOvr] = useState(70);
   const all = useMemo(() => changes(lg, S), [lg, S, lg.phase, lg.season]);
   const teams = Object.values(lg.teams).filter((t: any) => t.active).sort((a: any, b: any) => a.name.localeCompare(b.name));
-  const rows = all.filter(r => (team === 'all' || r.tid === team) && Math.max(r.before, r.after) >= minOvr && !r.retired);
-  const up = [...rows].sort((a, b) => b.d - a.d).slice(0, 10).filter(r => r.d > 0);
-  const down = [...rows].sort((a, b) => a.d - b.d).slice(0, 10).filter(r => r.d < 0);
-  const groups = AGE_GROUPS.map(([label, f]) => { const g = all.filter(r => !r.retired && f(r.age)); return { label, n: g.length, avg: g.length ? g.reduce((a, r) => a + r.d, 0) / g.length : 0, up: g.filter(r => r.d >= 3).length, down: g.filter(r => r.d <= -3).length }; });
+  const rows = all.filter(r => !r.rookie && (team === 'all' || r.tid === team) && Math.max(r.before, r.after) >= minOvr && !r.retired);
+  const rookies = all.filter(r => r.rookie && (team === 'all' || r.tid === team) && !r.retired);
+  const vets = rows;
+  const up = [...vets].sort((a, b) => b.d - a.d).slice(0, 10).filter(r => r.d > 0);
+  const down = [...vets].sort((a, b) => a.d - b.d).slice(0, 10).filter(r => r.d < 0);
+  const groups = AGE_GROUPS.map(([label, f]) => { const g = all.filter(r => !r.retired && !r.rookie && f(r.age)); return { label, n: g.length, avg: g.length ? g.reduce((a, r) => a + r.d, 0) / g.length : 0, up: g.filter(r => r.d >= 3).length, down: g.filter(r => r.d <= -3).length }; });
   const attrTxt = (r: any, n = 3) => r.attr.slice(0, n).map((x: any) => `${x.L.short} ${sgn(x.d)}`).join(', ');
   const nm = (r: any) => <><button className="link" onClick={() => openPlayer(r.p.id)}>{r.p.name}</button> <span className="dim">{r.tid ? lg.teams[r.tid]?.abbr : 'FA'} · age {r.age}</span></>;
   const dCls = (d: number) => (d > 0 ? 'pos' : d < 0 ? 'neg' : 'dim');
@@ -228,15 +237,21 @@ function Progression({ lg, openPlayer, openTeam }: any) {
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <><PFace lg={lg} p={r.p} /><button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button></> },
     { key: 'team', label: 'Team', left: true, get: (r: any) => (r.tid ? lg.teams[r.tid]?.abbr ?? r.tid : 'FA'), fmt: (v: any, r: any) => r.tid ? <button className="link" onClick={() => openTeam(r.tid)}>{v}</button> : <span className="dim">FA</span> },
     { key: 'age', label: 'Age', asc: true, get: (r: any) => r.age },
-    { key: 'before', label: 'Before', title: `OVR in ${S - 1}`, get: (r: any) => r.before },
+    { key: 'before', label: 'Before', title: `OVR in ${S - 1}`, get: (r: any) => r.before, fmt: (v: any, r: any) => (r.rookie ? <span className="dim">–</span> : v) },
     { key: 'after', label: 'Now', title: `OVR in ${S}`, get: (r: any) => r.after, fmt: (v: any) => <Ovr v={v} /> },
-    { key: 'd', label: 'Change', get: (r: any) => r.d, fmt: (v: any) => <b className={dCls(v)}>{sgn(v)}</b> },
+    { key: 'd', label: 'Change', get: (r: any) => r.d, fmt: (v: any, r: any) => (r.rookie ? <span className="tag">Rookie</span> : <b className={dCls(v)}>{sgn(v)}</b>) },
     { key: 'pot', label: 'Pot.', title: 'Current potential estimate', get: (r: any) => potOf(r.p, S) },
     { key: 'attr', label: 'Biggest attribute changes', left: true, get: (r: any) => (r.attr[0] ? Math.abs(r.attr[0].d) : 0), fmt: (_: any, r: any) => <span className="attr-d">{r.attr.slice(0, 4).map((x: any) => <span key={x.i} className={dCls(x.d)} title={x.L.name}>{x.L.short} {sgn(x.d)}</span>)}</span> },
     { key: 'gp', label: 'GP', title: 'Games last season', get: (r: any) => r.l?.gp ?? null, fmt: (v: any) => v ?? '–' },
     { key: 'min', label: 'Min', title: 'Minutes per game last season', get: (r: any) => (r.l?.gp ? r.l.min / r.l.gp : null), fmt: f1 },
     { key: 'pts', label: 'Pts', title: 'Points per game last season', get: (r: any) => (r.l?.gp ? r.l.pts / r.l.gp : null), fmt: f1 },
     { key: 'gms', label: 'GmSc/36', title: 'Last season\'s Game Score per 36 min – a good season pushes progression up', get: (r: any) => r.gms, fmt: f1 },
+  ];
+  const rookCols = [
+    cols[0], cols[1], cols[2],
+    { key: 'pick', label: 'Pick', title: 'Draft pick', asc: true, get: (r: any) => (r.p.draft?.year === S - 1 ? r.p.draft.pick : null), fmt: (v: any) => (v ? `No. ${v}` : <span className="dim">undrafted</span>) },
+    { key: 'after', label: 'OVR', get: (r: any) => r.after, fmt: (v: any) => <Ovr v={v} /> },
+    cols.find(c => c.key === 'pot')!,
   ];
   if (!seasons.length) return <div className="panel"><h2>Progression & regression</h2><p className="note">Changes appear after the first offseason – players improve or decline every summer, when free agency opens.</p></div>;
   return (
@@ -281,6 +296,11 @@ function Progression({ lg, openPlayer, openTeam }: any) {
         <SortTable cols={cols} rows={rows} initial="d" limit={300} rowClass={(r: any) => (r.tid && r.tid === lg.userTid ? 'mine' : '')} />
         <p className="note">{rows.length} players. Before / Now – OVR before and after the summer. Stats are from last season. Sort by any column (e.g. click “Change” again to put the biggest drops on top).</p>
       </div>
+      {rookies.length > 0 && <div className="panel">
+        <h3>Rookies ({rookies.length})</h3>
+        <SortTable cols={rookCols} rows={rookies} initial="after" rowClass={(r: any) => (r.tid && r.tid === lg.userTid ? 'mine' : '')} />
+        <p className="note">New in the league this season – their first rating, nothing to compare yet. Their first change comes next summer.</p>
+      </div>}
     </div>
   );
 }

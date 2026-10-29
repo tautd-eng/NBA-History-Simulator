@@ -105,6 +105,34 @@ export function performanceShift(lg: League, Y: number) {
   for (const p of Object.values(lg.players)) { const l = seasonLine(p, Y); if (l && l.min >= 60) lines.push({ p, l }); }
   const out = new Map<string, { dz: number[]; ovrGain: number }>();
   for (const { p } of lines) out.set(p.id, { dz: new Array(NK).fill(0), ovrGain: 0 });
+  // team context: how good the teammates he shared the ball with were (minutes-weighted). On a stacked team
+  // a good player shoots, scores and assists less – that is his role, not a decline.
+  const byTeam = new Map<string, { p: Player; min: number }[]>();
+  for (const { p } of lines) for (const c of p.career) if (c.s === Y && !c.po && c.tid && c.min > 0) {
+    let a = byTeam.get(c.tid); if (!a) byTeam.set(c.tid, a = []); a.push({ p, min: c.min });
+  }
+  const ctx = new Map<string, number>();
+  for (const { p } of lines) {
+    let sw = 0, sq = 0;
+    for (const c of p.career) if (c.s === Y && !c.po && c.tid && c.min > 0) {
+      let tw = 0, tq = 0;
+      for (const m of byTeam.get(c.tid) ?? []) if (m.p !== p) { tw += m.min; tq += m.min * Math.max(-4, bpmOf(m.p.z)); }
+      if (tw > 0) { sw += c.min; sq += c.min * tq / tw; }
+    }
+    ctx.set(p.id, sw ? sq / sw : 0);
+  }
+  /** take out the part of the residuals that the quality of the teammates explains */
+  const deCtx = (res: number[], who: Player[], ws: number[]) => {
+    let W = 0, mx = 0, my = 0;
+    who.forEach((p, i) => { W += ws[i]; mx += ws[i] * ctx.get(p.id)!; my += ws[i] * res[i]; });
+    if (W <= 0) return res;
+    mx /= W; my /= W;
+    let cov = 0, vx = 0;
+    who.forEach((p, i) => { const dx = ctx.get(p.id)! - mx; cov += ws[i] * dx * (res[i] - my); vx += ws[i] * dx * dx; });
+    const b = vx > 1e-9 ? cov / vx : 0;
+    return res.map((r, i) => r - b * (ctx.get(who[i].id)! - mx));
+  };
+  const ROLE = new Set<number>([K.usg, K.ast, K.tpr, K.drw, K.orb, K.drb]);
   // 1) skill by skill
   for (const o of OBS) {
     const xs: number[] = [], ys: number[] = [], ws: number[] = [], who: { p: Player; n: number }[] = [];
@@ -116,10 +144,12 @@ export function performanceShift(lg: League, Y: number) {
     }
     const f = wls(xs, ys, ws);
     if (!f) continue;
+    let res = ys.map((y, i) => y - f.fit(xs[i]));
+    if (ROLE.has(o.k)) res = deCtx(res, who.map(x => x.p), ws);
     who.forEach((x, i) => {
       const sl = f.slope(xs[i]);
       if (sl < 0.03) return;
-      const resid = ys[i] - f.fit(xs[i]);
+      const resid = res[i];
       const dz = Math.max(-0.7, Math.min(0.7, (resid / sl) * ws[i]));
       out.get(x.p.id)!.dz[o.k] += PERF.skill * dz;
     });
@@ -127,9 +157,10 @@ export function performanceShift(lg: League, Y: number) {
   // 2) overall production per 36 minutes against what his overall rating predicts
   const xs = lines.map(x => bpmOf(x.p.z)), ys = lines.map(x => gameScore(x.l) / x.l.min * 36), ws = lines.map(x => x.l.min);
   const f = wls(xs, ys, ws);
+  const ores = f ? deCtx(ys.map((y, i) => y - f.fit(xs[i])), lines.map(x => x.p), ws) : [];
   if (f) lines.forEach(({ p, l }, i) => {
     const sl = Math.max(0.3, f.slope(xs[i]));
-    const bpmShift = Math.max(-4, Math.min(4, (ys[i] - f.fit(xs[i])) / sl));
+    const bpmShift = Math.max(-4, Math.min(4, ores[i] / sl));
     const w = l.min / (l.min + 900);
     const d = out.get(p.id)!.dz;
     for (let k = 0; k < NK; k++) d[k] += PERF.overall * bpmShift * w * OVR_DIR[k];

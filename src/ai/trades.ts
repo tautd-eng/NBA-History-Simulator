@@ -320,8 +320,15 @@ export function fillRoster(lg: League, tid: string) {
     if (!fa) break;
     // a good player signed late still costs most of his market value (within the hard cap)
     const sal = Math.max(MIN_SAL, Math.min(askingSalary(fa, lg.season) * 0.7, hardCap(lg) - payroll(lg, tid)));
+    let from = fa.bird ?? fa.rfa ?? '';
+    for (let i = fa.career.length - 1; i >= 0 && !from; i--) from = fa.career[i].tid ?? '';
     fa.tid = tid; t.roster.push(fa.id);
     fa.contract = { sal, exp: lg.season };
+    delete fa.bird; delete fa.rfa; delete fa.qo;
+    if (lg.phase === 'regular' || lg.phase === 'playoffs') {
+      lg.fa?.log.push({ st: 5, kind: 'sign', pid: fa.id, tid, from, sal, exp: lg.season, desc: 'in-season signing' });
+      lg.news.push({ s: lg.season, t: `The ${t.name} signed free agent ${tagOf(fa, lg.season)} (1 yr) to fill the roster.` });
+    }
   }
 }
 

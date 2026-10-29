@@ -685,6 +685,7 @@ export class PixelCourt {
       case 'foul': this.planFoul(k, L, add, r); break;
       case 'orb': case 'drb': this.planReb(k, L, add); break;
       case 'ft': case 'ftm': this.planFt(k, L, add, r); break;
+      case 'hold': this.possession(k, L, 0.4, null, add, r); break; // ball handler walks it up and lets the clock die
       case 'timeout': add(0, () => { this.say('TIMEOUT', '#ffffff', false, 1.4); this.huddle(); }); break;
       case 'period': case 'end': add(0, () => {
         this.say(e.k === 'end' ? 'FINAL' : e.txt.toUpperCase(), '#ffd34d', true, 2);

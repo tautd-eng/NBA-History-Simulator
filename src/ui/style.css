@@ -718,3 +718,5 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .pv-story { display: flex; flex-direction: column; gap: 4px; font-size: 0.88rem; line-height: 1.45; }
 .pv-story p { margin: 0; }
 .chip.traded { margin-left: 6px; border-color: var(--accent); color: var(--accent); }
+.tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--accent-soft, rgba(80,140,255,.18)); color: var(--fg, inherit); font-weight: 600; }
+.hist-tabs { flex-wrap: wrap; align-self: flex-start; }

@@ -98,7 +98,9 @@ function HistoryTab({ lg, p, openTeam }: any) {
   }
   for (const a of p.awards) { const m = /^(\d{4}) (.*)$/.exec(a); if (m) ev.push({ s: +m[1], o: 900, k: 'award', t: isChamp(m[2]) ? '🏆 Champion' : `Award: ${awardLabel(m[2])}` }); }
   for (const h of p.injHist ?? []) if (h.g >= 10) ev.push({ s: h.s, o: 600, k: 'inj', t: `Injury: ${injName(h.k)}, missed ~${h.g} games${h.lasting ? ' (lasting effect)' : ''}` });
-  ev.sort((a, b) => a.s - b.s || a.o - b.o);
+  ev.sort((a, b) => b.s - a.s || b.o - a.o); // newest first
+  const [all, setAll] = useState(false);
+  const shown = all ? ev : ev.slice(0, 15);
   // teams (stints) from the career lines
   const stints: { tid: string; a: number; b: number }[] = [];
   for (const c of p.career.filter((c: any) => !c.po && c.tid)) {
@@ -124,7 +126,8 @@ function HistoryTab({ lg, p, openTeam }: any) {
       </div>
       <h3>Career events</h3>
       {ev.length ? (
-        <ul className="news timeline">{ev.map((e, i) => <li key={i} className={e.k}><span className="yr">{e.s}</span><span>{e.t}</span></li>)}</ul>
+        <><ul className="news timeline">{shown.map((e, i) => <li key={i} className={e.k}><span className="yr">{e.s}</span><span>{e.t}</span></li>)}</ul>
+          {ev.length > 15 && <button className="small ghost" onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${ev.length} events`}</button>}</>
       ) : <p className="note">No events yet.</p>}
       <p className="note">Events are recorded from when the player joined this league.</p>
     </>
@@ -227,15 +230,15 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
   // progression rows: ratings recorded each season
   const rh: number[][] = p.rh?.length ? p.rh : [[lg.season, ...RATING_LABELS.map(r => ratingOf(p.z[r.k], r.inv))]];
   const ovrBy = Object.fromEntries(p.ovrHist.map((x: any) => [x[0], shownFromRaw(x[1])]));
-  const progRows = rh.map((row, i) => ({ key: row[0], s: row[0], ovr: ovrBy[row[0]] ?? null, r: row.slice(1), prev: i ? rh[i - 1].slice(1) : null }));
+  const progRows = rh.map((row, i) => ({ key: row[0], s: row[0], ovr: ovrBy[row[0]] ?? null, r: row.slice(1), prev: i ? rh[i - 1].slice(1) : null, pOvr: i ? ovrBy[rh[i - 1][0]] ?? null : null }));
   const progCols = [
     { key: 's', label: 'Season', get: (x: any) => x.s, fmt: (s: any) => `${s - 1}–${String(s).slice(2)}` },
     { key: 'age', label: 'Age', get: (x: any) => Math.floor(x.s + 1 / 12 - p.born) },
-    { key: 'ovr', label: 'OVR', get: (x: any) => x.ovr, fmt: (o: any, x: any) => { const pr = ovrBy[x.s - 1]; const d = pr != null && o != null ? o - pr : 0; return <>{o ?? '–'}{d ? <span className={d > 0 ? 'pos delta' : 'neg delta'}>{d > 0 ? '+' : ''}{d}</span> : null}</>; } },
+    { key: 'ovr', label: 'OVR', get: (x: any) => x.ovr, fmt: (o: any, x: any) => { const pr = x.pOvr; const d = pr != null && o != null ? o - pr : 0; return <>{o ?? '–'}{d ? <span className={d > 0 ? 'pos delta' : 'neg delta'}>{d > 0 ? '+' : ''}{d}</span> : null}</>; } },
     ...RATING_LABELS.map((lab, i) => ({
       key: 'r' + i, label: lab.short, title: lab.name + (lab.tendency ? ' (tendency)' : ''),
       get: (x: any) => x.r[i],
-      fmt: (val: any, x: any) => { const d = x.prev ? val - x.prev[i] : 0; return <span className={`rt ${val >= 70 ? 'hi' : val <= 30 ? 'lo' : ''}`}>{val}{Math.abs(d) >= 3 ? <span className={d > 0 ? 'pos delta' : 'neg delta'}>{d > 0 ? '+' : ''}{d}</span> : null}</span>; },
+      fmt: (val: any, x: any) => { const d = x.prev ? val - x.prev[i] : 0; return <span className={`rt ${val >= 70 ? 'hi' : val <= 30 ? 'lo' : ''}`}>{val}{Math.abs(d) >= 2 ? <span className={d > 0 ? 'pos delta' : 'neg delta'}>{d > 0 ? '+' : ''}{d}</span> : null}</span>; },
     })),
   ];
 
@@ -311,12 +314,12 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
               <button className={!pg ? 'on' : ''} onClick={() => setMode('tot')}>Totals</button>
             </div>
           </div>
-          {rows.length ? <SortTable cols={cols} rows={rows} initial="s" initialAsc={true} footer={footer} /> : <p className="note">{po ? 'No playoff games yet.' : 'Hasn\'t played in this league yet.'}</p>}
+          {rows.length ? <SortTable cols={cols} rows={rows} initial="s" initialAsc={false} footer={footer} /> : <p className="note">{po ? 'No playoff games yet.' : 'Hasn\'t played in this league yet.'}</p>}
           <p className="note">Click a column header to sort. * – current season.</p>
         </> : <>
           <OvrChart p={p} />
-          <SortTable cols={progCols} rows={progRows} initial="s" initialAsc={true} />
-          <p className="note">Ratings at the start of each season; the small numbers show the yearly change (shown from ±3).</p>
+          <SortTable cols={progCols} rows={progRows} initial="s" initialAsc={false} />
+          <p className="note">Ratings at the start of each season, newest first; the small numbers show the change from the season before (shown from ±2).</p>
         </>}
       </aside>
     </div>

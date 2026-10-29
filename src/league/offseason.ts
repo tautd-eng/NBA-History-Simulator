@@ -1,6 +1,6 @@
 // Off-season: expansion, lottery and draft, retirements, development, contracts,
 // arrivals and free agency.
-import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, agingIndex, NK, shownOvr } from '../data';
+import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, agingIndex, NK, shownOvr, shownFromRaw } from '../data';
 import { Rng } from '../rng';
 import { League, Player, Team, emptyLine, ExpansionDraft, Lottery, FreeAgency } from '../types';
 import { newPlayer, prospectZ, realTarget, lastRealSeason, ageIn, firstRealSeason, snapRatings, tagOf, addTx } from '../players';
@@ -415,10 +415,36 @@ export function enterFreeAgency(lg: League) {
   }
   lg.dead = (lg.dead ?? []).filter(d => d.exp >= N);
   lg.phase = 'freeagency';
+  archiveFa(lg, N - 1);
   lg.fa = { stage: 0, pending, mle: [], log: optLog, decisions, sheets: [] };
   ensurePicks(lg);
   lg.news.push({ s: N, t: `Free agency opens (for the ${seasonLabelOf(N)} season).` });
+  const kept = optLog.filter(x => x.kind === 'resign' && !x.user && x.pid && bpmOf(lg.players[x.pid].z) > 1).sort((a, b) => bpmOf(lg.players[b.pid!].z) - bpmOf(lg.players[a.pid!].z));
+  for (let i = 0; i < kept.length; i += 10) lg.news.push({ s: N, t: `Re-signed before free agency: ${kept.slice(i, i + 10).map(x => `${tagOf(lg.players[x.pid!], N)} (${lg.teams[x.tid!].abbr}, ${Math.round((x.exp! - N + 1))} yr)`).join(', ')}.` });
   save(lg, rng);
+}
+
+/** The team a free agent comes from: the club holding his rights, or the last one he played for. */
+export function prevTeam(p: Player): string {
+  if (p.bird) return p.bird;
+  if (p.rfa) return p.rfa;
+  if (p.tid) return p.tid;
+  for (let i = p.career.length - 1; i >= 0; i--) if (p.career[i].tid) return p.career[i].tid!;
+  return '';
+}
+/** Keep last summer's free-agency moves in a compact form for the history screens. */
+function archiveFa(lg: League, S: number) {
+  const fa = lg.fa;
+  if (!fa) return;
+  const KEEP = new Set(['sign', 'resign', 'match', 'sheet']);
+  const rows: NonNullable<League['faHist']>[number] = [];
+  for (const x of fa.log) {
+    if (!x.pid || !x.tid || !KEEP.has(x.kind) || (x.kind === 'sheet' && x.desc?.includes('awaiting'))) continue;
+    const p = lg.players[x.pid]; if (!p) continue;
+    const o = p.ovrHist.find(h => h[0] === S) ?? p.ovrHist[p.ovrHist.length - 1];
+    rows.push([x.pid, x.kind, x.tid, x.from ?? '', Math.round((x.sal ?? 0) * 1000) / 1000, x.exp ?? S, o ? shownFromRaw(o[1]) : 0, ageIn(p, S)]);
+  }
+  (lg.faHist ??= {})[S] = rows;
 }
 
 const seasonLabelOf = (s: number) => `${s - 1}–${String(s).slice(2)}`;
@@ -487,6 +513,7 @@ export function faOffer(lg: League, pid: string, sal: number): { ok: boolean; ms
       return { ok: false, msg: `${p.name} signed your offer sheet, but the ${lg.teams[R].name} matched it – he stays with them.` };
     }
   }
+  const from = prevTeam(p);
   p.tid = tid; lg.teams[tid].roster.push(pid);
   p.contract = { sal, exp: N - 1 + yrs };
   lockTrade(lg, p);
@@ -496,7 +523,7 @@ export function faOffer(lg: League, pid: string, sal: number): { ok: boolean; ms
   delete p.bird;
   if (lg.fa) {
     lg.fa.pending = lg.fa.pending.filter(x => x !== pid);
-    lg.fa.log.push({ st: lg.fa.stage, kind: resign ? 'resign' : 'sign', pid, tid, sal, exp: p.contract.exp, user: true });
+    lg.fa.log.push({ st: lg.fa.stage, kind: resign ? 'resign' : 'sign', pid, tid, from, sal, exp: p.contract.exp, user: true });
   }
   lg.news.push({ s: N, t: `The ${lg.teams[tid].name} ${resign ? 're-signed' : 'signed'} ${tagOf(p, N)}: ${yrs}-year deal.` });
   return { ok: true, msg: `${p.name} ${resign ? 're-signed' : 'signed'}: ${yrs} yrs, ${(sal * 100).toFixed(1)}% of the cap per season.` };
@@ -596,6 +623,8 @@ function applyDecisions(lg: League) {
   fa.decisions = [];
 }
 
+const NEWS_BPM = -0.5; // every rotation-level signing makes the news
+
 function signWith(lg: League, p: Player, tid: string, sal: number, exp: number, rng?: Rng) {
   p.tid = tid; lg.teams[tid].roster.push(p.id);
   p.contract = rng ? vetContract(p, lg.season, sal, exp - lg.season + 1, rng) : { sal, exp };
@@ -679,7 +708,7 @@ function resolvePending(lg: League, rng: Rng) {
       p.contract = vetContract(p, N, ask, contractYears(p, N, () => rng.next()), rng);
       lockTrade(lg, p);
       pay += ask;
-      fa.log.push({ st: 1, kind: 'resign', pid, tid, sal: ask, exp: p.contract.exp, desc: 'GM decision' });
+      fa.log.push({ st: 1, kind: 'resign', pid, tid, from: tid, sal: ask, exp: p.contract.exp, desc: 'GM decision' });
     } else fa.log.push({ st: 1, kind: 'leave', pid, tid });
     delete p.bird;
   }
@@ -712,8 +741,9 @@ function reachFloor(lg: League, rng: Rng) {
         fa.log.push({ st: 3, kind: 'release', pid: cut.id, tid: t.tid });
       }
       const sal = Math.min(maxSalary(p, N), FLOOR - pay, Math.max(askingSalary(p, N), (FLOOR - pay) / 2));
+      const from = prevTeam(p);
       signWith(lg, p, t.tid, sal, N);
-      fa.log.push({ st: 3, kind: 'sign', pid: p.id, tid: t.tid, sal, exp: N, desc: '1-year deal to reach the salary floor' });
+      fa.log.push({ st: 3, kind: 'sign', pid: p.id, tid: t.tid, from, sal, exp: N, desc: '1-year deal to reach the salary floor' });
       pay += sal;
     }
   }
@@ -773,18 +803,19 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
       }
       if (aiMatches(lg, p, rights, o.sal)) {
         signWith(lg, p, rights, o.sal, N - 1 + yrs);
-        fa.log.push({ st: stage, kind: 'match', pid: p.id, tid: rights, sal: o.sal, exp: p.contract.exp, desc: `matched the ${o.t.abbr} offer` });
-        if (bpmOf(p.z) > 2.5) signed.push(`${tagOf(p, N)} stays with ${lg.teams[rights].abbr} (matched the ${o.t.abbr} offer)`);
+        fa.log.push({ st: stage, kind: 'match', pid: p.id, tid: rights, from: rights, sal: o.sal, exp: p.contract.exp, desc: `matched the ${o.t.abbr} offer` });
+        if (bpmOf(p.z) > NEWS_BPM) signed.push(`${tagOf(p, N)} stays with ${lg.teams[rights].abbr} (matched the ${o.t.abbr} offer)`);
         continue;
       }
     }
     if (o.mle) fa.mle.push(o.t.tid);
     const wasRfa = !!rights && rights !== o.t.tid;
+    const from = prevTeam(p);
     signWith(lg, p, o.t.tid, o.sal, N - 1 + yrs, rng);
-    fa.log.push({ st: stage, kind: 'sign', pid: p.id, tid: o.t.tid, sal: o.sal, exp: p.contract.exp, ...(wasRfa ? { desc: `${lg.teams[rights!].abbr} did not match` } : {}) });
-    if (bpmOf(p.z) > 2.5) signed.push(`${tagOf(p, N)} → ${o.t.abbr}`);
+    fa.log.push({ st: stage, kind: 'sign', pid: p.id, tid: o.t.tid, from, sal: o.sal, exp: p.contract.exp, ...(wasRfa ? { desc: `${lg.teams[rights!].abbr} did not match` } : {}) });
+    if (bpmOf(p.z) > NEWS_BPM) signed.push(`${tagOf(p, N)} → ${o.t.abbr}${from && from !== o.t.tid && lg.teams[from] ? ` (from ${lg.teams[from].abbr})` : from === o.t.tid ? ' (re-signed)' : ''}`);
   }
-  if (signed.length) lg.news.push({ s: N, t: `Free agency (wave ${stage}): ${signed.slice(0, 8).join(', ')}.` });
+  for (let i = 0; i < signed.length; i += 10) lg.news.push({ s: N, t: `Free agency (wave ${stage}${i ? ', cont.' : ''}): ${signed.slice(i, i + 10).join(', ')}.` });
 }
 
 /** Free agency is over: rosters filled and trimmed, schedule made, season begins. */
@@ -805,17 +836,18 @@ export function startSeason(lg: League) {
         const ask = Math.min(maxSalary(p, N), askingSalary(p, N) * 0.92);
         if (ask > (p.qo ?? MIN_SAL) && worthKeeping(lg, p, ask, N, t.strategy) && payroll(lg, t.tid) + ask <= hardCap(lg)) {
           signWith(lg, p, t.tid, ask, N - 1 + contractYears(p, N, () => rng.next()), rng);
-          lg.fa?.log.push({ st: 3, kind: 'resign', pid: p.id, tid: t.tid, sal: ask, exp: p.contract.exp, desc: 're-signed his restricted free agent' });
+          lg.fa?.log.push({ st: 3, kind: 'resign', pid: p.id, tid: t.tid, from: t.tid, sal: ask, exp: p.contract.exp, desc: 're-signed his restricted free agent' });
           addTx(p, N, `Re-signed with ${t.name} as a restricted free agent: ${Math.round(ask * 1000) / 10}% of the cap through ${p.contract.exp}`, -1);
           continue;
         }
       }
       const qo = p.qo ?? MIN_SAL;
       signWith(lg, p, t.tid, qo, N);
-      lg.fa?.log.push({ st: 3, kind: 'qo', pid: p.id, tid: t.tid, sal: qo, exp: N, desc: 'accepted the qualifying offer (1 yr)' });
+      lg.fa?.log.push({ st: 3, kind: 'qo', pid: p.id, tid: t.tid, from: t.tid, sal: qo, exp: N, desc: 'accepted the qualifying offer (1 yr)' });
       if (t.tid === lg.userTid) lg.news.push({ s: N, t: `${tagOf(p, N)} accepted the ${t.abbr} qualifying offer (1 yr).` });
     }
   }
+  const aiFill: string[] = [];
   for (const t of activeTeams(lg)) {
     const filled: string[] = [];
     while (t.roster.length < ROSTER_MIN) {
@@ -826,7 +858,9 @@ export function startSeason(lg: League) {
       best.contract = { sal: fair, exp: N };
       lockTrade(lg, best);
       filled.push(tagOf(best, N));
-      addTx(best, N, fair > MIN_SAL + 1e-9 ? `Signed with ${t.name}: 1 yr, ${Math.round(fair * 1000) / 10}% of the cap` : `Signed with ${t.name}: minimum deal (1 yr)`, -1);
+      lg.fa?.log.push({ st: 4, kind: 'sign', pid: best.id, tid: t.tid, from: prevTeam({ ...best, tid: null } as Player), sal: fair, exp: N, desc: 'to fill the roster' });
+      if (t.tid !== lg.userTid && bpmOf(best.z) > NEWS_BPM) aiFill.push(`${tagOf(best, N)} → ${t.abbr}`);
+      if (!lg.fa) addTx(best, N, fair > MIN_SAL + 1e-9 ? `Signed with ${t.name}: 1 yr, ${Math.round(fair * 1000) / 10}% of the cap` : `Signed with ${t.name}: minimum deal (1 yr)`, -1);
     }
     const cut: string[] = [];
     while (t.roster.length > ROSTER_MAX) {
@@ -840,6 +874,7 @@ export function startSeason(lg: League) {
       lg.news.push({ s: N, t: `${t.name}: ${filled.length ? `roster filled to ${ROSTER_MIN} with ${filled.join(', ')}` : ''}${filled.length && cut.length ? '; ' : ''}${cut.length ? `released ${cut.join(', ')}` : ''}.` });
     }
   }
+  for (let i = 0; i < aiFill.length; i += 10) lg.news.push({ s: N, t: `Late signings to fill rosters: ${aiFill.slice(i, i + 10).join(', ')}.` });
   // salary floor: a team still below it pays the shortfall to its players (counts on the books this season)
   for (const t of activeTeams(lg)) {
     const short = FLOOR - payroll(lg, t.tid);
@@ -990,6 +1025,7 @@ function contracts(lg: League, rng: Rng, log: FreeAgency['log'], decisions: NonN
         p.contract = vetContract(p, N, ask, contractYears(p, N, () => rng.next()), rng);
         lockTrade(lg, p);
         pay += ask;
+        log.push({ st: 0, kind: 'resign', pid: p.id, tid: t.tid, from: t.tid, sal: p.contract.sal, exp: p.contract.exp });
       } else {
         t.roster = t.roster.filter(pid => pid !== p.id);
         p.tid = null;
