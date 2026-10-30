@@ -119,6 +119,8 @@ export class PixelCourt {
   crowd: { x: number; y: number; c: string; ph: number }[] = [];
   onIdle: (() => void) | null = null;
   dbg: ((x: any) => void) | null = null; // test hook
+  dbgTele: ((stack: string) => void) | null = null;
+  flySrc = '';
   onShown: ((n: number) => void) | null = null;
   idleFired = true;
   label: { pid: string; t: number } | null = null;
@@ -162,6 +164,10 @@ export class PixelCourt {
   lastReplayT = -999;
   notes = new Map<number, string>();
   heldAt: { pid: string; x: number; z: number; v: number } | null = null;
+  pickup: { pid: string; then?: () => void } | null = null;
+  lower: { pid: string; t: number } | null = null; // the lower-third graphic with a player's line
+  featured = new Map<string, number>(); lastLower = -999;
+  card: { kind: 'period' | 'timeout'; k: number; t: number } | null = null; // who is going to pick up the loose ball
   waiting: { pid: string; side: Side; i: number }[] = []; // subs crouched at the scorer's table, waiting for a whistle // what happened, explained (turnovers): shown with the play-by-play line
   canvas: HTMLCanvasElement;
   constructor(canvas: HTMLCanvasElement, o: CourtOpts) {
@@ -277,6 +283,8 @@ export class PixelCourt {
     if (this.label) { this.label.t -= dt; if (this.label.t <= 0) this.label = null; }
     if (this.label2) { this.label2.t -= dt; if (this.label2.t <= 0) this.label2 = null; }
     this.cheer = Math.max(0, this.cheer - dt);
+    if (this.lower && (this.lower.t += dt) > 3.6) this.lower = null;
+    if (this.card && (this.card.t += dt) > 3.2) this.card = null;
     this.net.h = Math.max(0, this.net.h - dt); this.net.a = Math.max(0, this.net.a - dt);
     const bp = this.proj(this.ball.x, this.ball.d);
     if (this.arena) {
@@ -347,6 +355,7 @@ export class PixelCourt {
   private register(k: number) {
     const it = this.tl!.items[k], e = it.e;
     if (e.k !== 'sub' || k > 0) this.setCaption(e, k);
+    if (!this.ff && !this.replaying && (e.k === 'period' || e.k === 'end' || e.k === 'timeout')) this.card = { kind: e.k === 'timeout' ? 'timeout' : 'period', k, t: 0 };
     // highlights get a slow-motion replay: dunks, blocks, late daggers
     if (!this.ff && !this.replaying && this.ext != null && e.t - this.lastReplayT > 75) {
       const shooter = this.pidOf(e, 'fga');
@@ -411,8 +420,21 @@ export class PixelCourt {
   private setPose(p: PSprite | null, pose: Pose, t: number) { if (p) { p.pose = pose; p.pt = t; } }
   private give(pid: string | null | undefined) {
     if (!pid) return;
+    if (this.dbgTele && !this.ff) { const p = this.P(pid), bp = this.ballPos(); if (p && !this.ball.fly && hyp(p.x - bp.x, p.d - bp.d) > 3) this.dbgTele((new Error().stack ?? '') + '\nfly:' + this.flySrc); }
     this.ball.fly = null;
     this.ball.holder = pid;
+    // a star touches the ball: the broadcast shows his line (not too often)
+    if (!this.ff && this.arena && this.starOf(pid) > 0 && this.tl) {
+      const t = this.tl.items[Math.min(this.cur, this.tl.items.length - 1)]?.e.t ?? 0;
+      if (t - (this.featured.get(pid) ?? -999) > 240 && t - this.lastLower > 45) { this.featured.set(pid, t); this.lastLower = t; this.lower = { pid, t: 0 }; }
+    }
+  }
+  /** a player's line so far (play-by-play up to the event on screen) */
+  lineNow(pid: string) {
+    const o: Record<string, number> = {};
+    const items = this.tl?.items ?? [];
+    for (let i = 0; i < Math.min(this.cur, items.length); i++) for (const d of items[i].e.d ?? []) if (d[0] === pid) o[d[1]] = (o[d[1]] ?? 0) + d[2];
+    return o;
   }
   private flyBall(x1: number, d1: number, z1: number, peak: number, dur: number, done?: () => void, to?: string) {
     const b = this.ball;
@@ -421,6 +443,7 @@ export class PixelCourt {
     const x0 = ha ? ha.x : from ? from.x + from.face * 0.8 : b.x, d0 = from ? from.d + 0.4 : b.d, z0 = ha ? ha.z : from ? Math.max(5, b.z) : b.z;
     b.holder = null;
     b.fly = { x0, d0, z0, x1, d1, z1, peak, t: 0, dur, done, to };
+    if (this.dbgTele) (b.fly as any).src = (new Error().stack ?? '').split('\n').slice(2, 4).map(l => l.replace(/.*pixel\.ts:(\d+).*/, '$1')).join('<');
   }
   /** a pass (homes in on the receiver) */
   private pass(to: string | null | undefined, bounce = false, lob = false) {
@@ -603,6 +626,12 @@ export class PixelCourt {
         else if (hyp(o.x - p.x, o.d - p.d) < 3) { p.slap = true; o.slap = true; p.face = Math.sign(o.x - p.x) || 1; o.face = -p.face; this.setPose(p, 'pass', 0.3); this.setPose(o, 'pass', 0.3); }
       }
     }
+    // a loose ball on the floor is picked up when the man going for it gets there
+    if (this.pickup) {
+      const pl = this.P(this.pickup.pid);
+      if (!pl || this.ball.holder || this.ball.fly) this.pickup = null;
+      else if (hyp(pl.x - this.ball.x, pl.d - this.ball.d) < 2.2) { const then = this.pickup.then; this.give(pl.pid); this.pickup = null; then?.(); }
+    }
     // nobody stands inside anybody else
     const ps = [...this.players.values()];
     for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
@@ -623,13 +652,13 @@ export class PixelCourt {
       const f = b.fly;
       f.t += dt;
       const u = Math.min(1, f.t / f.dur);
-      if (f.to && u < 0.85) { const r = this.P(f.to); if (r) { f.x1 = r.x; f.d1 = r.d; } }
+      if (f.to) { const r = this.P(f.to); if (r) { f.x1 = r.x + r.vx * (f.dur - f.t) * 0.3; f.d1 = r.d + r.vd * (f.dur - f.t) * 0.3; } } // the ball finds the hands
       b.x = f.x0 + (f.x1 - f.x0) * u; b.d = f.d0 + (f.d1 - f.d0) * u;
       const lin = f.z0 + (f.z1 - f.z0) * u;
       if (f.bounce) b.z = u < 0.62 ? f.z0 * (1 - u / 0.62) : f.z1 * (u - 0.62) / 0.38;
       else b.z = lin + 4 * (Math.max(f.peak, f.z0, f.z1) - Math.max(f.z0, f.z1)) * u * (1 - u);
       if (f.peak >= 11 && !this.ff) { const pp = this.proj(b.x, b.d, b.z); this.trail.push({ x: pp.x, y: pp.y, t: 0 }); }
-      if (u >= 1) { b.fly = null; f.done?.(); }
+      if (u >= 1) { b.fly = null; if (this.dbgTele) this.flySrc = (f as any).src ?? 'raw'; f.done?.(); this.flySrc = ''; }
     } else if (b.holder) {
       const p = this.P(b.holder);
       if (!p) { b.holder = null; return; }
@@ -681,7 +710,7 @@ export class PixelCourt {
     for (let j = k - 1; j >= 0; j--) if (items[j].e.on) { lu = items[j].e.on!; break; }
     if (!lu && items[k].e.on) lu = items[k].e.on!;
     this.players.clear();
-    this.waiting = [];
+    this.waiting = []; this.pickup = null; this.card = null; this.lower = null;
     this.ball = { x: 47, d: 25, z: 3, holder: null, fly: null };
     if (lu) { for (const pid of lu.h) this.addPlayer(pid, 'h', 47, 25); for (const pid of lu.a) this.addPlayer(pid, 'a', 47, 25); }
     this.match.clear();
@@ -913,17 +942,23 @@ export class PixelCourt {
     let holder = this.ball.holder && this.P(this.ball.holder)?.side === off ? this.ball.holder : null;
     let first: string | null = null, pA = 0;
     let inb: PSprite | null = null;
+    // who may bring the ball up: guards, and the rare big who really handles it (a Jokić, a Giannis)
+    const handles = (pid: string | null) => !!pid && (this.posN(pid) <= 2.5 || (this.o.looks?.[pid]?.az ?? 0) > 1.0);
     if (h.how === 'inbound') {
-      inb = o.filter(p => p !== pg).sort((p, q) => Math.abs(p.x - O.x) - Math.abs(q.x - O.x))[0] ?? big;
-      first = opts.receiver ?? (inb === pg ? o[1]?.pid : pg?.pid) ?? null; pA = 1.3;
+      // whoever is nearest the ball under the basket takes it out – usually a big – and the guard comes to get it
+      const bx = this.ball.x, bd = this.ball.d;
+      inb = o.filter(p => p !== pg).sort((p, q) => hyp(p.x - bx, p.d - bd) - hyp(q.x - bx, q.d - bd))[0] ?? big;
+      first = opts.receiver ?? (inb === pg ? o[1]?.pid : pg?.pid) ?? null; pA = 1.7;
     } else if (h.how === 'rebound') {
       holder = h.pid ?? holder;
-      first = this.posN(holder) <= 2 || fb ? holder : (opts.receiver ?? pg?.pid ?? null); pA = first === holder ? 0.1 : 0.8;
+      first = handles(holder) && (this.posN(holder) <= 2 || fb) ? holder : (opts.receiver ?? pg?.pid ?? null); pA = first === holder ? 0.1 : 0.8;
     } else if (h.how === 'steal') {
       holder = h.pid ?? holder;
-      first = fb || this.posN(holder) <= 2 ? holder : (pg?.pid ?? holder); pA = first === holder ? 0.1 : 0.6;
+      first = (fb && handles(holder)) || this.posN(holder) <= 2 ? holder : (pg?.pid ?? holder); pA = first === holder ? 0.1 : 0.6;
     } else if (h.how === 'orb') {
       holder = h.pid ?? holder; first = holder; pA = 0;
+      // a big who grabs an offensive board and does not go right back up kicks it out
+      if (!handles(holder) && end > 4 && pg && pg.pid !== holder) { first = opts.receiver ?? pg.pid; pA = 0.6; }
     } else if (h.how === 'tip') {
       first = opts.receiver ?? pg?.pid ?? null; pA = 1.4;
     } else {
@@ -947,12 +982,21 @@ export class PixelCourt {
       const others = this.ord(off).filter(p => p.pid !== first && p !== inb && p.pid !== holder);
       if (h.how === 'inbound') {
         const I = inb;
-        if (I) { this.go(I, O.x - s * 7, 25 + (r() - 0.5) * 8, RUN / sc); this.give(I.pid); }
+        // he picks the ball up under the basket, steps out behind the baseline and inbounds it
+        if (I) {
+          const bx = this.ball.holder || this.ball.fly ? O.x + s * 0.5 : this.ball.x, bd = this.ball.holder || this.ball.fly ? 25 : this.ball.d;
+          if (this.ball.holder && this.P(this.ball.holder)?.side !== off) { this.ball.holder = null; this.ball.x = bx; this.ball.d = bd; this.ball.z = 0.3; }
+          this.pickup = { pid: I.pid };
+          const dGo = hyp(I.x - bx, I.d - bd);
+          this.go(I, bx, bd, RUN / sc);
+          add(Math.min(pA * sc * 0.55, 0.15 + dGo / (RUN / sc)), () => { this.go(I, O.x - s * 6.6, 25 + (r() - 0.5) * 7, JOG / sc); });
+        }
         const f = this.P(first); if (f) this.go(f, O.x + s * 9, 25 + (r() < 0.5 ? -8 : 8), RUN / sc);
         this.retreat(def);
       } else if (h.how === 'side' || h.how === 'period') {
         const I = inb, sx = h.how === 'period' ? 47 : 47 + s * 12;
-        if (I) { this.go(I, sx, -2, RUN / sc); this.give(I.pid); }
+        // the official hands the ball to the inbounder on the sideline
+        if (I) { this.go(I, sx, -2, RUN / sc); this.ball.holder = null; this.ball.fly = null; this.ball.x = sx; this.ball.d = -1.6; this.ball.z = 3; this.pickup = { pid: I.pid }; }
         const f = this.P(first); if (f) this.go(f, sx + s * 5, 9, RUN / sc);
         this.guardAll(off);
       } else if (h.how === 'tip') {
@@ -962,7 +1006,10 @@ export class PixelCourt {
         add(0.75 * sc, () => { const f = this.P(first); if (f) { this.ball.holder = big?.pid ?? null; this.pass(first); } });
         this.guardAll(off);
       } else {
-        this.give(holder);
+        // the ball is where it is: if he is not on it yet, he picks it up on the way
+        const hp0 = this.P(holder);
+        if (hp0 && !this.ball.holder && !this.ball.fly && hyp(hp0.x - this.ball.x, hp0.d - this.ball.d) > 3) { this.pickup = { pid: hp0.pid }; this.go(hp0, this.ball.x, this.ball.d, SPRINT); }
+        else if (!(this.ball.fly && this.ball.fly.to === holder)) this.give(holder);
         if (fb) this.retreat(def); else if (h.how === 'orb') this.guardAll(off); else this.retreat(def);
         if (first && first !== holder) { const f = this.P(first); const hp = this.P(holder); if (f && hp) this.go(f, hp.x + s * 14, hp.d < 25 ? 8 : 42, RUN / sc); }
       }
@@ -977,7 +1024,10 @@ export class PixelCourt {
       else if (call === 'three') this.call(off, `${this.abbr(off)} need a three`);
       else if (h.how !== 'orb') this.call(off, `${this.abbr(off)} ball`);
     });
-    if (first && holder !== first && h.how !== 'tip') add(Math.max(0.15, tB - 0.35 * sc), () => { if (this.ball.holder !== first) this.pass(first); });
+    if (first && holder !== first && h.how !== 'tip') add(Math.max(0.15, tB - 0.35 * sc), () => {
+      if (this.pickup && !this.ball.holder && !this.ball.fly) { const f1 = first; this.pickup.then = () => this.pass(f1); return; } // he passes it in as soon as he has it
+      if (this.ball.holder !== first) this.pass(first);
+    });
     // --- phase B: bring it up
     if (pB > 0) add(tB, () => {
       const f = this.P(this.ball.holder) ?? this.P(first);
@@ -1552,7 +1602,7 @@ export class PixelCourt {
         if (reb) { const dx = reb.x - B.x, dd = reb.d - B.d, dist = hyp(dx, dd) || 1; const g = Math.min(dist, 3 + r() * 7); tx = B.x + dx / dist * g; td = B.d + dd / dist * g; }
         this.ball.holder = null;
         const b = this.ball;
-        this.ball.fly = { x0: b.x, d0: b.d, z0: Math.max(10, b.z), x1: tx, d1: td, z1: 7, peak: 13 + r() * 2, t: 0, dur: 0.7 };
+        this.ball.fly = { x0: b.x, d0: b.d, z0: Math.max(10, b.z), x1: tx, d1: td, z1: 7, peak: 13 + r() * 2, t: 0, dur: 0.7, to: reb && hyp(reb.x - tx, reb.d - td) < 6 ? reb.pid : undefined };
         this.scored(actor, 0, false);
       }
     });
@@ -1590,7 +1640,9 @@ export class PixelCourt {
     });
     add(Math.max(0, L - 0.45), () => { const p = this.P(pid); if (p) { this.jump(p, 3, 0.55, 'reb'); this.label = { pid: p.pid, t: 0.9 }; } });
     add(L, () => {
-      this.give(pid);
+      const p = this.P(pid);
+      if (p && !this.ball.fly && hyp(p.x - this.ball.x, p.d - this.ball.d) > 3) { this.pickup = { pid: p.pid }; this.go(p, this.ball.x, this.ball.d, SPRINT); }
+      else this.give(pid);
       if (e.k === 'orb') this.sayAt(pid, 'OFF. BOARD', '#9fd3ff', 0.9);
       const side = e.s as Side;
       if (e.k === 'drb') for (const p of this.on(other(side))) if (p.beh.k === 'spot' && this.posN(p.pid) >= 3.75) this.go(p, 47, p.d, JOG);
@@ -1661,7 +1713,7 @@ export class PixelCourt {
         const a = A(); const bx = (a?.x ?? st.x) - s * 2, bd = (a?.d ?? st.d) + (r() - 0.5) * 3;
         this.flyBall(bx, bd, 0.6, 3, 0.35, () => { this.give(stl); });
         this.go(st, bx, bd, SPRINT); this.sayAt(stl, 'STRIPPED!', '#ffd34d', 1.3);
-      } else if (v === 'pick' && st) { this.give(stl); this.sayAt(stl, 'STEAL!', '#ffd34d', 1.3); }
+      } else if (v === 'pick' && st) { if (hyp(st.x - this.ball.x, st.d - this.ball.d) > 3) this.pickup = { pid: st.pid }; else this.give(stl); this.sayAt(stl, 'STEAL!', '#ffd34d', 1.3); }
       else if (v === 'travel') { this.sayAt(pid, 'TRAVELING', '#ffd34d', 1.2); this.ball.holder = null; this.ball.z = 3; }
       else if (v === 'clock') { this.say('SHOT CLOCK VIOLATION', '#ff6b6b', true, 1.5); this.ball.holder = null; }
       else { this.sayAt(pid, v === 'bad' ? 'BAD PASS' : 'OUT OF BOUNDS', '#ffd34d', 1.2); if (v === 'oob') this.flyBall(this.ball.x, this.ball.d < 25 ? -4 : WID + 4, 0.5, 3, 0.4); }
@@ -1720,7 +1772,7 @@ export class PixelCourt {
     const last = this.tl!.lastFt(k);
     const next = items[k + 1]?.e;
     const firstFt = !items[k - 1] || (items[k - 1].e.k !== 'ft' && items[k - 1].e.k !== 'ftm');
-    add(0, () => { this.ftFormation(side, sh, firstFt ? JOG : WALK); if (this.ball.holder !== sh) { const p = this.P(sh); if (p) { this.ball.holder = null; this.ball.fly = { x0: this.ball.x, d0: this.ball.d, z0: this.ball.z, x1: B.x - s * 15, d1: 25, z1: 5, peak: 7, t: 0, dur: Math.min(0.8, L * 0.3), done: () => this.give(sh) }; } } this.label = sh ? { pid: sh, t: 1.6 } : null; this.hl = sh ? { pid: sh, t: L } : null; });
+    add(0, () => { this.ftFormation(side, sh, firstFt ? JOG : WALK); if (this.ball.holder !== sh) { const p = this.P(sh); if (p) { this.ball.holder = null; this.ball.fly = { x0: this.ball.x, d0: this.ball.d, z0: this.ball.z, x1: p.x, d1: p.d, z1: 5, peak: 7, t: 0, dur: Math.min(0.8, L * 0.3), done: () => this.give(sh), to: sh ?? undefined }; } } this.label = sh ? { pid: sh, t: 1.6 } : null; this.hl = sh ? { pid: sh, t: L } : null; });
     add(L - 1.0, () => { const p = this.P(sh); if (p) { this.give(sh); this.setPose(p, 'gather', 0.2); } });
     add(L - 0.8, () => { const p = this.P(sh); if (p) { this.give(sh); this.jump(p, 0.6, 0.45, 'shoot'); } });
     add(L - 0.6, () => this.setPose(this.P(sh), 'follow', 0.6));
@@ -2075,10 +2127,67 @@ export class PixelCourt {
     this.drawOverlays(time);
     this.drawScoreBug();
     this.drawCaption(true);
+    this.drawGraphics();
     this.drawReplay(time);
   }
 
   /** "REPLAY" bug and letterbox while a replay runs */
+  /** broadcast graphics: a star's line, the quarter break, the timeout */
+  private drawGraphics() {
+    if (!this.arena || !this.tl) return;
+    const g = this.ctx;
+    g.setTransform(this.R, 0, 0, this.R, 0, 0);
+    const font = (w: string, px: number) => `${w} ${px}px "IBM Plex Sans", system-ui, sans-serif`;
+    const fade = (t: number, dur: number) => Math.min(1, t * 5, (dur - t) * 5);
+    if (this.lower) {
+      const pid = this.lower.pid, ln = this.lineNow(pid);
+      const side = this.o.side[pid] as Side, [col] = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid);
+      const name = (this.o.names[pid] ?? '').toUpperCase();
+      const reb = (ln.orb ?? 0) + (ln.drb ?? 0);
+      const line = `${ln.pts ?? 0} PTS · ${reb} REB · ${ln.ast ?? 0} AST · ${ln.fgm ?? 0}/${ln.fga ?? 0} FG`;
+      const a = fade(this.lower.t, 3.6), slide = (1 - Math.min(1, this.lower.t * 4)) * 40;
+      g.globalAlpha = a;
+      const x = 16 - slide, y = VH * S - 17 * S - 58, w = 330, h = 50;
+      g.fillStyle = 'rgba(10,13,19,0.9)'; g.fillRect(x, y, w, h);
+      g.fillStyle = col; g.fillRect(x, y, 6, h);
+      g.fillStyle = '#ffd34d'; g.font = font('700', 15); g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(name, x + 16, y + 16);
+      g.fillStyle = '#e8edf6'; g.font = font('500', 13); g.fillText(line, x + 16, y + 35);
+      g.globalAlpha = 1;
+    }
+    if (this.card) {
+      const it = this.tl.items[this.card.k]; if (!it) return;
+      const e = it.e, a = fade(this.card.t, 3.2);
+      g.globalAlpha = a;
+      const W = 420, H = this.card.kind === 'period' ? 132 : 70, x = (VW * S - W) / 2, y = 64;
+      g.fillStyle = 'rgba(10,13,19,0.92)'; g.fillRect(x, y, W, H);
+      g.fillStyle = '#2d6cdf'; g.fillRect(x, y, W, 3);
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      if (this.card.kind === 'timeout') {
+        const tm = e.s === 'h' ? this.o.home.abbr : e.s === 'a' ? this.o.away.abbr : '';
+        // the run that forced it
+        let ph = 0, pa = 0;
+        for (let i = this.card.k; i >= 0 && i > this.card.k - 40; i--) { const x2 = this.tl.items[i].e; if (e.t - x2.t > 180) break; for (const d of x2.d ?? []) if (d[1] === 'pts') { if (this.o.side[d[0]] === 'h') ph += d[2]; else pa += d[2]; } }
+        g.fillStyle = '#ffffff'; g.font = font('700', 20); g.fillText(`TIMEOUT ${tm}`, x + W / 2, y + 25);
+        g.fillStyle = '#c9d2e3'; g.font = font('500', 14); g.fillText(`Last 3 minutes: ${this.o.home.abbr} ${ph} – ${pa} ${this.o.away.abbr}`, x + W / 2, y + 50);
+      } else {
+        // quarter break: score, shooting, leading scorers
+        const tot: Record<Side, { fgm: number; fga: number; tpm: number; reb: number }> = { h: { fgm: 0, fga: 0, tpm: 0, reb: 0 }, a: { fgm: 0, fga: 0, tpm: 0, reb: 0 } };
+        const pts: Record<string, number> = {};
+        for (let i = 0; i <= this.card.k; i++) for (const d of this.tl.items[i].e.d ?? []) { const sd = this.o.side[d[0]] as Side; if (!sd) continue; if (d[1] === 'fgm' || d[1] === 'fga' || d[1] === 'tpm') tot[sd][d[1] as 'fgm'] += d[2]; if (d[1] === 'orb' || d[1] === 'drb') tot[sd].reb += d[2]; if (d[1] === 'pts') pts[d[0]] = (pts[d[0]] ?? 0) + d[2]; }
+        const best = (sd: Side) => Object.entries(pts).filter(([p]) => this.o.side[p] === sd).sort((a2, b2) => b2[1] - a2[1])[0];
+        g.fillStyle = '#ffd34d'; g.font = font('700', 17); g.fillText(e.txt.toUpperCase(), x + W / 2, y + 22);
+        g.fillStyle = '#ffffff'; g.font = font('700', 24); g.fillText(`${this.o.away.abbr} ${e.as}  –  ${e.hs} ${this.o.home.abbr}`, x + W / 2, y + 52);
+        g.font = font('500', 13); g.fillStyle = '#c9d2e3';
+        const pct = (t: { fgm: number; fga: number }) => (t.fga ? Math.round(100 * t.fgm / t.fga) : 0);
+        g.fillText(`FG ${pct(tot.a)}% · 3PM ${tot.a.tpm} · REB ${tot.a.reb}          FG ${pct(tot.h)}% · 3PM ${tot.h.tpm} · REB ${tot.h.reb}`, x + W / 2, y + 80);
+        const ba = best('a'), bh = best('h');
+        const sn = (p: string) => surname(this.o.names[p] ?? '');
+        g.fillText(`${ba ? `${sn(ba[0])} ${ba[1]}` : ''}          ${bh ? `${sn(bh[0])} ${bh[1]}` : ''}`, x + W / 2, y + 104);
+      }
+      g.globalAlpha = 1;
+    }
+  }
+
   private drawReplay(time: number) {
     if (!this.replaying) return;
     const g = this.ctx;
