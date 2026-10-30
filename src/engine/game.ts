@@ -409,12 +409,14 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     // a guard who drives draws help and kicks to a shooter – who either lets it fly or attacks the late closeout
     const postBig = !!passer && passer.posNum >= 4 && passer.tpr < 0.15;
     const driver = !!passer && passer.posNum <= 3.5;
+    // a star handler draws a blitz on the pick and roll: two on the ball, he gets it out, 4-on-3 behind it
+    const starPasser = !!passer && passer.usg >= 0.27 && passer.posNum <= 3.5;
     const P = (pl: string) => ({ pl, cr: by });
     if (afterOrb) return { pl: spot.rim ? 'putback' : 'kick', cr: spot.rim ? undefined : by };
     if (fb) return P('fb');
     if (spot.sk === 'hook' || spot.sk === 'turnaround') return { pl: 'post' };
     if (three) {
-      if (passed) return P(big ? 'pop' : postBig ? pick([['double', 0.7], ['kick', 0.3]]) : driver ? pick([['kick', 0.6], ['offscreen', 0.4]]) : pick([['kick', 0.5], ['offscreen', 0.5]]));
+      if (passed) return P(big ? 'pop' : postBig ? pick([['double', 0.7], ['kick', 0.3]]) : starPasser ? pick([['blitz', 0.35], ['kick', 0.4], ['offscreen', 0.25]]) : driver ? pick([['kick', 0.6], ['offscreen', 0.4]]) : pick([['kick', 0.5], ['offscreen', 0.5]]));
       if (big && !handler) return { pl: 'pop' };
       return { pl: star && cr.chance(0.5) ? 'iso' : pick([['pnrPull', 0.5], ['pullup', 0.5]]) };
     }
@@ -425,7 +427,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       return { pl: star && cr.chance(0.55) ? 'iso' : pick([['drive', 0.5], ['pnrDrive', 0.5]]) };
     }
     if (big && !handler) return passed ? P('pop') : { pl: 'post' };
-    if (passed) return P(postBig ? pick([['double', 0.6], ['kick', 0.4]]) : pick([['offscreen', 0.45], ['kick', 0.4], ['kickdrive', 0.15]]));
+    if (passed) return P(postBig ? pick([['double', 0.6], ['kick', 0.4]]) : starPasser ? pick([['blitz', 0.3], ['offscreen', 0.35], ['kick', 0.35]]) : pick([['offscreen', 0.45], ['kick', 0.4], ['kickdrive', 0.15]]));
     return { pl: star && cr.chance(0.45) ? 'iso' : pick([['pullup', 0.5], ['pnrPull', 0.5]]) };
   };
   /** a teammate who could have made the pass (for misses, which have no assist): the playmakers most often */

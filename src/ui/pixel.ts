@@ -172,6 +172,7 @@ export class PixelCourt {
   pickup: { pid: string; then?: () => void } | null = null;
   lower: { pid: string; t: number } | null = null;
   poster: string | null = null; // a dunk on somebody
+  tagger: string | null = null; // the weak-side defender tagging the roller
   scheme: 'man' | 'zone' | 'switch' | 'press' = 'man'; // the defence on this trip
   pressUntil = -1;                                     // full-court pick-up until this broadcast time // the lower-third graphic with a player's line
   featured = new Map<string, number>(); lastLower = -999;
@@ -1321,10 +1322,11 @@ export class PixelCourt {
     const oop = motion === 'dunk' && made && (type === 'roll' || type === 'cut') && !!assist && (athA > 0.5 || r() < 0.35) && r() < 0.6;
     const postMan = o.filter(p => p.pid !== actor && this.inside(p.pid)).sort((p, q) => this.posN(q.pid) - this.posN(p.pid))[0]?.pid ?? null;
     if (type === 'double' && !(assist && this.inside(assist)) && !postMan) type = rim ? 'cut' : 'kick';
-    const creator = type === 'double' ? (assist && this.inside(assist) ? assist : postMan) : ['roll', 'pop', 'kick', 'kickdrive', 'cut', 'offscreen'].includes(type) ? (assist ?? pg) : actor;
+    if (type === 'blitz' && !assist) type = rim ? 'kickdrive' : 'kick';
+    const creator = type === 'double' ? (assist && this.inside(assist) ? assist : postMan) : ['roll', 'pop', 'kick', 'kickdrive', 'cut', 'offscreen', 'blitz'].includes(type) ? (assist ?? pg) : actor;
     const screener = o.filter(p => p.pid !== actor && p.pid !== creator).sort((p, q) => this.posN(q.pid) - this.posN(p.pid))[0]?.pid ?? null;
     const DUR: Record<string, number> = { iso: 3.4, putback: 0.35, fb: 0, roll: 2.9, pop: 2.7, pnrDrive: 2.6, pnrPull: 2.5, drive: 2.6, pullup: 1.9, post: 2.8, kick: 2.1, offscreen: 2.1, cut: 1.6 };
-    let finDur = type === 'double' ? (rim ? 3.7 : 3.0) : type === 'kickdrive' ? 3.2 : DUR[type] ?? 2;
+    let finDur = type === 'double' ? (rim ? 3.7 : 3.0) : type === 'blitz' ? (rim ? 4.0 : 3.4) : type === 'kickdrive' ? 3.2 : DUR[type] ?? 2;
     if (type === 'fb') {
       const hpid = h.pid && this.players.has(h.pid) ? h.pid : this.ball.holder;
       const hp = this.P(hpid);
@@ -1363,6 +1365,11 @@ export class PixelCourt {
             else this.switchOn(creator, actor);
           } else if (da && a) da.beh = { k: 'follow', pid: a.pid, dx: -s * 2.5, dd: 0.8 };
         });
+        // the weak-side defender tags the roller, then sprints back to his man
+        if (type === 'roll') {
+          add(T(1.75), () => { const a = A(); if (!a) return; const tg = this.ord(def).filter(p => p !== DA() && p !== this.defOf(creator)).sort((p, q) => hyp(p.x - a.x, p.d - a.d) - hyp(q.x - a.x, q.d - a.d))[0]; if (tg) { this.tagger = tg.pid; tg.beh = { k: 'mark', pid: a.pid, dist: 1.8 }; } });
+          add(T(2.35), () => { const tg = this.P(this.tagger); this.tagger = null; if (tg) { const man = [...this.match].find(([, d]) => d === tg.pid)?.[0]; if (man) tg.beh = { k: 'guard', man, tight: 0 }; } });
+        }
         if (!oop) add(T(type === 'roll' ? 2.15 : 1.95), () => this.pass(actor, type === 'roll'));
         break;
       }
@@ -1434,6 +1441,34 @@ export class PixelCourt {
         add(T(0.9), () => this.pass(actor));
         add(T(1.3), () => { const a = A(); if (a) { this.go(a, a.x + s * 2.5, a.d, WALK * 0.7); a.face = -s; } });
         add(T(2.15), () => this.go(A(), S.x, S.d, RUN / c));
+        break;
+      }
+      case 'blitz': {
+        // the star comes off the pick and both defenders jump him; he gets it to the roller on the short roll,
+        // the roller finds the open man whose defender had to rotate
+        const rollMan = o.filter(p => p.pid !== actor && p.pid !== creator).sort((p, q) => this.posN(q.pid) - this.posN(p.pid))[0]?.pid ?? null;
+        const slot = this.spot(off, S.d < 25 ? 'rs' : 'ls');
+        const outSpot = rim ? this.spot(off, S.d < 25 ? 'lw' : 'rw') : S;
+        cap(`${name(creator)} off the pick${rollMan ? ' from ' + name(rollMan) : ''}`);
+        add(T(0), () => { const h = this.P(creator), rm = this.P(rollMan); if (h) this.go(h, slot.x, slot.d, RUN / c); if (rm) this.go(rm, slot.x + s * 2, slot.d + (slot.d < 25 ? 2.5 : -2.5), RUN / c); this.go(A(), outSpot.x, outSpot.d, JOG / c); });
+        add(T(0.8), () => this.setPose(this.P(rollMan), 'screen', 0.5));
+        add(T(1.0), () => {
+          const h = this.P(creator); if (!h) return;
+          const d1 = this.defOf(creator), d2 = this.defOf(rollMan);
+          if (d1) d1.beh = { k: 'mark', pid: h.pid, dist: 1.4 }; if (d2) { d2.beh = { k: 'mark', pid: h.pid, dist: 1.6 }; this.sayAt(d2.pid, 'BLITZ', '#9fd3ff', 1.1); }
+          this.go(h, h.x - s * 2.5, h.d, WALK); this.call(def, `${this.abbr(def)} blitz ${name(creator)}`);
+        });
+        add(T(1.3), () => { const rm = this.P(rollMan); if (rm) this.go(rm, B.x - s * 13, 25 + (rm.d - 25) * 0.3, RUN / c); });
+        add(T(1.75), () => { if (rollMan) this.pass(rollMan); });
+        // the defender of the shooter has to step up on the roller – and leaves his man
+        add(T(1.95), () => { const da = DA(), rm = this.P(rollMan); if (da && rm) { da.beh = { k: 'mark', pid: rm.pid, dist: 2.5 }; } });
+        add(T(2.45), () => { this.pass(actor); this.call(off, `4-on-3: ${name(rollMan)} finds ${name(actor)}`); });
+        add(T(2.65), () => { const da = DA(), a = A(); if (da && a) { da.beh = { k: 'mark', pid: a.pid, dist: rim ? 3 : 2.4 }; } const d1 = this.defOf(creator); if (d1 && creator) d1.beh = { k: 'guard', man: creator, tight: 0 }; });
+        if (rim) {
+          add(T(2.95), () => { const a = A(); if (a) this.setPose(a, 'gather', 0.25 * c); });
+          add(T(3.2), () => { const a = A(); if (!a) return; a.beh = { k: 'arrive', x: S.x, d: S.d, at: abs(release - 0.4) }; const da = DA(); if (da) da.beh = { k: 'follow', pid: a.pid, dx: -s * 2.2, dd: a.d < 25 ? -1 : 1 }; this.call(off, `${name(actor)} attacks the closeout`); });
+          add(T(3.5), () => this.helpSide(off, actor, blocker));
+        }
         break;
       }
       case 'double': {
@@ -1584,7 +1619,7 @@ export class PixelCourt {
     // far away (just got the ball back at the other end): head there right from the start
     // behind schedule at any point (he is still at the other end): he heads for his spot right away
     for (let t0 = 0; t0 < due - 1.9; t0 += 1.2) { const tt = t0; add(tt, () => { const a = A(); if (a && a.beh.k !== 'arrive' && hyp(a.x - P0.x, a.d - P0.d) / (RUN * 0.9) > due - tt - 1.6) a.beh = { k: 'arrive', x: P0.x, d: P0.d, at: abs(due) }; }); }
-    for (const lead of type === 'fb' ? [3.2, 1.9, 0.9] : (type === 'kickdrive' || type === 'double') && rim ? [0.7] : [1.9, 0.9]) add(Math.max(0, due - lead), () => { const a = A(); if (a && hyp(a.x - P0.x, a.d - P0.d) > 0.5) a.beh = { k: 'arrive', x: P0.x, d: P0.d, at: abs(due) }; });
+    for (const lead of type === 'fb' ? [3.2, 1.9, 0.9] : (type === 'kickdrive' || type === 'double' || type === 'blitz') && rim ? [0.7] : [1.9, 0.9]) add(Math.max(0, due - lead), () => { const a = A(); if (a && hyp(a.x - P0.x, a.d - P0.d) > 0.5) a.beh = { k: 'arrive', x: P0.x, d: P0.d, at: abs(due) }; });
     // the move into the shot
     const showOff = (txt: string) => { if (star > 0 || r() < 0.35) this.sayAt(actor, txt, '#ffd34d', 1.0); };
     if (sb) add(Math.max(0, release - 0.78), () => {
