@@ -746,3 +746,23 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .fit-player.starter { box-shadow: inset 3px 0 0 var(--accent); }
 .fp-name { flex: 1; font-size: 0.85rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-roles { white-space: nowrap; }
+
+/* season preview */
+.season-preview > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.season-preview > summary::-webkit-details-marker { display: none; }
+.season-preview > summary h2 { margin: 0; }
+.season-preview > summary::before { content: '▸'; color: var(--muted); }
+.season-preview[open] > summary::before { content: '▾'; }
+.season-preview h3 { margin: 4px 0 0; }
+.sp-favs { display: grid; gap: 8px; }
+.sp-fav { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.sp-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sp-rank { font-weight: 700; color: var(--muted); width: 1.2em; }
+.sp-odds { margin-left: auto; font-weight: 700; color: var(--accent); }
+.sp-why { list-style: none; padding: 0; margin: 6px 0 0; font-size: 0.86rem; display: grid; gap: 2px; }
+.sp-why li.good { color: var(--ink); }
+.sp-why li.good::first-letter { color: var(--pos); }
+.sp-why li.bad { color: var(--muted); }
+.sp-extra { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.sp-extra p { margin: 2px 0 0; font-size: 0.85rem; }
+.sp-confs { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }

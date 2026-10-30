@@ -5,6 +5,7 @@ import { TeamHistory, TeamRecords, LeagueRecords, Retirements, SeasonArchive } f
 import { StandingsHistory, TeamStatsExplorer, FaMoves } from './leaguehist';
 import { Logo, TLogo, PFace } from './art';
 import { RoleBadge } from './roles';
+import { SeasonPreview } from './seasonpreview';
 import { roleOf } from '../archetypes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -549,6 +550,7 @@ function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sam
         <Standings lg={lg} openTeam={openTeam} />
       </section>
       <section className="col">
+        {lg.phase === 'regular' && <SeasonPreview lg={lg} openTeam={openTeam} />}
         {lg.phase === 'playoffs' && <PlayoffPreviews lg={lg} openGame={openGame} />}
         {lg.phase === 'playoffs' && lg.seasonAwards && <RegAwardsCard lg={lg} a={lg.seasonAwards} openPlayer={openPlayer} />}
         {last && (lg.phase === 'draft' || lg.phase === 'offseason') && <SeasonCard lg={lg} s={last} openPlayer={openPlayer} />}
