@@ -14,6 +14,7 @@ import { maxSalary } from '../ai/value';
 import { seasonInfo } from '../data';
 import { describeLog, recallStash } from '../league/offseason';
 import { PFace, SKINS, HAIR_STYLES, FACIAL_STYLES, faceOf } from './art';
+import { RoleCard } from './roles';
 
 /** Small editor for the generated portrait (saved with the league). */
 function FaceEditor({ p, season, onChange }: any) {
@@ -263,6 +264,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
           </div>
         </div>
         {editFace && <FaceEditor p={p} season={lg.season} onChange={() => bump(x => x + 1)} />}
+        {!p.prospect && <RoleCard p={p} />}
         {p.awards.length > 0 && <AwardChips p={p} />}
         <h3>Current skills</h3>
         <div className="ratings">

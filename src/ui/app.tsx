@@ -4,6 +4,8 @@ import { Linkify, PL, TL, nav } from './nav';
 import { TeamHistory, TeamRecords, LeagueRecords, Retirements, SeasonArchive } from './history';
 import { StandingsHistory, TeamStatsExplorer, FaMoves } from './leaguehist';
 import { Logo, TLogo, PFace } from './art';
+import { RoleBadge, TeamFit } from './roles';
+import { roleOf } from '../archetypes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { loadHistory, H, RATING_LABELS, shownOvr as ovrOf, shownFromRaw, shownFromBpm, ratingOf, seasonInfo, bpmOf, LAST_SEASON } from '../data';
@@ -812,13 +814,14 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
   const pay = payroll(lg, t.tid);
   const strat = t.mode ? { allin: 'All-in', tank: 'Tanking', rising: 'Rising', capclear: 'Clearing salary', retool: 'Retooling' }[t.mode] : { contend: 'Contender', middle: 'Middle of the pack', rebuild: 'Rebuilding' }[t.strategy];
   const titles = lg.history.filter((s: any) => s.champion === t.tid).map((s: any) => s.season);
-  const [view, setView] = useState<'stats' | 'attr' | 'hist' | 'rec'>('stats');
+  const [view, setView] = useState<'stats' | 'attr' | 'fit' | 'hist' | 'rec'>('stats');
   const inSeason = lg.phase === 'regular' || lg.phase === 'playoffs';
   const calNow = inSeason ? nextCal(lg, todayIndex(lg)) : 0;
   const RT = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
   const attrCols = [
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <><PFace lg={lg} p={r.p} /><button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button>{r.p.injury > 0 && <span className="inj" title={r.p.inj ? `${injName(r.p.inj.k)} – out ~${r.p.injury} more games` : 'Injured'}>+{r.p.injury}</span>}</> },
     { key: 'pos', label: 'Pos', get: (r: any) => r.p.pos, fmt: (v: any) => <span className="dim">{v}</span> },
+    { key: 'role', label: 'Role', left: true, asc: true, get: (r: any) => roleOf(r.p.z, r.p.pos).arch.name, fmt: (_: any, r: any) => { const ro = roleOf(r.p.z, r.p.pos); return <><RoleBadge id={ro.arch.id} />{ro.second && <RoleBadge id={ro.second.id} small />}</>; } },
     { key: 'ht', label: 'Ht', title: 'Height, cm', get: (r: any) => Math.round(r.p.ht * 2.54) },
     { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, lg.season) },
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} small /> },
@@ -845,11 +848,12 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
         <div className="seg view-toggle-l" role="group" aria-label="View">
           <button className={view === 'stats' ? 'on' : ''} onClick={() => setView('stats')}>Stats</button>
           <button className={view === 'attr' ? 'on' : ''} onClick={() => setView('attr')}>Attributes</button>
+          <button className={view === 'fit' ? 'on' : ''} onClick={() => setView('fit')}>Fit</button>
           <button className={view === 'hist' ? 'on' : ''} onClick={() => setView('hist')}>History</button>
           <button className={view === 'rec' ? 'on' : ''} onClick={() => setView('rec')}>Records</button>
         </div>
       </div>
-      {view === 'hist' ? <TeamHistory lg={lg} tid={t.tid} openPlayer={openPlayer} /> : view === 'rec' ? <TeamRecords lg={lg} tid={t.tid} openPlayer={openPlayer} /> : view === 'attr' ? <SortTable cols={attrCols} rows={roster.map((p: any) => ({ key: p.id, p }))} initial="ovr" rowClass={(r: any) => (r.p.injury > 0 ? 'inj-row' : '')} /> : (
+      {view === 'fit' ? <TeamFit lg={lg} roster={roster} openPlayer={openPlayer} /> : view === 'hist' ? <TeamHistory lg={lg} tid={t.tid} openPlayer={openPlayer} /> : view === 'rec' ? <TeamRecords lg={lg} tid={t.tid} openPlayer={openPlayer} /> : view === 'attr' ? <SortTable cols={attrCols} rows={roster.map((p: any) => ({ key: p.id, p }))} initial="ovr" rowClass={(r: any) => (r.p.injury > 0 ? 'inj-row' : '')} /> : (
       <div className="tbl-wrap">
           <table className="tbl roster">
             <thead><tr>
@@ -859,7 +863,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
               {roster.map((p: any) => (
                 <tr key={p.id}>
                   <td className="l"><PFace lg={lg} p={p} /><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button>{p.injury > 0 && <span className="inj" title={p.inj ? `${injName(p.inj.k)} – out ~${p.injury} more games` : 'Injured'}>+{p.injury}</span>}{p.entered === (lg.phase === 'regular' || lg.phase === 'playoffs' || lg.phase === 'freeagency' ? lg.season : lg.season + 1) && <span className="chip tiny">R</span>}</td>
-                  <td className="dim">{p.pos}</td>
+                  <td className="dim">{p.pos} <RoleBadge id={roleOf(p.z, p.pos).arch.id} small /></td>
                   <td>{ageIn(p, lg.season)}</td>
                   <td><Ovr v={ovrOf(p.z)} small /></td>
                   <td>{p.cur.gp || '–'}</td>

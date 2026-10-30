@@ -720,3 +720,29 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .chip.traded { margin-left: 6px; border-color: var(--accent); color: var(--accent); }
 .tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--accent-soft, rgba(80,140,255,.18)); color: var(--fg, inherit); font-weight: 600; }
 .hist-tabs { flex-wrap: wrap; align-self: flex-start; }
+
+/* roles / archetypes */
+.role-badge { --rh: 0; display: inline-block; border-radius: 6px; padding: 1px 8px; font-size: 0.78rem; font-weight: 600; white-space: nowrap;
+  background: hsl(var(--rh) 70% 92%); color: hsl(var(--rh) 55% 28%); border: 1px solid hsl(var(--rh) 50% 78%); }
+.role-badge:not([style]) { background: var(--sunk); color: var(--muted); border-color: var(--line); }
+.role-badge.sm { font-size: 0.66rem; padding: 0 5px; margin-left: 4px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .role-badge[style] { background: hsl(var(--rh) 35% 22%); color: hsl(var(--rh) 70% 80%); border-color: hsl(var(--rh) 35% 35%); } }
+:root[data-theme="dark"] .role-badge[style] { background: hsl(var(--rh) 35% 22%); color: hsl(var(--rh) 70% 80%); border-color: hsl(var(--rh) 35% 35%); }
+.role-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 10px 0 4px; background: var(--sunk); }
+.role-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.role-blurb { font-size: 0.85rem; margin-left: 4px; }
+.role-pm { margin-top: 6px; font-size: 0.85rem; display: grid; gap: 3px; }
+.team-fit { margin: 8px 0 16px; }
+.fit-head h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.fit-score { font-size: 0.95rem; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; }
+.fit-bars { margin: 10px 0; }
+.fit-bars .bar.hi > span { background: var(--pos); }
+.fit-bars .bar.lo > span { background: var(--neg); }
+.fit-notes { list-style: none; padding: 0; margin: 6px 0 10px; font-size: 0.88rem; display: grid; gap: 3px; }
+.fit-notes li.good { color: var(--pos, #2a8a4a); }
+.fit-notes li.bad { color: var(--neg, #c0392b); }
+.fit-roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
+.fit-player { display: flex; align-items: center; gap: 8px; text-align: left; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; background: var(--surface); font: inherit; color: var(--ink); cursor: pointer; }
+.fit-player.starter { box-shadow: inset 3px 0 0 var(--accent); }
+.fp-name { flex: 1; font-size: 0.85rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-roles { white-space: nowrap; }

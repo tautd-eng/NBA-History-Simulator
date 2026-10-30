@@ -10,6 +10,7 @@ import { Rng, hash01 } from '../rng';
 import { K, rate, sigm, logit, bpmOf } from '../data';
 import { shownFromBpm } from '../data';
 import { emptyLine, StatLine, Player, Box } from '../types';
+import { fitTraits, FitTraits, fit0 } from '../archetypes';
 
 /** Per-season calibration offsets, produced by test/eracal.ts. */
 export interface EraCal { pace: number; tpa: number; p2: number; p3: number; ft: number; tov: number; orb: number; ast: number; stl: number; blk: number; pf: number; ftr: number }
@@ -34,7 +35,10 @@ export const C = {
   fbStl: 0.55, fbDrb: 0.15, fbMake: 0.45, fbThree: 0.6, lateClock: 0.2, // transition and shot-clock pressure
   star: 1.35, stay: 1.2, depth: 10, minAlpha: 1.0, maxMin: 40,
   mmDef: 0.5, mmHt: 0.01, mmUsg: 0.15, mmSize: 0.03, // matchups: own defender's weight, size edge inside, shot selection toward mismatches
+  fitSp: 0.05, fitHd: 0.08, fitRim: 0.06, fitCk: 0.07, // lineup fit: spacing (twos), a ball-handler (turnovers), rim protection (opponent twos), too many ball-dominant scorers
 };
+/** Debug: running sums of lineup-fit measures over plays (to centre FIT0). */
+export const fitStats = { n: 0, sh: 0, hd: 0, rp: 0, ck: 0 };
 
 interface GP {
   p: Player;
@@ -44,6 +48,7 @@ interface GP {
   usg: number; tov: number; drw: number; tpr: number; p2: number; p3: number; pft: number;
   ast: number; orb: number; drb: number; stl: number; blk: number; pf: number; def: number; stlZ: number;
   endurMul: number;
+  ft: FitTraits;        // lineup-fit traits (shooter, handler, rim protector, creator)
   e: number;            // energy
   target: number;       // planned minutes
   on: boolean;
@@ -95,6 +100,7 @@ export function prep(p: Player, season: number): GP {
     pf: rate(K.pf, z[K.pf], season),
     def: z[K.def], stlZ: z[K.stl],
     endurMul: 1 - 0.12 * p.endur,
+    ft: fitTraits(z, posNum(p.pos)),
     e: Math.max(0.7, 1 - FATIGUE.energy * fat), target: 0, on: false, fouls: 0, st: emptyLine(), starter: false,
     injAt: (p as any).injAt,
   };
@@ -252,6 +258,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   const H = mk(home, true), A = mk(away, false);
   const E = getEraCal(season);
   const leagueTov = rate(K.tov, 0, season);
+  const F0 = fit0(season);
   const leaguePf = rate(K.pf, 0, season);
   const pace = seasonPace(season) * (1 + 0.03 * (H.paceZ + A.paceZ) / 2);
   const T0 = (2880 / (2 * pace)) * 0.86 * C.possSec * E.pace;
@@ -624,10 +631,19 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const stlZ = dOn.reduce((a, g) => a + g.stlZ, 0) / 5;
     const usgShift = C.usgEff * (usgSum - 1);
     const an = log ? short(actor.p.name) : '';
+    // lineup fit: shooters space the floor for everyone's twos, a real ball-handler keeps it clean,
+    // a rim protector behind the defence takes away easy twos, and too many ball-dominant scorers take turns
+    let fSh = 0, fHd = -1, fCk = 0, fRp = -1;
+    for (const g of on) { fSh += g.ft.sh; if (g.ft.hd > fHd) fHd = g.ft.hd; fCk += g.ft.cr; }
+    for (const g of dOn) if (g.ft.rp > fRp) fRp = g.ft.rp;
+    const ckx = Math.max(0, fCk - 1.3);
+    fitStats.n++; fitStats.sh += fSh; fitStats.hd += fHd; fitStats.rp += fRp; fitStats.ck += ckx;
+    const fit2 = C.fitSp * (fSh - F0.sh) - C.fitRim * (fRp - F0.rp);
+    const fitAll = -C.fitCk * (ckx - F0.ck);
 
     // turnover
     // ball pressure: his own defender's hands count as much as the team's
-    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0));
+    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd));
     if (rng.chance(pTov)) {
       inc(actor, 'tov');
       const sumStl = dOn.reduce((a, g) => a + g.stl, 0);
@@ -667,7 +683,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     // defence on the shot: his own defender matters most, help defence (team) the rest; size inside
     const defOn = C.mmDef * md.def + (1 - C.mmDef) * defZ;
     const size = three ? 0 : C.mmHt * Math.max(-8, Math.min(8, actor.p.ht - md.p.ht));
-    const shift = homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + callShift + (defCall === 'pressure' ? 0.08 : 0) + (fb && !three ? C.fbMake : 0) - (lc ? C.lateClock : 0);
+    const shift = homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + fitAll + (three ? 0 : fit2) + callShift + (defCall === 'pressure' ? 0.08 : 0) + (fb && !three ? C.fbMake : 0) - (lc ? C.lateClock : 0);
     inc(actor, 'fga');
     if (three) inc(actor, 'tpa');
     const zone = zoneOf(three, actor, fb, afterOrb);
@@ -715,16 +731,32 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   }
 
   function ftTrip(off: Side, def: Side, actor: GP, n: number): 'end' | 'orb' {
-    stopped = true; // free throws: the clock is stopped, the table can wave subs in
     let lastMade = true;
     for (let i = 0; i < n; i++) {
+      // between free throws the ball is dead: the table can wave subs in (the shooter stays)
+      if (i === n - 1 && n >= 2) midSubs(actor);
       inc(actor, 'fta');
       lastMade = rng.chance(sigm(logit(actor.pft) + C.ft + E.ft - 0.3 * C.fatigue * Math.max(0, C.fatBase - actor.e)));
       if (lastMade) { inc(actor, 'ftm'); inc(actor, 'pts'); score(off, 1); }
       ev(lastMade ? 'ft' : 'ftm', off, `${log ? short(actor.p.name) : ''} free throw ${i + 1}/${n}: ${lastMade ? 'good' : 'missed'}`);
     }
-    if (lastMade) { ended = 'make'; return 'end'; }
+    // a made last free throw is a dead ball (subs may come in); after a miss the ball is live
+    if (lastMade) { ended = 'make'; stopped = true; return 'end'; }
     return rebound(off, def, true);
+  }
+  /** substitutions on a dead ball in the middle of a trip to the line */
+  function midSubs(keep: GP) {
+    const ph = H.on, pa = A.on;
+    chooseLineup(H, curPeriod, curRem, H.pts - A.pts, false, elapsed);
+    chooseLineup(A, curPeriod, curRem, A.pts - H.pts, false, elapsed);
+    for (const side of [H, A]) if (side.gps.includes(keep) && !side.on.includes(keep)) {
+      const out = side.on.filter(g => !ph.concat(pa).includes(g))[0] ?? side.on[side.on.length - 1];
+      for (const g of side.gps) g.on = false;
+      side.on = side.on.map(g => (g === out ? keep : g));
+      for (const g of side.on) g.on = true;
+    }
+    if (clutch) applyUserFive();
+    if (curRem > 0) logSubs(ph, pa);
   }
 
   function rebound(off: Side, def: Side, ft: boolean): 'end' | 'orb' {
