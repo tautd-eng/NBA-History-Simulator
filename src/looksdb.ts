@@ -1,0 +1,972 @@
+// Appearance of the league's best players for the generated portraits and arena sprites:
+// skin tone (index into SKINS, 0 lightest … 7 darkest), signature hairstyle, facial hair and hair colour.
+// Hair can change with the years: 'short|1990:bald' = short hair, shaved from the 1989–90 season on.
+// Players not listed keep their generated look; the face editor still overrides everything.
+export type LookRow = [skin: number, hair?: string, facial?: string, hairColor?: string, band?: boolean];
+
+export const HAIR_COLORS: Record<string, string> = {
+  black: '#16110d', dark: '#2a1d14', brown: '#5a3a22', light: '#8a6a3a', blond: '#c9a35b', red: '#7a3b1e', grey: '#9a9a9a',
+};
+
+export const LOOKS: Record<string, LookRow> = {
+  // ---------------------------------------------------------------- all-time greats
+  jamesle01: [5, 'buzz', 'beard', , true],          // LeBron James
+  jordami01: [5, 'short|1990:bald'],                 // Michael Jordan
+  abdulka01: [5, 'short|1984:bald', 'none'],         // Kareem Abdul-Jabbar
+  johnsma02: [4, 'short', 'none'],                   // Magic Johnson
+  birdla01: [0, 'mop', 'mustache', 'blond'],         // Larry Bird
+  ervinju01: [5, 'afro', 'goatee'],                  // Julius Erving
+  olajuha01: [6, 'short', 'goatee'],                 // Hakeem Olajuwon
+  onealsh01: [6, 'bald', 'goatee'],                  // Shaquille O'Neal
+  duncati01: [5, 'buzz', 'none'],                    // Tim Duncan
+  bryanko01: [4, 'buzz', 'stubble'],                 // Kobe Bryant
+  garneke01: [5, 'buzz', 'none'],                    // Kevin Garnett
+  curryst01: [3, 'short', 'stubble'],                // Stephen Curry
+  duranke01: [5, 'short', 'stubble'],                // Kevin Durant
+  nowitdi01: [0, 'mop|2006:short', 'stubble', 'light'], // Dirk Nowitzki
+  barklch01: [5, 'short|1993:bald', 'none'],         // Charles Barkley
+  malonka01: [5, 'short', 'none'],                   // Karl Malone
+  stockjo01: [0, 'parted', 'none', 'brown'],         // John Stockton
+  robinda01: [5, 'buzz', 'none'],                    // David Robinson
+  ewingpa01: [6, 'short', 'none'],                   // Patrick Ewing
+  pippesc01: [5, 'short', 'none'],                   // Scottie Pippen
+  drexlcl01: [5, 'short', 'mustache'],               // Clyde Drexler
+  thomais01: [5, 'short', 'none'],                   // Isiah Thomas
+  mchalke01: [0, 'short', 'none', 'dark'],           // Kevin McHale
+  parisro01: [6, 'short', 'mustache'],               // Robert Parish
+  worthja01: [5, 'short', 'none'],                   // James Worthy
+  wilkido01: [5, 'short', 'none'],                   // Dominique Wilkins
+  moncrsi01: [5, 'short', 'mustache'],               // Sidney Moncrief
+  gilmoar01: [6, 'afro', 'beard'],                   // Artis Gilmore
+  dantlad01: [5, 'short', 'none'],                   // Adrian Dantley
+  englial01: [5, 'short', 'mustache'],               // Alex English
+  sikmaja01: [0, 'afro', 'none', 'blond'],           // Jack Sikma
+  mutomdi01: [7, 'short', 'none'],                   // Dikembe Mutombo
+  mournal01: [5, 'short', 'goatee'],                 // Alonzo Mourning
+  paytoga01: [5, 'short', 'goatee'],                 // Gary Payton
+  kempsh01: [5, 'short', 'none'],                    // Shawn Kemp
+  millere01: [4, 'short', 'none'],                   // Reggie Miller
+  iversal01: [5, 'cornrows', 'goatee'],              // Allen Iverson
+  mcgratr01: [5, 'buzz', 'none'],                    // Tracy McGrady
+  cartevi01: [4, 'buzz', 'goatee'],                  // Vince Carter
+  piercpa01: [4, 'buzz', 'goatee'],                  // Paul Pierce
+  allenra02: [5, 'buzz', 'none'],                    // Ray Allen
+  nashst01: [0, 'mop', 'none', 'brown'],             // Steve Nash
+  kiddja01: [3, 'short', 'none'],                    // Jason Kidd
+  hillgr01: [4, 'short', 'none'],                    // Grant Hill
+  hardaan01: [5, 'short', 'none'],                   // Anfernee Hardaway
+  webbech01: [5, 'buzz', 'goatee'],                  // Chris Webber
+  wadedw01: [5, 'short', 'stubble'],                 // Dwyane Wade
+  howardw01: [6, 'short', 'none'],                   // Dwight Howard
+  wallabe01: [6, 'afro', 'none'],                    // Ben Wallace
+  wallara01: [5, 'buzz', 'goatee'],                  // Rasheed Wallace
+  gasolpa01: [1, 'mop', 'beard', 'dark'],            // Pau Gasol
+  gasolma01: [1, 'short', 'beard', 'dark'],          // Marc Gasol
+  ginobma01: [1, 'short|2009:bald', 'none', 'dark'], // Manu Ginóbili
+  parketo01: [3, 'short', 'none'],                   // Tony Parker
+  kirilan01: [0, 'short', 'none', 'light'],          // Andrei Kirilenko
+  sabonar01: [0, 'short', 'none', 'light'],          // Arvydas Sabonis
+  kukocto01: [1, 'short', 'none', 'dark'],           // Toni Kukoč
+  divacvl01: [1, 'mop', 'none', 'dark'],             // Vlade Divac
+  stojape01: [0, 'short', 'none', 'dark'],           // Peja Stojaković
+  mingya01: [1, 'short', 'none', 'black'],           // Yao Ming
+  // ---------------------------------------------------------------- modern stars
+  jokicni01: [0, 'short', 'stubble', 'dark'],        // Nikola Jokić
+  antetgi01: [6, 'short', 'stubble'],                // Giannis Antetokounmpo
+  doncilu01: [0, 'short', 'stubble', 'brown'],       // Luka Dončić
+  embiijo01: [6, 'short', 'stubble'],                // Joel Embiid
+  leonaka01: [5, 'cornrows|2018:fro', 'stubble'],    // Kawhi Leonard
+  butleji01: [5, 'short', 'goatee'],                 // Jimmy Butler
+  davisan02: [5, 'short', 'none'],                   // Anthony Davis
+  hardeja01: [5, 'fro', 'beard'],                    // James Harden
+  westbru01: [5, 'short', 'stubble'],                // Russell Westbrook
+  paulch01: [5, 'short', 'none'],                    // Chris Paul
+  gilgesh01: [5, 'short', 'none'],                   // Shai Gilgeous-Alexander
+  wembavi01: [5, 'short', 'none'],                   // Victor Wembanyama
+  lillada01: [5, 'short', 'beard'],                  // Damian Lillard
+  georgpa01: [4, 'short', 'stubble'],                // Paul George
+  tatumja01: [4, 'short', 'stubble'],                // Jayson Tatum
+  irvinky01: [4, 'short', 'beard'],                  // Kyrie Irving
+  rosede01: [5, 'short', 'none'],                    // Derrick Rose
+  townska01: [3, 'short', 'stubble'],                // Karl-Anthony Towns
+  couside01: [6, 'short', 'beard'],                  // DeMarcus Cousins
+  griffbl01: [3, 'short', 'stubble'],                // Blake Griffin
+  greendr01: [5, 'buzz', 'stubble'],                 // Draymond Green
+  adebaba01: [5, 'short', 'none'],                   // Bam Adebayo
+  goberru01: [5, 'short', 'stubble'],                // Rudy Gobert
+  vucevni01: [0, 'short', 'beard', 'dark'],          // Nikola Vučević
+  porzikr01: [0, 'quiff', 'stubble', 'brown'],       // Kristaps Porziņģis
+  sabondo01: [0, 'buzz', 'none', 'light'],           // Domantas Sabonis
+  loveke01: [0, 'short', 'beard', 'brown'],          // Kevin Love
+  horfoal01: [5, 'short', 'beard'],                  // Al Horford
+  noahjo01: [3, 'bun', 'stubble', 'dark'],           // Joakim Noah
+  iguodan01: [4, 'short', 'stubble'],                // Andre Iguodala
+  mitchdo01: [4, 'short', 'none'],                   // Donovan Mitchell
+  halibty01: [4, 'short', 'none'],                   // Tyrese Haliburton
+  moranja01: [5, 'short', 'none'],                   // Ja Morant
+  cunnica01: [4, 'short', 'none'],                   // Cade Cunningham
+  willizi01: [5, 'short', 'none'],                   // Zion Williamson
+  sengual01: [1, 'short', 'stubble', 'dark'],        // Alperen Şengün
+  holmgch01: [0, 'short', 'none', 'light'],          // Chet Holmgren
+  mobleev01: [5, 'short', 'none'],                   // Evan Mobley
+  barnesc01: [5, 'dreads', 'none'],                  // Scottie Barnes
+  allenja01: [5, 'fro', 'none'],                     // Jarrett Allen
+  maxeyty01: [5, 'short', 'none'],                   // Tyrese Maxey
+  whitede01: [4, 'short', 'none'],                   // Derrick White
+  bridgmi01: [5, 'short', 'none'],                   // Mikal Bridges
+  turnemy01: [4, 'short', 'none'],                   // Myles Turner
+  giddejo01: [0, 'mop', 'none', 'brown'],            // Josh Giddey
+  wagnefr01: [0, 'short', 'none', 'brown'],          // Franz Wagner
+  avdijde01: [0, 'short', 'stubble', 'brown'],       // Deni Avdija
+  harteis01: [1, 'short', 'beard', 'dark'],          // Isaiah Hartenstein
+  kornelu01: [0, 'mop', 'beard', 'brown'],           // Luke Kornet
+  plumlma01: [0, 'short', 'beard', 'brown'],         // Mason Plumlee
+  simmobe01: [3, 'short', 'none'],                   // Ben Simmons
+  murrade01: [5, 'dreads', 'none'],                  // Dejounte Murray
+  johnsja05: [4, 'short', 'none'],                   // Jalen Johnson
+  willija06: [4, 'short', 'none'],                   // Jalen Williams
+  thompam01: [5, 'short', 'none'],                   // Amen Thompson
+  murphtr02: [4, 'short', 'none'],                   // Trey Murphy III
+  willima07: [5, 'short', 'none'],                   // Mark Williams
+  claxtni01: [5, 'short', 'none'],                   // Nic Claxton
+  williro04: [5, 'dreads', 'none'],                  // Robert Williams
+  middlkh01: [4, 'short', 'beard'],                  // Khris Middleton
+  harrito02: [4, 'short', 'beard'],                  // Tobias Harris
+  hartjo01: [4, 'short', 'beard'],                   // Josh Hart
+  lopezbr01: [1, 'mop', 'beard', 'dark'],            // Brook Lopez
+  nurkiju01: [0, 'short', 'beard', 'dark'],          // Jusuf Nurkić
+  drumman01: [5, 'short', 'none'],                   // Andre Drummond
+  poweldw01: [4, 'short', 'none'],                   // Dwight Powell
+  bouchch01: [6, 'short', 'none'],                   // Chris Boucher
+  anderky01: [5, 'short', 'beard'],                  // Kyle Anderson
+  oladivi01: [5, 'short', 'none'],                   // Victor Oladipo
+  walkeke02: [5, 'short', 'none'],                   // Kemba Walker
+  lowryky01: [5, 'short', 'beard'],                  // Kyle Lowry
+  conlemi01: [4, 'short', 'none'],                   // Mike Conley
+  rondora01: [5, 'short', 'none'],                   // Rajon Rondo
+  walljo01: [5, 'short', 'none'],                    // John Wall
+  bledser01: [5, 'short', 'beard'],                  // Eric Bledsoe
+  thomais02: [5, 'short', 'none'],                   // Isaiah Thomas (2010s)
+  aldrila01: [5, 'short', 'none'],                   // LaMarcus Aldridge
+  millspa01: [6, 'short', 'none'],                   // Paul Millsap
+  haywago01: [0, 'short', 'none', 'brown'],          // Gordon Hayward
+  bynuman01: [5, 'short', 'none'],                   // Andrew Bynum
+  jordade01: [5, 'short', 'beard'],                  // DeAndre Jordan
+  bogutan01: [0, 'short', 'beard', 'brown'],         // Andrew Bogut
+  batumni01: [3, 'short', 'none'],                   // Nicolas Batum
+  diawbo01: [3, 'short', 'none'],                    // Boris Diaw
+  splitti01: [1, 'short', 'none', 'dark'],           // Tiago Splitter
+  hilarne01: [4, 'buzz', 'none'],                    // Nenê
+  caldejo01: [1, 'short', 'stubble', 'black'],       // José Calderón
+  roybr01: [5, 'short', 'none'],                     // Brandon Roy
+  denglu01: [7, 'short', 'none'],                    // Luol Deng
+  battish01: [3, 'bald', 'none'],                    // Shane Battier
+  boshch01: [5, 'short', 'none'],                    // Chris Bosh
+  stoudam01: [5, 'short', 'none'],                   // Amar'e Stoudemire
+  boozeca01: [5, 'short', 'none'],                   // Carlos Boozer
+  westda01: [5, 'short', 'none'],                    // David West
+  odomla01: [4, 'short', 'none'],                    // Lamar Odom
+  artesro01: [5, 'short', 'none'],                   // Metta World Peace
+  smithjo03: [5, 'short', 'none'],                   // Josh Smith
+  wallage01: [5, 'short', 'none'],                   // Gerald Wallace
+  jefferi01: [5, 'short', 'none'],                   // Richard Jefferson
+  princta01: [5, 'short', 'none'],                   // Tayshaun Prince
+  billuch01: [4, 'short', 'none'],                   // Chauncey Billups
+  hughela01: [5, 'cornrows', 'none'],                // Larry Hughes
+  davisba01: [5, 'short', 'beard'],                  // Baron Davis
+  martike01: [5, 'buzz', 'none'],                    // Kenyon Martin
+  onealje01: [5, 'short', 'none'],                   // Jermaine O'Neal
+  nelsoja01: [5, 'short', 'none'],                   // Jameer Nelson
+  cassesa01: [5, 'short', 'none'],                   // Sam Cassell
+  francst01: [5, 'short', 'goatee'],                 // Steve Francis
+  butleca01: [5, 'short', 'none'],                   // Caron Butler
+  poseyja01: [5, 'short', 'none'],                   // James Posey
+  allento01: [5, 'short', 'none'],                   // Tony Allen
+  brewero02: [5, 'short', 'none'],                   // Ronnie Brewer
+  hillge01: [5, 'short', 'none'],                    // George Hill
+  millebr01: [0, 'short', 'beard', 'dark'],          // Brad Miller
+  murphtr01: [0, 'short', 'none', 'brown'],          // Troy Murphy
+  oquinky01: [5, 'short', 'none'],                   // Kyle O'Quinn
+  wrighde01: [4, 'short', 'none'],                   // Delon Wright
+  // ---------------------------------------------------------------- 1980s and 1990s
+  nancela01: [5, 'short', 'none'],                   // Larry Nance
+  mariosh01: [5, 'short', 'none'],                   // Shawn Marion
+  brandte01: [5, 'short', 'none'],                   // Terrell Brandon
+  hornaje01: [0, 'parted', 'none', 'brown'],         // Jeff Hornacek
+  jonesed02: [5, 'short', 'none'],                   // Eddie Jones
+  brandel01: [5, 'short', 'none'],                   // Elton Brand
+  blaylmo01: [5, 'short', 'none'],                   // Mookie Blaylock
+  portete01: [5, 'short', 'none'],                   // Terry Porter
+  leverfa01: [5, 'short', 'none'],                   // Fat Lever
+  pricema01: [0, 'parted', 'none', 'brown'],         // Mark Price
+  cambyma01: [5, 'short', 'none'],                   // Marcus Camby
+  willigu01: [5, 'short', 'none'],                   // Gus Williams
+  mullich01: [0, 'flattop', 'none', 'brown'],        // Chris Mullin
+  harpero01: [5, 'short', 'none'],                   // Ron Harper
+  armstda01: [5, 'bald', 'none'],                    // Darrell Armstrong
+  cheekma01: [5, 'short', 'mustache'],               // Maurice Cheeks
+  daughbr01: [5, 'short', 'none'],                   // Brad Daugherty
+  johnske02: [4, 'short', 'none'],                   // Kevin Johnson
+  roberal01: [5, 'short', 'mustache'],               // Alvin Robertson
+  kittlke01: [5, 'short', 'none'],                   // Kerry Kittles
+  barrybr01: [0, 'short', 'none', 'light'],          // Brent Barry
+  barryjo01: [0, 'bald', 'none'],                    // Jon Barry
+  willira01: [5, 'afro', 'mustache'],                // Ray Williams
+  jonesbo01: [0, 'curly', 'none', 'brown'],          // Bobby Jones
+  johnsma01: [5, 'afro', 'none'],                    // Marques Johnson
+  presspa01: [5, 'short', 'none'],                   // Paul Pressey
+  adamsal01: [0, 'short', 'none', 'dark'],           // Alvan Adams
+  riverdo01: [5, 'short', 'mustache'],               // Doc Rivers
+  outlabo01: [5, 'short', 'none'],                   // Bo Outlaw
+  richami01: [5, 'short', 'mustache'],               // Michael Ray Richardson
+  stricro02: [5, 'short', 'none'],                   // Rod Strickland
+  grantho01: [5, 'short', 'none'],                   // Horace Grant
+  colemde01: [5, 'short', 'none'],                   // Derrick Coleman
+  westppa01: [0, 'curly', 'none', 'brown'],          // Paul Westphal
+  milleol01: [5, 'short', 'none'],                   // Oliver Miller
+  chrisdo01: [4, 'short', 'none'],                   // Doug Christie
+  harpede01: [5, 'short', 'none'],                   // Derek Harper
+  laimbbi01: [0, 'short', 'none', 'dark'],           // Bill Laimbeer
+  scottby01: [4, 'short', 'none'],                   // Byron Scott
+  ballagr01: [5, 'afro', 'none'],                    // Greg Ballard
+  willijo02: [5, 'short', 'none'],                   // John Williams
+  hawkihe01: [5, 'short', 'none'],                   // Hersey Hawkins
+  schrede01: [0, 'flattop', 'none', 'blond'],        // Detlef Schrempf
+  hardati01: [5, 'short', 'none'],                   // Tim Hardaway
+  majerda01: [0, 'short', 'none', 'dark'],           // Dan Majerle
+  rulanje01: [0, 'short', 'mustache', 'dark'],       // Jeff Ruland
+  masonan01: [6, 'short', 'none'],                   // Anthony Mason
+  marshdo01: [5, 'short', 'none'],                   // Donyell Marshall
+  wardch01: [5, 'short', 'none'],                    // Charlie Ward
+  mccraro01: [5, 'short', 'none'],                   // Rodney McCray
+  macyky01: [0, 'parted', 'none', 'brown'],          // Kyle Macy
+  daviswa03: [5, 'short', 'mustache'],               // Walter Davis
+  anderke01: [5, 'short', 'none'],                   // Kenny Anderson
+  mannida01: [0, 'short', 'none', 'brown'],          // Danny Manning
+  williho01: [5, 'short', 'none'],                   // Hot Rod Williams
+  anderni01: [5, 'short', 'none'],                   // Nick Anderson
+  maxwece01: [5, 'short', 'none'],                   // Cedric Maxwell
+  willimi02: [5, 'short', 'none'],                   // Micheal Williams
+  busedo01: [0, 'parted', 'none', 'brown'],          // Don Buse
+  knighbr01: [5, 'short', 'none'],                   // Brevin Knight
+  guglito01: [0, 'short', 'none', 'dark'],           // Tom Gugliotta
+  brownpj01: [5, 'short', 'none'],                   // P.J. Brown
+  woodsmi01: [5, 'short', 'mustache'],               // Mike Woodson
+  persowe01: [5, 'short', 'none'],                   // Wesley Person
+  barroda01: [4, 'short', 'none'],                   // Dana Barros
+  murdoer01: [5, 'short', 'none'],                   // Eric Murdock
+  greenri01: [5, 'short', 'none'],                   // Rickey Green
+  laettch01: [0, 'short', 'none', 'brown'],          // Christian Laettner
+  porteot01: [4, 'short', 'none'],                   // Otto Porter Jr.
+  coopemi01: [5, 'short', 'none'],                   // Michael Cooper
+  paxsoji02: [0, 'parted', 'none', 'brown'],         // Jim Paxson
+  augmost01: [5, 'short', 'none'],                   // Stacey Augmon
+  taylobr01: [5, 'afro', 'none'],                    // Brian Taylor
+  // ---------------------------------------------------------------- more notable players (skin tone; signature look where there is one)
+  teaguje01: [5],
+  floydsl01: [5],
+  randlju01: [5],
+  brownde01: [5],
+  greenda02: [5],
+  johnsmi01: [5],
+  jeffeal01: [5],
+  mcmilna01: [5],
+  campbel01: [5],
+  willima02: [5],
+  derozde01: [5],
+  anderde01: [5],
+  johnsja01: [5],
+  abdursh01: [5],
+  eliema01: [5],
+  jacksma01: [5],
+  chandty01: [5],
+  favorde01: [5],
+  brunsja01: [4],
+  wellsbo01: [5],
+  moorejo01: [5],
+  jacksja02: [5],
+  flemive01: [5],
+  laniebo01: [5],
+  wrighbr03: [5],
+  edwaran01: [5],
+  durenja01: [5],
+  johnsde01: [5],
+  millean02: [5],
+  horryro01: [5],
+  johnsla02: [5],
+  arizatr01: [5],
+  adamsmi01: [5],
+  banchpa01: [4],
+  crowdja01: [5],
+  holidjr01: [5],
+  lawsoty01: [5],
+  willilo02: [5],
+  anthoca01: [4],
+  dumarjo01: [5],
+  jonesty01: [5],
+  blackro01: [5],
+  arenagi01: [5],
+  robincl02: [5],
+  mcdyean01: [5],
+  porteke02: [5],
+  brogdma01: [5],
+  siakapa01: [6],
+  jonestr01: [5],
+  lewisra02: [5],
+  smithst01: [5],
+  theusre01: [4],
+  smithke01: [5],
+  connele01: [5],
+  moonja01: [5],
+  whiteha01: [5],
+  starkjo01: [5],
+  howarjo01: [5],
+  mckeyde01: [5],
+  roundda01: [5],
+  terryja01: [5],
+  jacksbo01: [5],
+  cebalce01: [5],
+  joneste01: [5],
+  birdsot01: [5],
+  cummite01: [5],
+  ellispe01: [5],
+  lewisre01: [5],
+  evansty01: [5],
+  mckieaa01: [5],
+  willire01: [5],
+  kerseje01: [5],
+  youngth01: [5],
+  johnsca02: [4],
+  johnsvi01: [5],
+  aguirma01: [5],
+  johnsed02: [5],
+  brownfr01: [5],
+  marbust01: [5],
+  lucasjo01: [5],
+  capelca01: [6],
+  anthogr01: [5],
+  edwarke01: [5],
+  gaffoda01: [5],
+  nancela02: [4],
+  morrich01: [5],
+  bryanth01: [5],
+  sallejo01: [5],
+  harremo01: [5],
+  cookda01: [5],
+  cartwbi01: [5],
+  gillke01: [5],
+  martike02: [5],
+  gayru01: [5],
+  bookede01: [4],
+  finlemi01: [5],
+  piercri01: [5],
+  willide01: [5],
+  perkisa01: [5],
+  cartewe01: [5],
+  stackje01: [5],
+  tylerte01: [5],
+  mitchaj01: [5],
+  collida01: [5],
+  youngtr01: [4],
+  mashbja01: [5],
+  paytoga02: [5],
+  sprewla01: [5],
+  benjabe01: [5],
+  grangda01: [5],
+  nattca01: [5],
+  woodch01: [5],
+  reddmi01: [5],
+  hamilri01: [5],
+  childjo01: [5],
+  stephla01: [5],
+  perryel01: [5],
+  thompmy01: [5],
+  murraja01: [4],
+  quickim01: [5],
+  banede01: [5],
+  feltora01: [5],
+  roziete01: [5],
+  robined01: [5],
+  carrode01: [5],
+  russebr01: [5],
+  okongon01: [5],
+  robinna01: [5],
+  willija07: [5],
+  suggsja01: [5],
+  williwa02: [5],
+  clarkbr01: [5],
+  ballla01: [4],
+  daniean01: [5],
+  richaja01: [5],
+  walkeda01: [5],
+  gordoaa01: [4],
+  willisl01: [5],
+  lambje01: [5],
+  harride01: [5],
+  walkefo01: [5],
+  brownja02: [5],
+  westde01: [5],
+  ricegl01: [5],
+  phillbo01: [5],
+  foxde01: [5],
+  patteru01: [5],
+  packro01: [5],
+  bealbr01: [5],
+  tinslja01: [5],
+  noelne01: [5],
+  johnsjo02: [5],
+  richmmi01: [5],
+  bucknqu01: [5],
+  bibbymi01: [4],
+  oaklech01: [6],
+  easonta01: [5],
+  salmojo01: [5],
+  rogerro01: [5],
+  bakervi01: [5],
+  thompau01: [5],
+  jennibr01: [5],
+  thomaku01: [5],
+  youngda01: [5],
+  humphja01: [5],
+  morrimo01: [5],
+  freewo01: [5],
+  smithch01: [5],
+  knighbi01: [5],
+  bradldu01: [5],
+  reynoje01: [5],
+  claxtsp01: [5],
+  boguemu01: [5],
+  josepco01: [5],
+  ibakase01: [6],
+  monrogr01: [5],
+  goodedr01: [5],
+  beverpa01: [5],
+  millsch01: [5],
+  vanvlfr01: [5],
+  ratlith01: [5],
+  leaveal01: [5],
+  champju02: [5],
+  elliose01: [5],
+  smithdr01: [5],
+  roseja01: [5],
+  kellocl01: [5],
+  sefolth01: [4],
+  barbole01: [3],
+  collido02: [5],
+  parkean01: [5],
+  willibu01: [5],
+  johnsty01: [5],
+  reidna01: [5],
+  harrilu01: [5],
+  ellismo01: [5],
+  russeda01: [5],
+  wallaca01: [5],
+  portemi01: [4],
+  dienggo01: [7],
+  longgr01: [5],
+  jordaed01: [5],
+  weathcl01: [5],
+  romarlo01: [5],
+  jackstr02: [5],
+  askewvi01: [5],
+  castlst01: [5],
+  aytonde01: [5],
+  sessira01: [5],
+  pattepa01: [5],
+  garrede01: [5],
+  sharpda01: [5],
+  anderwi01: [5],
+  looneke01: [5],
+  jacksst02: [5],
+  hartja01: [5],
+  buckngr01: [5],
+  simmoli01: [5],
+  lavinza01: [5],
+  ingrabr01: [5],
+  toppiob01: [5],
+  willihe01: [5],
+  okafoem01: [5],
+  robingl01: [5],
+  parkeso01: [5],
+  bridgju01: [5],
+  jonesde02: [5],
+  wrighdo01: [5],
+  valenda01: [5],
+  daniema01: [5],
+  collijo01: [5],
+  jacksre01: [5],
+  anthoco01: [4],
+  maggeco01: [5],
+  willial02: [5],
+  bowiean01: [5],
+  thompda01: [5],
+  hendege01: [5],
+  reidro01: [5],
+  walkean02: [5],
+  perkike01: [5],
+  pincked01: [5],
+  greenac01: [5],
+  higgiro01: [5],
+  powelno01: [5],
+  anunoog01: [5],
+  carrml01: [5],
+  smithjr01: [5],
+  threase01: [5],
+  johnsam01: [5],
+  besttr01: [5],
+  smithra01: [5],
+  thorpot01: [5],
+  garlada01: [5],
+  davisjo01: [5],
+  bambamo01: [5],
+  dudleja01: [5],
+  gamblke01: [5],
+  clingdo01: [0, 'short', 'none', 'brown'],
+  mamuksa01: [1, 'short', 'beard', 'dark'],
+  theisda01: [0, 'short', 'none', 'brown'],
+  leeda02: [0, 'short', 'none', 'brown'],
+  gallida01: [0, 'short', 'stubble', 'dark'],
+  laceysa01: [5],
+  aldamsa01: [1, 'short', 'none', 'dark'],
+  mcrobjo01: [0, 'mop', 'none', 'brown'],
+  olynyke01: [0, 'mop', 'beard', 'light'],
+  bitadgo01: [0, 'short', 'none', 'dark'],
+  zubaciv01: [0, 'short', 'none', 'dark'],
+  hoibefr01: [0, 'short', 'none', 'light'],
+  waltobi01: [0, 'mop', 'beard', 'red'],
+  isselda01: [0, 'mop', 'mustache', 'brown'],
+  davisbr01: [0, 'short', 'none', 'brown'],
+  huffja01: [0, 'short', 'none', 'brown'],
+  delnevi01: [1, 'short', 'none', 'dark'],
+  dragigo01: [0, 'short', 'stubble', 'dark'],
+  kelleri01: [0, 'short', 'mustache', 'brown'],
+  vandeki01: [0, 'mop', 'mustache', 'brown'],
+  ehlocr01: [0, 'short', 'none', 'brown'],
+  surabo01: [0, 'short', 'none', 'brown'],
+  barnema02: [0, 'short', 'stubble', 'brown'],
+  reaveau01: [0, 'short', 'none', 'red'],
+  lafrera01: [0, 'short', 'none', 'light'],
+  adamsst01: [1, 'bun', 'beard', 'black'],
+  spanaji01: [0, 'parted', 'none', 'brown'],
+  quetane01: [5],
+  millemi01: [0, 'short', 'none', 'blond'],
+  carusal01: [0, 'bald', 'stubble'],
+  matthwe02: [4],
+  nocioan01: [1, 'mop', 'none', 'dark'],
+  maccuto01: [0, 'short', 'none', 'brown'],
+  newlimi01: [0, 'parted', 'none', 'brown'],
+  turkohe01: [1, 'short', 'stubble', 'dark'],
+  chambto01: [0, 'mop', 'mustache', 'light'],
+  greveke01: [0, 'parted', 'none', 'brown'],
+  inglejo01: [0, 'short', 'beard', 'brown'],
+  cardibr01: [0, 'short', 'goatee', 'brown'],
+  valanjo01: [0, 'short', 'stubble', 'dark'],
+  kerrst01: [0, 'short', 'none', 'light'],
+  flaggco01: [0, 'short', 'none', 'brown'],
+  parsoch01: [0, 'short', 'none', 'brown'],
+  mirotni01: [0, 'short', 'beard', 'dark'],
+  szczewa02: [0, 'short', 'none', 'brown'],
+  aingeda01: [0, 'short', 'none', 'brown'],
+  markkla01: [0, 'short', 'none', 'blond'],
+  bjeline01: [0, 'short', 'beard', 'dark'],
+  burresc01: [0, 'short', 'none', 'brown'],
+  okurme01: [1, 'short', 'stubble', 'dark'],
+  millspa02: [3, 'short', 'none'],
+  tripuke01: [0, 'mop', 'none', 'brown'],
+  stipast01: [0, 'short', 'none', 'brown'],
+  rubiori01: [0, 'short', 'beard', 'dark'],
+  delfica01: [1, 'short', 'stubble', 'dark'],
+  anderch01: [0, 'mop', 'goatee', 'red'],
+  gminsmi01: [0, 'short', 'none', 'dark'],
+  dunlemi02: [0, 'short', 'none', 'light'],
+  hawesst01: [0, 'mop', 'none', 'brown'],
+  smitsri01: [0, 'mop', 'none', 'dark'],
+  wagnemo01: [0, 'short', 'none', 'brown'],
+  poeltja01: [0, 'short', 'none', 'dark'],
+  bargnan01: [1, 'short', 'none', 'dark'],
+  barryri01: [0, 'mop', 'none', 'light'],
+  varejan01: [1, 'afro', 'none', 'dark'],
+  ayongu01: [2, 'short', 'none', 'black'],
+  harprma01: [0, 'short', 'none', 'brown'],
+  foxri01: [3],
+  kamanch01: [0, 'mop', 'beard', 'light'],
+  petrodr01: [0, 'mop', 'none', 'brown'],
+  anderry01: [0, 'short', 'none', 'brown'],
+  muscami01: [0, 'short', 'beard', 'brown'],
+  sullija01: [4],
+  ridnolu01: [0, 'short', 'none', 'brown'],
+  bowiesa01: [5],
+  thompkl01: [3, 'short', 'none'],
+  gervige01: [5, 'afro', 'mustache'],
+  rodmade01: [5, 'short', 'none'],
+  rollitr01: [5, 'afro', 'mustache'],
+  dawkida01: [6, 'afro', 'none'],
+  unselwe01: [6, 'short', 'none'],
+  malonmo01: [5, 'short', 'none'],
+  kingbe01: [5, 'short', 'mustache'],
+  bradlsh01: [0, 'short', 'none', 'brown'],
+  kesslwa01: [0, 'short', 'none', 'brown'],
+  jeromty01: [0, 'short', 'none', 'brown'],
+  mixst01: [0, 'short', 'none', 'brown'],
+  hinriki01: [0, 'short', 'none', 'brown'],
+  pritcpa01: [0, 'short', 'none', 'brown'],
+  herroty01: [0, 'short', 'none', 'brown'],
+  // ---------------------------------------------------------------- long-serving role players
+  willike02: [5],
+  jamisan01: [5],
+  howarju01: [5],
+  ellisda01: [5],
+  randoza01: [5],
+  greenje02: [5],
+  barneha02: [5],
+  fishede01: [5],
+  johnsed03: [5],
+  wesleda01: [5],
+  cagemi01: [5],
+  malonje01: [5],
+  davisda01: [5],
+  stoudda01: [5],
+  jacksji01: [5],
+  vanexni01: [5],
+  gordoer01: [5],
+  persoch01: [5],
+  newmajo01: [5],
+  houstal01: [5],
+  caldwke01: [5],
+  harrial01: [5],
+  wiggian01: [5],
+  corbity01: [5],
+  moblecu01: [5],
+  mccolcj01: [5],
+  smithjo02: [5],
+  johnsav01: [5],
+  gilliar01: [5],
+  donalja01: [5],
+  davisan01: [5],
+  wilkige01: [5],
+  mahorri01: [5],
+  tuckepj01: [5],
+  polynol01: [5],
+  baileth01: [5],
+  hardati02: [5],
+  maxweve01: [5],
+  jackja01: [5],
+  bowenbr01: [5],
+  woolror01: [5],
+  dampier01: [5],
+  willima01: [5],
+  tisdawa01: [5],
+  edwarja01: [5],
+  greenda01: [5],
+  hunteli01: [5],
+  gibsota01: [5],
+  snower01: [5],
+  mitchmi01: [5],
+  smithla01: [5],
+  augusdj01: [5],
+  shortpu01: [5],
+  carrojo01: [5],
+  sparrro01: [5],
+  hillty01: [5],
+  mitchsa01: [5],
+  morrima03: [5],
+  cheanca01: [5],
+  leeco01: [5],
+  davisri01: [5],
+  grantje01: [5],
+  hasleud01: [5],
+  shawbr01: [5],
+  grantbr01: [5],
+  griffda01: [5],
+  thomati01: [5],
+  nixonno01: [5],
+  thompla01: [5],
+  douglsh01: [5],
+  hieldbu01: [5],
+  afflaar01: [5],
+  richaqu01: [5],
+  jonesca01: [5],
+  grantha01: [5],
+  smartma01: [5],
+  dunntr01: [5],
+  peelean01: [5],
+  thomptr01: [5],
+  gordobe01: [5],
+  colesbi01: [5],
+  webbsp01: [5],
+  chandwi01: [5],
+  westma01: [5],
+  longjo01: [5],
+  carran01: [5],
+  fryech01: [5],
+  masonde01: [5],
+  coopewa01: [5],
+  richapo01: [5],
+  alstora01: [5],
+  petermo01: [5],
+  oubreke01: [5],
+  robincl01: [5],
+  foyera01: [5],
+  normake01: [5],
+  listeal01: [5],
+  turneev01: [5],
+  breweco01: [5],
+  willico02: [5],
+  haywobr01: [5],
+  wrighlo02: [5],
+  murrala01: [5],
+  morrima02: [5],
+  edwarbl01: [5],
+  stevede01: [5],
+  drewla01: [5],
+  bradlav01: [5],
+  scottde01: [5],
+  rosste01: [5],
+  onealro01: [5],
+  stuckro01: [5],
+  rideris01: [5],
+  armstbj01: [5],
+  lynchge01: [5],
+  battito01: [5],
+  owensbi01: [5],
+  ellisla01: [5],
+  burksal01: [5],
+  duckwke01: [5],
+  mccloge01: [5],
+  lucasma01: [5],
+  covinro01: [5],
+  harriga01: [5],
+  thomake01: [5],
+  atkinch01: [5],
+  milescj01: [5],
+  chalmma01: [5],
+  butlera01: [5],
+  dinwisp01: [5],
+  livinsh01: [5],
+  finnedo01: [5],
+  baglejo01: [5],
+  bartowi01: [5],
+  vaughlo01: [5],
+  johnser02: [5],
+  levincl01: [5],
+  mayooj01: [5],
+  westdo01: [5],
+  portibo01: [5],
+  millste01: [5],
+  youngni01: [5],
+  stithbr01: [5],
+  bassbr01: [5],
+  hibbero01: [5],
+  hassetr01: [5],
+  ellinwa01: [5],
+  eisleho01: [5],
+  andersh01: [5],
+  mcinnje01: [5],
+  mohamna01: [5],
+  hubbaph01: [5],
+  richajo01: [5],
+  willier01: [5],
+  holidju01: [5],
+  tucketr01: [5],
+  abdulma02: [5],
+  evansre01: [5],
+  vinceja01: [5],
+  johnsan02: [5],
+  hinsoro01: [5],
+  templga01: [5],
+  duhonch01: [5],
+  smithis01: [5],
+  reidjr01: [5],
+  lenarvo01: [5],
+  langan01: [5],
+  carrke01: [5],
+  campbto01: [5],
+  davishu01: [5],
+  anderro01: [5],
+  hodgecr01: [5],
+  wilkeja01: [5],
+  princta02: [5],
+  collija04: [5],
+  cunnida01: [5],
+  dawkijo01: [5],
+  thompja02: [5],
+  greenwi01: [5],
+  mcgeeja01: [5],
+  magloja01: [5],
+  boganke01: [5],
+  teaglte01: [5],
+  jamesmi01: [5],
+  doolike01: [5],
+  jonesch01: [5],
+  andergr01: [5],
+  harklma01: [5],
+  blounma01: [5],
+  harriot01: [5],
+  webstma02: [5],
+  beaslmi01: [5],
+  paytoel01: [5],
+  hendege02: [5],
+  whiteco01: [5],
+  hendeal01: [5],
+  sextoco01: [5],
+  gatlich01: [5],
+  davised01: [5],
+  beaslma01: [5],
+  washipj01: [5],
+  johnsst03: [5],
+  childch01: [5],
+  sampsra01: [5],
+  rooksse01: [5],
+  bazemke01: [5],
+  catlete01: [5],
+  bryanma01: [5],
+  johnswe01: [5],
+  jonesda01: [5],
+  brookaa01: [5],
+  mercero01: [5],
+  rosema01: [5],
+  garlawi01: [5],
+  brownkw01: [5],
+  brownbr01: [5],
+  orrlo01: [5],
+  tayloma01: [5],
+  monkma01: [5],
+  greensi02: [5],
+  soberri01: [5],
+  wingada01: [5],
+  currymi01: [5],
+  knighbr03: [5],
+  robintr01: [5],
+  curryed01: [5],
+  snellto01: [5],
+  trentga02: [5],
+  banksge01: [5],
+  boykiea01: [5],
+  johnsfr01: [5],
+  kingal01: [5],
+  mcdanja02: [5],
+  willije01: [5],
+  vaughja01: [5],
+  toneyan01: [5],
+  grantga01: [5],
+  jonespo01: [5],
+  luety01: [5],
+  mooreet01: [5],
+  bullore01: [5],
+  mclembe01: [5],
+  johnscl01: [5],
+  mcgeemi01: [5],
+  lestero01: [5],
+  sprigla01: [5],
+  hendeje01: [5],
+  thirdda01: [5],
+  vincesa01: [5],
+  korveky01: [0, 'short', 'none', 'light'],
+  redicjj01: [0, 'short', 'beard', 'brown'],
+  ilgauzy01: [0, 'short', 'none', 'light'],
+  schayda01: [0, 'mop', 'none', 'brown'],
+  seikaro01: [1, 'short', 'none', 'black'],
+  bogdabo02: [0, 'short', 'stubble', 'brown'],
+  blakest01: [0, 'short', 'none', 'brown'],
+  gortama01: [0, 'short', 'none', 'dark'],
+  corzida01: [0, 'mop', 'mustache', 'brown'],
+  belinma01: [0, 'mop', 'stubble', 'dark'],
+  chapmre01: [0, 'short', 'none', 'brown'],
+  fournev01: [0, 'short', 'beard', 'dark'],
+  scolalu01: [0, 'mop', 'none', 'light'],
+  ilyaser01: [1, 'short', 'stubble', 'dark'],
+  collini01: [0, 'short', 'none', 'light'],
+  udrihbe01: [0, 'short', 'none', 'dark'],
+  vanhoke01: [0, 'short', 'none', 'brown'],
+  ferryda01: [0, 'short', 'none', 'brown'],
+  nestera01: [0, 'short', 'none', 'light'],
+  koncajo01: [0, 'short', 'none', 'brown'],
+  dudlech02: [0, 'short', 'none', 'brown'],
+  rambiku01: [0, 'mop', 'mustache', 'dark'],
+  bareajo01: [2, 'short', 'none', 'black'],
+  brickfr01: [0, 'short', 'none', 'brown'],
+  radmavl01: [0, 'short', 'none', 'light'],
+  kanteen01: [1, 'short', 'none', 'black'],
+  olberma01: [0, 'short', 'none', 'brown'],
+  fosteje01: [0, 'short', 'none', 'brown'],
+  hawessp01: [0, 'mop', 'none', 'light'],
+  hanzlbi01: [0, 'parted', 'none', 'brown'],
+  huertke01: [0, 'short', 'none', 'light'],
+  ostergr01: [0, 'short', 'goatee', 'brown'],
+  bogdabo01: [0, 'short', 'stubble', 'dark'],
+  kleinjo01: [0, 'short', 'none', 'brown'],
+  roberfr01: [0, 'short', 'none', 'brown'],
+  piatker01: [0, 'short', 'none', 'brown'],
+  cummipa01: [0, 'short', 'none', 'brown'],
+  mcderdo01: [0, 'short', 'none', 'brown'],
+  poquebe01: [0, 'short', 'none', 'brown'],
+  bonnema01: [0, 'short', 'none', 'red'],
+  divindo01: [0, 'short', 'beard', 'brown'],
+  robindu01: [0, 'short', 'none', 'brown'],
+  sichtje01: [0, 'parted', 'none', 'brown'],
+  skilesc01: [0, 'short', 'none', 'brown'],
+  paxsojo01: [0, 'parted', 'none', 'brown'],
+  eatonma01: [0, 'short', 'mustache', 'brown'],
+  pachuza01: [0, 'short', 'stubble', 'dark'],
+  lopezro01: [1, 'mop', 'beard', 'dark'],
+  willija02: [0, 'buzz', 'none', 'brown'],
+  mccontj01: [0, 'short', 'none', 'red'],
+  kitegr01: [0, 'short', 'none', 'brown'],
+  kupchmi01: [0, 'short', 'mustache', 'brown'],
+  gudmupe01: [0, 'short', 'none', 'light'],
+  carliri01: [0, 'parted', 'none', 'brown'],
+  wedmasc01: [0, 'parted', 'none', 'brown'],
+  clarkjo01: [3],
+  curryse01: [3],
+  schrode01: [4],
+  crawfja01: [4],
+  bellra01: [4],
+  watsoea01: [4],
+  kuzmaky01: [4],
+  riverau01: [4],
+  brookdi01: [4],
+  leverca01: [4],
+  barrerj01: [4],
+  humphkr01: [4],
+  villach01: [4],
+  gomesry01: [4],
+  curryde01: [4],
+  dalemsa01: [6],
+  aminual01: [6],
+  biyombi01: [7],
+  mbahalu01: [6],
+  foylead01: [6],
+  olowomi01: [6],
+  mcdanxa01: [5, 'bald'],
+  longllu01: [0, 'mop', 'none', 'brown'],
+  buechju01: [0, 'short', 'none', 'light'],
+  haleyja01: [0, 'short', 'none', 'brown'],
+  scalabr01: [0, 'short', 'none', 'red'],
+  madsema01: [0, 'short', 'none', 'brown'],
+  kaponja01: [0, 'short', 'none', 'dark'],
+  bullama01: [0, 'short', 'none', 'brown'],
+  novakst01: [0, 'short', 'none', 'brown'],
+  dunlemi01: [0, 'parted', 'mustache', 'brown'],
+  keefead01: [0, 'short', 'none', 'brown'],
+  reevebr01: [0, 'short', 'none', 'brown'],
+  montrer01: [0, 'short', 'none', 'brown'],
+  aldrico01: [0, 'short', 'none', 'brown'],
+  singlky01: [0, 'short', 'none', 'brown'],
+  hansbty01: [0, 'short', 'none', 'brown'],
+  hansbbe01: [0, 'short', 'none', 'brown'],
+};
+/** Players who wore goggles. */
+export const GOGGLES = new Set(['abdulka01', 'worthja01', 'grantho01', 'rambiku01']);
+
+/** The listed look of a player for a season, or null. */
+export function lookFor(id: string, season: number) {
+  const r = LOOKS[id];
+  if (!r) return null;
+  let hair = r[1];
+  if (hair?.includes('|')) {
+    const [first, ...ch] = hair.split('|');
+    hair = first;
+    for (const c of ch) { const [y, h] = c.split(':'); if (season >= +y) hair = h; }
+  }
+  return { skin: r[0], hair, facial: r[2], hairColor: r[3] ? HAIR_COLORS[r[3]] : undefined, band: r[4] };
+}

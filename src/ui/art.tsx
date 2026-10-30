@@ -6,6 +6,7 @@
 import { memo } from 'react';
 import { hash01 } from '../rng';
 import { teamColor } from './pixel';
+import { lookFor } from '../looksdb';
 
 // colours of historical abbreviations whose franchise later changed identity
 const ERA_COLORS: Record<string, [string, string]> = {
@@ -67,10 +68,11 @@ export function faceOf(p: { id: string; entered: number; ht: number; born?: numb
   const o = (p as any).face ?? {};
   const h = (k: string) => hash01(p.id + 'f' + (o.seed ?? '') + k);
   const era = p.entered;
+  const db = lookFor(p.id, season);
   const s = Math.floor(h('skin') * 1000) / 1000;
   const lightShare = era < 1990 ? 0.3 : era < 2005 ? 0.24 : 0.28;
   const skinIdx = s < lightShare ? Math.floor((s / lightShare) * 3) : 2 + Math.floor(((s - lightShare) / (1 - lightShare)) * 6);
-  const si = o.skin ?? Math.max(0, Math.min(SKINS.length - 1, skinIdx));
+  const si = o.skin ?? db?.skin ?? Math.max(0, Math.min(SKINS.length - 1, skinIdx));
   const skin = SKINS[si];
   const dark = si >= 3;
   const age = season - (p.born ?? era - 21);
@@ -84,14 +86,15 @@ export function faceOf(p: { id: string; entered: number; ht: number; born?: numb
   let hair = weighted(hairOpts, h('hair'));
   const grey = age >= 34 && h('grey') < 0.5;
   if (age >= 33 && hair !== 'bald' && h('recede') < 0.25) hair = 'bald';
+  if (db?.hair) hair = db.hair;
   if (o.hair) hair = o.hair;
-  const hairColor = dark ? '#16110d' : pick(['#1b1410', '#3b2414', '#5a3a22', '#8a6a3a', '#c9a35b', '#7a3b1e'], h('hc'));
+  const hairColor = db?.hairColor ?? (dark ? '#16110d' : pick(['#1b1410', '#3b2414', '#5a3a22', '#8a6a3a', '#c9a35b', '#7a3b1e'], h('hc')));
   const facialOpts: [string, number][] = era < 1990
     ? [['none', 5], ['mustache', 3], ['stubble', 0.5]]
     : era < 2005
       ? [['none', 5], ['goatee', 3], ['stubble', 1.5], ['mustache', 0.6], ['chin', 1]]
       : [['none', 3], ['beard', 4], ['stubble', 2.5], ['goatee', 1.5], ['chin', 1]];
-  const facial = o.facial ?? (age < 21 && h('young') < 0.6 ? 'none' : weighted(facialOpts, h('facial')));
+  const facial = o.facial ?? db?.facial ?? (age < 21 && h('young') < 0.6 ? 'none' : weighted(facialOpts, h('facial')));
   const tall = Math.max(-1, Math.min(1, (p.ht - 79) / 6)); // centres and guards
   return {
     skin, dark, grey,
@@ -101,7 +104,7 @@ export function faceOf(p: { id: string; entered: number; ht: number; born?: numb
     hair, hairColor: grey ? '#9a9a9a' : hairColor, facial,
     brow: h('brow'), eyeGap: 9 + 3 * h('eg'), eyeSize: 1.7 + 0.9 * h('es'),
     nose: h('nose'), mouth: h('mouth'), ears: h('ears'),
-    band: o.band ?? (era >= 1998 && h('band') < 0.12),
+    band: o.band ?? db?.band ?? (era >= 1998 && h('band') < 0.12),
   };
 }
 
