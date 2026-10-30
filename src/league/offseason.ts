@@ -8,7 +8,7 @@ import { newPlayer, prospectZ, realTarget, lastRealSeason, ageIn, firstRealSeaso
 import { activeTeams, makeTeam, rngOf, standings, updateStrategies, playoffFormat, seasonGames } from './league';
 import { makeSchedule } from './schedule';
 import { develop, normalizeLeague, youngFloor } from './health';
-import { classFor, shiftFor } from './classes';
+import { classFor, shiftFor, cloneBase } from './classes';
 import { resetFatigue } from './fatigue';
 import { carryInjuries } from './injuries';
 import { rookieContract, vetContract, rfaEligible, qoAmount, worthKeeping, optsOut, lockTrade } from './contracts';
@@ -53,6 +53,8 @@ export function initDraft(lg: League) {
     zClamp(p.z);
     p.ovrHist = []; p.rh = []; snapRatings(p, Y + 1);
     p.prospect = true;
+    // a copy of a player who is still around gets a "II"
+    if (pid !== cloneBase(pid)) { const o = lg.players[cloneBase(pid)]; if (o && !o.retired) p.name += ' II'; }
     lg.players[pid] = p;
     pool.push(pid);
   }
@@ -171,6 +173,7 @@ function setupLottery(lg: League, newTeams: string[]): Lottery {
   const nt = new Set(newTeams);
   const st = standings(lg).filter(t => !nt.has(t.tid)).reverse(); // worst first
   const playoffTeams = new Set(lg.series.flatMap(s => [s.hi, s.lo]).filter(Boolean));
+  if (!lg.series.length) for (const c of ['E', 'W']) standings(lg, c).slice(0, 8).forEach(t => playoffTeams.add(t.tid)); // a season not played here
   const lot = st.filter(t => !playoffTeams.has(t.tid));
   const lottery = lot.map(t => t.tid);
   const rest = st.filter(t => playoffTeams.has(t.tid)).map(t => t.tid);
@@ -383,12 +386,6 @@ export function enterFreeAgency(lg: League) {
   const Y = lg.season;
   const N = Y + 1;
   if (lg.draftDay && !lg.draftDay.done) { draftAdvance(lg, 'all'); finishDraft(lg); }
-  if (N > LAST_SEASON) {
-    lg.ended = true;
-    lg.news.push({ s: Y, t: `The historical data ends with the ${LAST_SEASON} season – the league stops here.` });
-    save(lg, rng);
-    return;
-  }
   const notes = lg.history[lg.history.length - 1].notes;
   flushFaLog(lg); // in-season signings and releases of the season that just ended
   carryInjuries(lg, lg.endCal ?? 0);
@@ -947,7 +944,9 @@ function retirements(lg: League, rng: Rng, notes: string[]) {
     let pr = base, hist = 0, uns = 0;
     const lr = lastRealSeason(p.id);
     const last = lr !== undefined ? lr + (p.shift ?? 0) : undefined;
-    if (p.real && last !== undefined) {
+    // a career still going when the data ends has no known end: age and quality decide
+    const open = lr === LAST_SEASON && last !== undefined && last <= Y;
+    if (p.real && last !== undefined && !open) {
       const endedInReality = last <= Y;
       // destiny ends real careers on time, but a young player who is good enough in this league to keep
       // a job rarely walks away: the pull of history fades with youth and quality

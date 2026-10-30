@@ -206,6 +206,7 @@ export interface League {
   classMode?: 'real' | 'shuffle' | 'mixed';
   classMap?: Record<string, string[]>; // draft year → prospects (shuffled or mixed classes)
   classSrc?: Record<string, number>;   // shuffled: draft year → real class year
+  future?: { order: number[]; cls: Record<string, string[]> }; // after the data ends: historical classes coming round again
   injCal?: number;                     // last calendar day checked for injuries away from games
   endCal?: number;                     // calendar day the last season ended
   records?: import('./league/records').Records; // single-game record book

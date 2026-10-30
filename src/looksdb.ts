@@ -1546,7 +1546,7 @@ export const GOGGLES = new Set(['abdulka01', 'worthja01', 'grantho01', 'rambiku0
 
 /** The listed look of a player for a season, or null. */
 export function lookFor(id: string, season: number) {
-  const r = LOOKS[id];
+  const r = LOOKS[id.split('~')[0]];
   if (!r) return null;
   let hair = r[1];
   if (hair?.includes('|')) {

@@ -456,7 +456,8 @@ function Setup({ onStart, onLoad }: any) {
   const si = seasonInfo(start);
   const teams = Object.entries(si.teams).sort((a, b) => a[1].name.localeCompare(b[1].name));
   const years: number[] = [];
-  for (let y = 1980; y <= LAST_SEASON - 1; y++) years.push(y);
+  for (let y = 1980; y <= LAST_SEASON + 1; y++) years.push(y);
+  const future = start > LAST_SEASON;
   const label = `${start - 1}–${String(start).slice(2)}`;
   const desc = d >= 90 ? 'Players develop almost exactly as in reality. Only teams, roles and results differ.'
     : d >= 60 ? 'Real careers pull strongly, but not everyone will reach their real level.'
@@ -476,11 +477,11 @@ function Setup({ onStart, onLoad }: any) {
         <label className="field" htmlFor="start">
           <span>Starting season</span>
           <select id="start" value={start} onChange={e => pickYear(+e.target.value)}>
-            {years.map(y => <option key={y} value={y}>{y - 1}–{String(y).slice(2)}</option>)}
+            {years.map(y => <option key={y} value={y}>{y - 1}–{String(y).slice(2)}{y > LAST_SEASON ? ' – from the summer of ' + LAST_SEASON + ' (beyond the data)' : ''}</option>)}
           </select>
-          <small>Teams and rosters are as they were that season. The league has no stats from earlier years: history starts here.</small>
+          <small>{future ? `Today's league: the ${LAST_SEASON - 1}–${String(LAST_SEASON).slice(2)} rosters, and the league opens with the ${LAST_SEASON} draft and free agency. After that every draft class is a historical one coming round again (copies of its players, developing like the originals did), in a random order.` : 'Teams and rosters are as they were that season. The league has no stats from earlier years: history starts here.'}</small>
         </label>
-        <fieldset className="field radio-set">
+        {!future && <fieldset className="field radio-set">
           <legend>Draft classes</legend>
           {CLASS_MODES.map(([k, l, txt]) => (
             <label key={k} className={`radio ${mode === k ? 'on' : ''}`}>
@@ -488,7 +489,7 @@ function Setup({ onStart, onLoad }: any) {
               <span><b>{l}</b><small>{txt}</small></span>
             </label>
           ))}
-        </fieldset>
+        </fieldset>}
         <label className="field" htmlFor="destiny">
           <span>Destiny slider <b>{d}%</b></span>
           <input id="destiny" type="range" min="0" max="100" step="5" value={d} onChange={e => setD(+e.target.value)} />
@@ -666,8 +667,8 @@ function SeasonCard({ lg, s, openPlayer }: any) {
       <h2>{seasonLabel(s.season)} season results</h2>
       <dl className="facts">
         <dt>Champion</dt><dd><b><TL tid={s.champion} /></b> <span className="dim">(title No. {titles} in this league)</span></dd>
-        <dt>Finals</dt><dd>vs <TL tid={s.runnerUp} /></dd>
-        <dt>Finals MVP</dt><dd>{P(s.fmvp)}</dd>
+        {s.runnerUp && <><dt>Finals</dt><dd>vs <TL tid={s.runnerUp} /></dd>
+        <dt>Finals MVP</dt><dd>{P(s.fmvp)}</dd></>}
         <dt>MVP</dt><dd>{P(s.mvp)}</dd>
         {a && <><dt>DPOY</dt><dd>{P(a.dpoy)}</dd><dt>ROY</dt><dd>{P(a.roy)}</dd><dt>6MOY</dt><dd>{P(a.smoy)}</dd><dt>MIP</dt><dd>{P(a.mip)}</dd></>}
         {!a && <><dt>Rookie of the Year</dt><dd>{P(s.roy)}</dd></>}

@@ -70,7 +70,43 @@ export function buildClasses(lg: League, mode: ClassMode, rng: Rng) {
 }
 
 export function classFor(lg: League, Y: number): string[] {
-  return lg.classMap ? lg.classMap[String(Y)] ?? [] : H.classes[String(Y)] ?? [];
+  const own = lg.classMap ? lg.classMap[String(Y)] : H.classes[String(Y)];
+  if (own?.length) return own;
+  if (Y > lastClassYear()) return futureClass(lg, Y);
+  return [];
+}
+
+// ---------------------------------------------------------------- beyond the data
+// After the last real draft, a historical class comes round again each year: fresh copies of its players
+// (ids "pid~year") who develop like the originals did in the same year of their careers.
+export const cloneBase = (pid: string) => pid.split('~')[0];
+/** Copies share the original's historical record (career, draft, looks). */
+export function registerClone(id: string) {
+  const b = cloneBase(id);
+  if (b !== id && H.players[b] && !H.players[id]) (H.players as any)[id] = H.players[b];
+}
+export function registerClones(lg: League) {
+  for (const id of Object.keys(lg.players)) registerClone(id);
+  for (const ids of Object.values(lg.future?.cls ?? {})) ids.forEach(registerClone);
+}
+let lastCls = 0;
+export function lastClassYear() {
+  if (!lastCls) lastCls = Math.max(...Object.keys(H.classes).filter(y => H.classes[y]?.length).map(Number));
+  return lastCls;
+}
+function futureClass(lg: League, Y: number): string[] {
+  const f = (lg.future ??= { order: [], cls: {} });
+  if (f.cls[String(Y)]) return f.cls[String(Y)];
+  if (!f.order.length) {
+    const ys = Object.keys(H.classes).map(Number).filter(y => H.classes[String(y)]?.length >= 20).sort((a, b) => a - b);
+    f.order = new Rng(lg.seed * 31 + Y).shuffle(ys);
+  }
+  const src = f.order.shift()!;
+  const ids = H.classes[String(src)].map(pid => `${pid}~${Y}`);
+  ids.forEach(registerClone);
+  f.cls[String(Y)] = ids;
+  (lg.classSrc ??= {})[String(Y)] = src;
+  return ids;
 }
 
 /** Years between a prospect's real draft and the draft he enters here. */
