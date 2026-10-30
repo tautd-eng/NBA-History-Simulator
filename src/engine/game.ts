@@ -125,6 +125,7 @@ export interface PbpEv {
   txt: string;
   hs: number; as: number;
   x?: number; y?: number;
+  dsc?: 'zone' | 'switch' | 'press';       // the defence's scheme on this trip (man-to-man when absent)
   cr?: string;                              // who set the shot up (the assist, or the pass before a miss)
   pl?: string;                              // the play that produced it (iso, pnrDrive, pnrPull, roll, pop, post, cut, kick, offscreen, drive, pullup, fb, putback)
   sk?: string;                              // shot kind (dunk, layup, putback, hook, turnaround, floater, jumper, fadeaway, three, stepback)
@@ -267,6 +268,16 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   let elapsed = 0;
   let clutch = false;
   let offCall: OffCall = 'auto', defCall: DefCall = 'normal', isoPid: string | null = null;
+  // each team's defensive identity for the night: zone only once it was legal (2001–02), switching in the
+  // positionless era, otherwise man-to-man; a trailing team presses late
+  const dIdent = (tid: string) => {
+    const h1 = hash01(tid + season + 'zone'), h2 = hash01(tid + season + 'sw');
+    return {
+      zone: season >= 2002 ? (h1 < 0.25 ? 0.06 + 0.14 * hash01(tid + season + 'zz') : 0.015) : 0,
+      sw: season >= 2014 ? 0.15 + 0.45 * h2 : season >= 2004 ? 0.05 + 0.1 * h2 : 0.02,
+    };
+  };
+  let dsc: 'man' | 'zone' | 'switch' | 'press' = 'man';
   // how the last possession ended decides whether the next one can be a fast break
   let ended: 'make' | 'drb' | 'stl' | 'dead' = 'dead';
   let stopped = false; // the ball went dead during the possession (free throws, a timeout)
@@ -562,7 +573,12 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     if (def !== user && late && period >= 4) {
       // trailing late: foul to stop the clock and send a poor shooter to the line
       if (((lead >= 4 && lead <= 9 && rem < 45) || (lead === 3 && rem < 40 && rem > 24)) && rem > 2) defCall = 'foul';
+      // down two to four possessions in the last three minutes: press full court after scores
+      else if (lead >= 5 && lead <= 14 && rem < 180 && rem > 45 && (ended === 'make' || stopped) && cr.chance(0.55)) defCall = 'pressure';
     }
+    // the defence's scheme on this trip (what the viewer sees, and a nudge toward threes against a zone)
+    const id = dIdent(def.tid);
+    dsc = defCall === 'pressure' ? 'press' : cr.chance(id.zone) ? 'zone' : cr.chance(id.sw) ? 'switch' : 'man';
   }
   function callDuration(dur: number, rem: number) {
     if (defCall === 'foul') return 1.5 + 2.5 * rng.next();
@@ -599,7 +615,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     }
     const callShift = offCall === 'quick' ? -0.12 : offCall === 'milk' ? -0.03 : offCall === 'inside' ? 0.04 : 0;
     const fb = fastBreak && !afterOrb, lc = lateClock && !afterOrb;
-    const tag: Partial<PbpEv> = { ...(fb ? { fb: 1 as const } : {}), ...(offCall !== 'auto' && !afterOrb ? { call: offCall } : {}) };
+    const tag: Partial<PbpEv> = { ...(fb ? { fb: 1 as const } : {}), ...(offCall !== 'auto' && !afterOrb ? { call: offCall } : {}), ...(dsc !== 'man' && !fb ? { dsc } : {}) };
     const fat = C.fatigue * Math.max(0, C.fatBase - actor.e);
     const homeAdv = off.home ? C.home : -C.home;
     const md = guard(actor);
@@ -638,6 +654,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     let tprAdj = sigm(logit(Math.min(0.97, Math.max(0.003, actor.tpr))) + C.tpa + E.tpa);
     if (!afterOrb && offCall === 'three') tprAdj = Math.max(tprAdj, 0.85);
     if (offCall === 'inside') tprAdj *= 0.15;
+    if (dsc === 'zone' && !fb) tprAdj = sigm(logit(Math.min(0.97, Math.max(0.01, tprAdj))) + 0.25); // a zone dares you to shoot
     if (fb) tprAdj *= C.fbThree;
     const three = rng.chance(afterOrb ? tprAdj * C.putback3 : tprAdj);
     // defence on the shot: his own defender matters most, help defence (team) the rest; size inside
