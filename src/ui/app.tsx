@@ -4,7 +4,7 @@ import { Linkify, PL, TL, nav } from './nav';
 import { TeamHistory, TeamRecords, LeagueRecords, Retirements, SeasonArchive } from './history';
 import { StandingsHistory, TeamStatsExplorer, FaMoves } from './leaguehist';
 import { Logo, TLogo, PFace } from './art';
-import { RoleBadge, TeamFit } from './roles';
+import { RoleBadge } from './roles';
 import { roleOf } from '../archetypes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -814,7 +814,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
   const pay = payroll(lg, t.tid);
   const strat = t.mode ? { allin: 'All-in', tank: 'Tanking', rising: 'Rising', capclear: 'Clearing salary', retool: 'Retooling' }[t.mode] : { contend: 'Contender', middle: 'Middle of the pack', rebuild: 'Rebuilding' }[t.strategy];
   const titles = lg.history.filter((s: any) => s.champion === t.tid).map((s: any) => s.season);
-  const [view, setView] = useState<'stats' | 'attr' | 'fit' | 'hist' | 'rec'>('stats');
+  const [view, setView] = useState<'stats' | 'attr' | 'hist' | 'rec'>('stats');
   const inSeason = lg.phase === 'regular' || lg.phase === 'playoffs';
   const calNow = inSeason ? nextCal(lg, todayIndex(lg)) : 0;
   const RT = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
@@ -848,12 +848,11 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
         <div className="seg view-toggle-l" role="group" aria-label="View">
           <button className={view === 'stats' ? 'on' : ''} onClick={() => setView('stats')}>Stats</button>
           <button className={view === 'attr' ? 'on' : ''} onClick={() => setView('attr')}>Attributes</button>
-          <button className={view === 'fit' ? 'on' : ''} onClick={() => setView('fit')}>Fit</button>
           <button className={view === 'hist' ? 'on' : ''} onClick={() => setView('hist')}>History</button>
           <button className={view === 'rec' ? 'on' : ''} onClick={() => setView('rec')}>Records</button>
         </div>
       </div>
-      {view === 'fit' ? <TeamFit lg={lg} roster={roster} openPlayer={openPlayer} /> : view === 'hist' ? <TeamHistory lg={lg} tid={t.tid} openPlayer={openPlayer} /> : view === 'rec' ? <TeamRecords lg={lg} tid={t.tid} openPlayer={openPlayer} /> : view === 'attr' ? <SortTable cols={attrCols} rows={roster.map((p: any) => ({ key: p.id, p }))} initial="ovr" rowClass={(r: any) => (r.p.injury > 0 ? 'inj-row' : '')} /> : (
+      {view === 'hist' ? <TeamHistory lg={lg} tid={t.tid} openPlayer={openPlayer} /> : view === 'rec' ? <TeamRecords lg={lg} tid={t.tid} openPlayer={openPlayer} /> : view === 'attr' ? <SortTable cols={attrCols} rows={roster.map((p: any) => ({ key: p.id, p }))} initial="ovr" rowClass={(r: any) => (r.p.injury > 0 ? 'inj-row' : '')} /> : (
       <div className="tbl-wrap">
           <table className="tbl roster">
             <thead><tr>

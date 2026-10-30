@@ -148,3 +148,44 @@ export function teamFit(players: { z: number[]; pos: string; name?: string }[]) 
   const fitScore = Math.round(items.reduce((a, i) => a + i.v, 0) / items.length);
   return { items, notes, roles, fit: f, fitScore, distinct };
 }
+
+// ------------------------------------------------------------------ role matchups
+/**
+ * Role matchups: each attack type has the roles that carry it and the roles that stop it. A lineup full of
+ * slashers feasts on a defence with no rim protector or stopper; shooters punish a defence without wing defenders.
+ */
+export const EDGE_TYPES = ['drive', 'shoot', 'post', 'handle'] as const;
+export type EdgeType = typeof EDGE_TYPES[number];
+const ATT: Record<EdgeType, Record<string, number>> = {
+  drive: { slasher: 1, creator: 0.5, twoway: 0.5, pointfwd: 0.5, general: 0.3 },
+  shoot: { sniper: 1, stretch: 1, unicorn: 0.8, '3d': 0.6, creator: 0.3 },
+  post: { post: 1, playbig: 0.5, runner: 0.6, glass: 0.4 },
+  handle: { general: 1, playbig: 0.7, pointfwd: 0.8, creator: 0.4 },
+};
+const CTR: Record<EdgeType, Record<string, number>> = {
+  drive: { protector: 1, unicorn: 0.8, lockdown: 1, '3d': 0.5, twoway: 0.6 },
+  shoot: { lockdown: 0.8, '3d': 1, twoway: 0.5 },
+  post: { protector: 1, unicorn: 0.6, glass: 0.6, runner: 0.3 },
+  handle: { lockdown: 1, '3d': 0.4, twoway: 0.5 },
+};
+/** Per-player attack and counter weights for each matchup type (primary role full, second role half). */
+export function edgeTraits(z: number[], pos: string) {
+  const r = roleOf(z, pos);
+  const a = r.arch.id, b = r.second?.id;
+  const att = {} as Record<EdgeType, number>, ctr = {} as Record<EdgeType, number>;
+  for (const t of EDGE_TYPES) {
+    att[t] = Math.min(1.2, (ATT[t][a] ?? 0) + 0.5 * (b ? ATT[t][b] ?? 0 : 0));
+    ctr[t] = Math.min(1.2, (CTR[t][a] ?? 0) + 0.5 * (b ? CTR[t][b] ?? 0 : 0));
+  }
+  return { att, ctr };
+}
+/** Typical counter strength a defence has on the floor for each type (measured over simulated games). */
+const CTR_ERA: [number, number, number, number, number][] = [[1980, 1.396, 0.595, 1.215, 0.58], [1995, 1.311, 0.706, 0.938, 0.741], [2010, 1.256, 0.725, 0.854, 0.749], [2024, 1.171, 0.719, 0.94, 0.673]];
+export function ctr0(season: number): Record<EdgeType, number> {
+  const T = CTR_ERA;
+  let i = 0;
+  while (i < T.length - 2 && season > T[i + 1][0]) i++;
+  const t = Math.max(0, Math.min(1, (season - T[i][0]) / (T[i + 1][0] - T[i][0])));
+  const L = (k: number) => T[i][k] + (T[i + 1][k] - T[i][k]) * t;
+  return { drive: L(1), shoot: L(2), post: L(3), handle: L(4) };
+}

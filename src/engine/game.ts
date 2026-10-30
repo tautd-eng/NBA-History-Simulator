@@ -10,7 +10,7 @@ import { Rng, hash01 } from '../rng';
 import { K, rate, sigm, logit, bpmOf } from '../data';
 import { shownFromBpm } from '../data';
 import { emptyLine, StatLine, Player, Box } from '../types';
-import { fitTraits, FitTraits, fit0 } from '../archetypes';
+import { fitTraits, FitTraits, fit0, edgeTraits, ctr0 } from '../archetypes';
 
 /** Per-season calibration offsets, produced by test/eracal.ts. */
 export interface EraCal { pace: number; tpa: number; p2: number; p3: number; ft: number; tov: number; orb: number; ast: number; stl: number; blk: number; pf: number; ftr: number }
@@ -35,10 +35,10 @@ export const C = {
   fbStl: 0.55, fbDrb: 0.15, fbMake: 0.45, fbThree: 0.6, lateClock: 0.2, // transition and shot-clock pressure
   star: 1.35, stay: 1.2, depth: 10, minAlpha: 1.0, maxMin: 40,
   mmDef: 0.5, mmHt: 0.01, mmUsg: 0.15, mmSize: 0.03, // matchups: own defender's weight, size edge inside, shot selection toward mismatches
-  fitSp: 0.05, fitHd: 0.08, fitRim: 0.06, fitCk: 0.07, // lineup fit: spacing (twos), a ball-handler (turnovers), rim protection (opponent twos), too many ball-dominant scorers
+  fitSp: 0.05, fitHd: 0.08, fitRim: 0.06, fitCk: 0.07, edge: 0.09, edgeMass: 0.3, // lineup fit: spacing (twos), a ball-handler (turnovers), rim protection (opponent twos), too many ball-dominant scorers
 };
 /** Debug: running sums of lineup-fit measures over plays (to centre FIT0). */
-export const fitStats = { n: 0, sh: 0, hd: 0, rp: 0, ck: 0 };
+export const fitStats: Record<string, number> = { n: 0, sh: 0, hd: 0, rp: 0, ck: 0, cdrive: 0, cshoot: 0, cpost: 0, chandle: 0, e2: 0, e3: 0, et: 0 };
 
 interface GP {
   p: Player;
@@ -49,6 +49,7 @@ interface GP {
   ast: number; orb: number; drb: number; stl: number; blk: number; pf: number; def: number; stlZ: number;
   endurMul: number;
   ft: FitTraits;        // lineup-fit traits (shooter, handler, rim protector, creator)
+  ed: ReturnType<typeof edgeTraits>; // role matchups: what he attacks with and what he stops
   e: number;            // energy
   target: number;       // planned minutes
   on: boolean;
@@ -101,6 +102,7 @@ export function prep(p: Player, season: number): GP {
     def: z[K.def], stlZ: z[K.stl],
     endurMul: 1 - 0.12 * p.endur,
     ft: fitTraits(z, posNum(p.pos)),
+    ed: edgeTraits(p.z, p.pos),
     e: Math.max(0.7, 1 - FATIGUE.energy * fat), target: 0, on: false, fouls: 0, st: emptyLine(), starter: false,
     injAt: (p as any).injAt,
   };
@@ -258,7 +260,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   const H = mk(home, true), A = mk(away, false);
   const E = getEraCal(season);
   const leagueTov = rate(K.tov, 0, season);
-  const F0 = fit0(season);
+  const F0 = fit0(season), CT0 = ctr0(season);
   const leaguePf = rate(K.pf, 0, season);
   const pace = seasonPace(season) * (1 + 0.03 * (H.paceZ + A.paceZ) / 2);
   const T0 = (2880 / (2 * pace)) * 0.86 * C.possSec * E.pace;
@@ -640,10 +642,22 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     fitStats.n++; fitStats.sh += fSh; fitStats.hd += fHd; fitStats.rp += fRp; fitStats.ck += ckx;
     const fit2 = C.fitSp * (fSh - F0.sh) - C.fitRim * (fRp - F0.rp);
     const fitAll = -C.fitCk * (ckx - F0.ck);
+    // role matchups: his way of attacking against the defence's answers to it, stronger when his teammates attack the same way
+    const rEdge = (t: 'drive' | 'shoot' | 'post' | 'handle') => {
+      const w = actor.ed.att[t];
+      let nOff = 0, cDef = 0;
+      for (const g of dOn) cDef += g.ed.ctr[t];
+      fitStats['c' + t] += cDef;
+      if (w <= 0) return 0;
+      for (const g of on) if (g !== actor) nOff += g.ed.att[t];
+      return C.edge * w * (1 + C.edgeMass * nOff) * (CT0[t] - cDef);
+    };
+    const e2 = rEdge('drive') + rEdge('post'), e3 = rEdge('shoot'), eT = rEdge('handle');
+    fitStats.e2 += e2; fitStats.e3 += e3; fitStats.et += eT;
 
     // turnover
     // ball pressure: his own defender's hands count as much as the team's
-    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd));
+    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd) - eT);
     if (rng.chance(pTov)) {
       inc(actor, 'tov');
       const sumStl = dOn.reduce((a, g) => a + g.stl, 0);
@@ -683,7 +697,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     // defence on the shot: his own defender matters most, help defence (team) the rest; size inside
     const defOn = C.mmDef * md.def + (1 - C.mmDef) * defZ;
     const size = three ? 0 : C.mmHt * Math.max(-8, Math.min(8, actor.p.ht - md.p.ht));
-    const shift = homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + fitAll + (three ? 0 : fit2) + callShift + (defCall === 'pressure' ? 0.08 : 0) + (fb && !three ? C.fbMake : 0) - (lc ? C.lateClock : 0);
+    const shift = homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + fitAll + (three ? e3 : fit2 + e2) + callShift + (defCall === 'pressure' ? 0.08 : 0) + (fb && !three ? C.fbMake : 0) - (lc ? C.lateClock : 0);
     inc(actor, 'fga');
     if (three) inc(actor, 'tpa');
     const zone = zoneOf(three, actor, fb, afterOrb);
