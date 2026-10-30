@@ -30,7 +30,7 @@ export const C = {
   foulTrip: 0.976, andOne: 0.055, silentPf: 0.075,
   home: 0.045, def: 0.25, stlDef: 0.06, usgEff: 0.35,
   fatigue: 0.55, fatBase: 0.8, tpa: 0.104, drain: 0.00062, recover: 0.0011,
-  possSec: 1.09, putback3: 0.45,
+  possSec: 1.09, putback3: 0.45, zoneGap: 1.0,
   fbStl: 0.55, fbDrb: 0.15, fbMake: 0.45, fbThree: 0.6, lateClock: 0.2, // transition and shot-clock pressure
   star: 1.35, stay: 1.2, depth: 10, minAlpha: 1.0, maxMin: 40,
   mmDef: 0.5, mmHt: 0.01, mmUsg: 0.15, mmSize: 0.03, // matchups: own defender's weight, size edge inside, shot selection toward mismatches
@@ -325,31 +325,48 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     ev('sub', null, parts.join(' · ') || 'Starting lineups', { on: { h: H.on.map(g => g.p.id), a: A.on.map(g => g.p.id) } });
   };
   /**
-   * Where the shot comes from and what it looks like (cosmetic stream only – it never changes a result).
-   * Made twos lean toward the rim and missed ones toward mid-range, as in real shot charts; bigs shoot from
-   * the blocks, guards from the elbows and wings; corner and deep threes depend on the role and the era.
+   * Where the shot is taken from, decided before it goes up – and it matters: a shot at the rim goes in far
+   * more often than a mid-range jumper, a corner three a little more often than one above the break, a deep
+   * three less. The player's overall percentages stay what his ratings say (the zones are scaled so that
+   * their mix averages out to them), so a big who lives at the rim and a guard who lives in the mid-range
+   * keep their real shooting – the location just decides which particular shots go in.
    */
-  const shotSpot = (three: boolean, actor: GP, fb: boolean, afterOrb: boolean, made: boolean, blocked: boolean): { x: number; y: number; rim: boolean; sk: string } => {
+  type Zone = { k: 'rim' | 'mid' | 'corner' | 'deep' | 'arc' | 'putback'; mix: [number, number][]; adj: number };
+  const zoneOf = (three: boolean, actor: GP, fb: boolean, afterOrb: boolean): Zone => {
+    const big = actor.posNum >= 4, season = seasonOf;
+    if (three) {
+      const cP = (actor.posNum <= 1.5 ? 0.14 : big ? 0.3 : 0.38) * (season < 1995 ? 0.6 : season < 2010 ? 0.85 : 1.05);
+      const dP = (season >= 2013 && actor.usg > 0.24 && actor.p3 > 0.36 ? 0.3 : season >= 2008 ? 0.08 : 0.03) * (1 - cP);
+      const mix: [number, number][] = [[cP, 0.2], [dP, -0.4], [1 - cP - dP, 0]];
+      const u = cr.next();
+      return u < cP ? { k: 'corner', mix, adj: 0.2 } : u < cP + dP ? { k: 'deep', mix, adj: -0.4 } : { k: 'arc', mix, adj: 0 };
+    }
+    if (afterOrb) return { k: 'putback', mix: [[1, 0]], adj: 0 };
+    const r = fb ? 0.88 : big ? 0.6 : season >= 2010 ? 0.46 : 0.4;
+    const mix: [number, number][] = [[r, C.zoneGap / 2], [1 - r, -C.zoneGap / 2]];
+    return cr.chance(r) ? { k: 'rim', mix, adj: C.zoneGap / 2 } : { k: 'mid', mix, adj: -C.zoneGap / 2 };
+  };
+  /** make probability from this zone, keeping the player's average over his zone mix at p */
+  const zoneP = (p: number, z: Zone) => {
+    const L = logit(Math.min(0.97, Math.max(0.02, p)));
+    const m = z.mix.reduce((a, [w, adj]) => a + w * sigm(L + adj), 0);
+    return Math.min(0.97, p * sigm(L + z.adj) / (m || p));
+  };
+  /** exactly where the shot comes from inside its zone, and what it looks like (cosmetic stream) */
+  const shotSpot = (three: boolean, actor: GP, fb: boolean, afterOrb: boolean, made: boolean, blocked: boolean, z: Zone): { x: number; y: number; rim: boolean; sk: string } => {
     const big = actor.posNum >= 4, h = hash01(actor.p.id + 'side');
     // every player has a favourite side of the floor
     const side = () => (cr.chance(0.5 + (h - 0.5) * 0.5) ? 1 : -1);
     const at = (ang: number, r: number) => ({ x: 25 + Math.sin(ang) * r, y: Math.max(1, 5.25 + Math.cos(ang) * r) });
     const season = seasonOf;
     if (three) {
-      const corner = (actor.posNum <= 1.5 ? 0.14 : big ? 0.3 : 0.38) * (season < 1995 ? 0.6 : season < 2010 ? 0.85 : 1.05);
-      if (cr.chance(corner)) { const sd = side(); return { x: sd > 0 ? 47.6 + cr.next() * 1.1 : 2.4 - cr.next() * 1.1, y: 1.5 + cr.next() * 8, rim: false, sk: 'three' }; } // behind the 22-ft corner line
-      const deep = season >= 2013 && actor.usg > 0.24 && actor.p3 > 0.36 ? 0.3 : season >= 2008 ? 0.08 : 0.03;
-      const r = 23.9 + (cr.chance(deep) ? 2.5 + cr.next() * 4.5 : cr.next() * 2.4);
+      if (z.k === 'corner') { const sd = side(); return { x: sd > 0 ? 47.6 + cr.next() * 1.1 : 2.4 - cr.next() * 1.1, y: 1.5 + cr.next() * 8, rim: false, sk: 'three' }; } // behind the 22-ft corner line
+      const r = 23.9 + (z.k === 'deep' ? 2.6 + cr.next() * 4.4 : cr.next() * 2.4);
       const ang = side() * (actor.posNum <= 1.5 ? cr.next() * 0.55 : 0.25 + cr.next() * 0.85);
       return { ...at(ang, r), rim: false, sk: actor.usg > 0.25 && cr.chance(0.35) ? 'stepback' : 'three' };
     }
     if (afterOrb) { const p = at((cr.next() - 0.5) * 2.2, 0.8 + cr.next() * 3); return { ...p, rim: true, sk: big && cr.chance(dunkP(actor) * 0.7) && made ? 'dunk' : 'putback' }; }
-    let pRim = fb ? 0.88 : big ? 0.6 : 0.4;
-    // Bayes: P(rim | made) is higher than P(rim) because rim shots go in more often
-    const fgR = 0.62, fgM = 0.4;
-    if (!blocked) pRim = made ? pRim * fgR / (pRim * fgR + (1 - pRim) * fgM) : pRim * (1 - fgR) / (pRim * (1 - fgR) + (1 - pRim) * (1 - fgM));
-    else pRim = Math.max(pRim, 0.75);
-    if (cr.chance(pRim)) {
+    if (z.k === 'rim') {
       const ang = side() * (0.15 + cr.next() * 1.1), r = 1 + cr.next() * 3.2;
       const dunk = cr.chance(dunkP(actor) * (fb ? 1.6 : 1) * (made ? 1.25 : 0.12)) && !blocked; // a missed dunk is rare
       return { ...at(ang, r), rim: true, sk: dunk ? 'dunk' : 'layup' };
@@ -590,7 +607,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         if (log) ev('tov', off, st === md ? `${short(st.p.name)} strips ${an}` : `${an}'s pass is picked off by ${short(st.p.name)}`, { m: md.p.id, v: st === md ? 'strip' : 'pick', ...tag });
       } else if (log) {
         const r = cr.next();
-        const v = lc && r < 0.4 ? 'clock' : r < 0.45 ? 'bad' : r < 0.7 ? 'travel' : 'oob';
+        const v = lc && r < 0.18 ? 'clock' : r < 0.45 ? 'bad' : r < 0.7 ? 'travel' : 'oob';
         ev('tov', off, v === 'clock' ? `Shot clock violation on ${off === H ? '{h}' : '{a}'}` : v === 'bad' ? `${an} throws it away` : v === 'travel' ? `${an} travels` : `${an} loses it out of bounds`, { m: md.p.id, v, ...tag });
       }
       return 'end';
@@ -615,20 +632,23 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const shift = homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + callShift + (defCall === 'pressure' ? 0.08 : 0) + (fb && !three ? C.fbMake : 0) - (lc ? C.lateClock : 0);
     inc(actor, 'fga');
     if (three) inc(actor, 'tpa');
+    const zone = zoneOf(three, actor, fb, afterOrb);
     let made: boolean;
     let blocker: GP | null = null;
     if (three) {
-      made = rng.chance(sigm(logit(actor.p3) + C.p3 + E.p3 + shift));
+      made = rng.chance(zoneP(sigm(logit(actor.p3) + C.p3 + E.p3 + shift), zone));
     } else {
-      const pBlk = Math.min(0.3, dOn.reduce((a, g) => a + g.blk, 0) * C.blk * E.blk);
-      const pMake = sigm(logit(actor.p2) + C.p2 + E.p2 + shift);
+      // shots at the rim get blocked far more often than jumpers (same total)
+      const rimW = zone.mix[0][0], blkZ = zone.k === 'rim' ? 1.4 / (rimW * 1.4 + (1 - rimW) * 0.45) : zone.k === 'mid' ? 0.45 / (rimW * 1.4 + (1 - rimW) * 0.45) : 1;
+      const pBlk = Math.min(0.3, dOn.reduce((a, g) => a + g.blk, 0) * C.blk * E.blk * blkZ);
+      const pMake = zoneP(sigm(logit(actor.p2) + C.p2 + E.p2 + shift), zone);
       if (rng.chance(pBlk)) {
         blocker = dOn[rng.weighted(dOn.map(g => g.blk * (g === md ? 2.5 : 1)))];
         inc(blocker, 'blk');
         made = false;
       } else made = rng.chance(Math.min(0.97, pMake / (1 - pBlk)));
     }
-    const spot = log ? shotSpot(three, actor, fb, afterOrb, made, !!blocker) : { x: 0, y: 0, rim: false, sk: '' };
+    const spot = log ? shotSpot(three, actor, fb, afterOrb, made, !!blocker, zone) : { x: 0, y: 0, rim: zone.k === 'rim', sk: '' };
     const what = three ? 'a three' : afterOrb ? 'a putback' : spot.rim ? 'at the rim' : 'a mid-range jumper';
     const MADE: Record<string, string> = { dunk: fb ? 'throws it down on the break' : afterOrb ? 'slams home the putback' : 'throws it down', layup: fb ? 'scores on the break' : 'scores at the rim', putback: 'scores on the putback', hook: 'hits a hook shot', turnaround: 'hits a turnaround jumper', floater: 'drops in a floater', fadeaway: 'hits a fadeaway', jumper: 'hits a mid-range jumper' };
     const MISS: Record<string, string> = { dunk: 'misses at the rim', layup: 'misses at the rim', putback: 'misses the putback', hook: 'misses a hook shot', turnaround: 'misses a turnaround', floater: 'misses a floater', fadeaway: 'misses a fadeaway', jumper: 'misses a mid-range jumper' };

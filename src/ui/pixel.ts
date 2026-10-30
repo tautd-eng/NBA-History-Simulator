@@ -980,54 +980,137 @@ export class PixelCourt {
     let t = tC;
     const left = () => tD - t;
     if (slow && left() > 2) {
+      // milking the clock: the handler works his man up top – hesitations, crossovers, a step one way and back –
+      // while the others stay spread wide; the play starts with seven or eight seconds to go
       add(t + 0.2, () => {
         const f = this.P(vh); if (f) this.go(f, topX - s * 2, 25, WALK);
         const wide = ['lc', 'rc', 'lw', 'rw'];
         this.ord(off).filter(p => p.pid !== vh).forEach((p, i) => { const q = this.spot(off, wide[i] ?? 'lw'); this.go(p, q.x, q.d, JOG); });
       });
+      const vhM = vh;
+      for (let t2 = t + 1.6, i = 0; t2 < tD - 1; t2 += 1.3 + r() * 0.9, i++) {
+        const dx = (r() - 0.5) * 6, dd = (i % 2 ? 1 : -1) * (2 + r() * 4);
+        add(t2, () => { const f = this.P(vhM); if (f && this.ball.holder === vhM) { this.go(f, topX - s * 2 + dx, 25 + dd, WALK * 1.3); f.xover = 0.28; f.hand = -(f.hand ?? 1); } });
+      }
       t = tD;
     }
+    // --- the half-court offence: real sets, as each era ran them
+    const era = this.o.season ?? 2000;
+    const W: Record<string, number> = era < 1995
+      ? { post: 0.3, away: 0.2, swing: 0.2, pindown: 0.15, givego: 0.1, probe: 0.05 }
+      : era < 2010
+        ? { pnr: 0.2, swing: 0.18, post: 0.15, pindown: 0.12, away: 0.1, probe: 0.1, horns: 0.07, dho: 0.05, skip: 0.03 }
+        : { pnr: 0.25, swing: 0.15, probe: 0.15, dho: 0.12, horns: 0.1, skip: 0.04, pindown: 0.07, post: 0.05, givego: 0.03 };
+    const NEED: Record<string, number> = { swing: 1.8, skip: 1.8, probe: 2, away: 2.3, post: 2.6, pindown: 2.5, givego: 2.4, dho: 2.5, pnr: 3, horns: 3.2 };
+    const NAME: Record<string, string> = { pindown: 'pin-down', dho: 'hand-off', horns: 'Horns', pnr: 'pick and roll', post: 'post entry', skip: 'skip pass', givego: 'give-and-go', away: 'screen away' };
+    let lastSet = '';
     while (left() > 2.1) {
-      const dur = Math.min(left() - 0.2, 2.2 + r() * 1.2);
-      // how teams of that era move the ball: post-ups and screens away in the 80s and 90s, swings and drives later
-      const era = this.o.season ?? 2000;
-      const [cSwing, cScreen, cProbe] = era < 1995 ? [0.33, 0.56, 0.68] : era < 2010 ? [0.4, 0.64, 0.8] : [0.46, 0.66, 0.9];
-      const kind = r();
-      const mates = this.ord(off).filter(p => p.pid !== vh);
       const at = t;
-      if (kind < cSwing && mates.length) {
-        // swing it to a wing, everybody shifts
-        // the ball finds the stars more often
-        const wings = mates.filter(p => this.posN(p.pid) <= 3.5);
-        const star = mates.filter(p => this.starOf(p.pid) > 0).sort((a, b) => this.starOf(b.pid) - this.starOf(a.pid))[0];
-        const w = (star && r() < 0.45 ? star : wings[Math.floor(r() * 3) % Math.max(1, wings.length)]) ?? mates[0];
-        const to = w.pid;
-        const vhPrev = vh;
-        const side1 = r() < 0.5, side2 = r() < 0.5;
-        add(at, () => { const q = this.spot(off, side1 ? 'lw' : 'rw', 3, r); this.go(w, q.x, q.d, JOG); });
-        add(at + 0.6, () => this.pass(to));
-        add(at + 1.1, () => { const pr = this.P(vhPrev); if (pr) { const q = this.spot(off, side2 ? 'ls' : 'rs', 3, r); this.go(pr, q.x, q.d, JOG); } });
-        vh = to;
-      } else if (kind < cScreen && mates.length >= 2) {
-        // screen away: a big screens for a wing, they swap spots
-        const scr = mates.slice().sort((p, q) => this.posN(q.pid) - this.posN(p.pid))[0];
-        const cut = mates.find(p => p !== scr) ?? mates[0];
-        add(at, () => { const dd = this.defOf(cut.pid); const tgt = dd ?? cut; this.go(scr, tgt.x + (r() - 0.5), tgt.d + (cut.d < 25 ? 2 : -2), JOG); });
-        add(at + 0.75, () => this.setPose(scr, 'screen', 0.8));
-        add(at + 0.9, () => { this.go(cut, scr.x - s * 3, scr.d + (cut.d < 25 ? 6 : -6), RUN); });
-        add(at + 1.6, () => { const q = this.spot(off, cut.d < 25 ? 'le' : 're', 3, r); this.go(scr, q.x, q.d, JOG); });
-      } else if (kind < cProbe) {
-        // probe: drive into the lane and kick it back out
-        const f = vh;
-        add(at, () => { const p = this.P(f); if (p) this.go(p, B.x - s * 13, 25 + (r() - 0.5) * 10, RUN); });
-        add(at + 1.2, () => { const p = this.P(f); if (p) this.go(p, B.x - s * 23, p.d < 25 ? 12 : 38, JOG); });
-      } else if (mates.length) {
-        // post touch
-        const bg = mates.slice().sort((p, q) => this.posN(q.pid) - this.posN(p.pid))[0];
-        const back = vh;
-        add(at, () => { const q = this.spot(off, r() < 0.5 ? 'lb' : 'rb'); this.go(bg, q.x, q.d, JOG); });
-        add(at + 0.7, () => this.pass(bg.pid));
-        add(at + 1.7, () => this.pass(back));
+      const mates = this.ord(off).filter(p => p.pid !== vh);
+      const bigs = mates.filter(p => this.posN(p.pid) >= 3.75).sort((p, q) => this.posN(q.pid) - this.posN(p.pid));
+      const wings = mates.filter(p => this.posN(p.pid) <= 3.5);
+      const avail = Object.entries(W).filter(([k]) => NEED[k] <= left() - 0.2 && (k !== lastSet || k === 'swing') && !((k === 'pnr' || k === 'dho' || k === 'horns' || k === 'pindown' || k === 'post') && !bigs.length) && !(k === 'horns' && bigs.length < 2 && era < 2010) && !((k === 'pindown' || k === 'givego') && !wings.length));
+      let u = r() * avail.reduce((a, [, w]) => a + w, 0), set = 'swing';
+      for (const [k, w] of avail) if ((u -= w) <= 0) { set = k; break; }
+      lastSet = set;
+      const dur = Math.min(left() - 0.2, NEED[set] + r() * 0.8);
+      const vh0 = vh;
+      const star = mates.filter(p => this.starOf(p.pid) > 0).sort((a, b) => this.starOf(b.pid) - this.starOf(a.pid))[0];
+      const pickWing = () => (star && wings.includes(star) && r() < 0.45 ? star : wings[Math.floor(r() * wings.length)]) ?? mates[0];
+      if (NAME[set] && r() < 0.8) add(at, () => this.call(off, `${this.abbr(off)} · ${NAME[set]}`));
+      switch (set) {
+        case 'swing': {
+          // swing it to a wing, everybody shifts
+          const w = pickWing(); const side1 = r() < 0.5, side2 = r() < 0.5;
+          add(at, () => { const q = this.spot(off, side1 ? 'lw' : 'rw', 3, r); this.go(w, q.x, q.d, JOG); });
+          add(at + 0.6, () => this.pass(w.pid));
+          add(at + 1.1, () => { const pr = this.P(vh0); if (pr) { const q = this.spot(off, side2 ? 'ls' : 'rs', 3, r); this.go(pr, q.x, q.d, JOG); } });
+          vh = w.pid; break;
+        }
+        case 'skip': {
+          // a skip pass over the top to the far corner – the defence has to fly
+          const hp = this.P(vh0); const far = mates.slice().sort((p, q) => hyp(q.x - (hp?.x ?? 0), q.d - (hp?.d ?? 25)) - hyp(p.x - (hp?.x ?? 0), p.d - (hp?.d ?? 25)))[0];
+          if (!far) break;
+          add(at + 0.3, () => { const q = this.spot(off, (hp?.d ?? 25) < 25 ? 'rc' : 'lc', 2, r); this.go(far, q.x, q.d, RUN); });
+          add(at + 0.9, () => this.pass(far.pid, false, true));
+          vh = far.pid; break;
+        }
+        case 'probe': {
+          // probe: drive into the lane, draw help, kick it back out
+          const f = vh0;
+          add(at, () => { const p = this.P(f); if (p) this.go(p, B.x - s * 13, 25 + (r() - 0.5) * 10, RUN); });
+          add(at + 1.0, () => this.helpSide(off, f, null));
+          add(at + 1.2, () => { const p = this.P(f); if (p) this.go(p, B.x - s * 23, p.d < 25 ? 12 : 38, JOG); });
+          break;
+        }
+        case 'away': {
+          // screen away: a big screens for a wing on the other side, they swap spots
+          const scr = bigs[0] ?? mates[0], cut = mates.find(p => p !== scr) ?? mates[0];
+          add(at, () => { const dd = this.defOf(cut.pid); const tgt = dd ?? cut; this.go(scr, tgt.x + (r() - 0.5), tgt.d + (cut.d < 25 ? 2 : -2), JOG); });
+          add(at + 0.75, () => this.setPose(scr, 'screen', 0.8));
+          add(at + 0.9, () => { this.go(cut, scr.x - s * 3, scr.d + (cut.d < 25 ? 6 : -6), RUN); });
+          add(at + 1.6, () => { const q = this.spot(off, cut.d < 25 ? 'le' : 're', 3, r); this.go(scr, q.x, q.d, JOG); });
+          break;
+        }
+        case 'post': {
+          // post entry: the big seals on the block, the passer cuts through, the ball comes back out
+          const bg = bigs[0]; const back = vh0; const blk = r() < 0.5 ? 'lb' : 'rb';
+          add(at, () => { const q = this.spot(off, blk); this.go(bg, q.x, q.d, JOG); const d = this.defOf(bg.pid); if (d) d.beh = { k: 'guard', man: bg.pid, tight: 1.5 }; });
+          add(at + 0.8, () => this.pass(bg.pid, true));
+          add(at + 1.1, () => { const p = this.P(back); if (p) this.go(p, B.x - s * 6, blk === 'lb' ? 36 : 14, RUN); }); // split cut
+          add(at + 1.4, () => { const a = this.P(bg.pid); if (a) a.face = -s; });
+          add(at + 2.1, () => { const p = this.P(back); if (p) { const q = this.spot(off, blk === 'lb' ? 'rw' : 'lw', 2, r); this.go(p, q.x, q.d, RUN); } });
+          const out = pickWing();
+          add(at + 2.3, () => this.pass(out.pid));
+          vh = out.pid; break;
+        }
+        case 'pindown': {
+          // pin-down: the big screens down for a wing who comes up from the baseline to catch on the wing
+          const w = pickWing(), scr = bigs[0];
+          const sideL = r() < 0.5;
+          add(at, () => { const q = this.spot(off, sideL ? 'lb' : 'rb'); this.go(w, q.x, q.d + (sideL ? -3 : 3), JOG); const q2 = this.spot(off, sideL ? 'le' : 're'); this.go(scr, q2.x, q2.d, JOG); });
+          add(at + 0.9, () => this.setPose(scr, 'screen', 0.9));
+          add(at + 1.0, () => { const q = this.spot(off, sideL ? 'lw' : 'rw'); this.go(w, q.x, q.d, SPRINT); const d = this.defOf(w.pid); if (d) d.beh = { k: 'follow', pid: w.pid, dx: -s * 1.5, dd: sideL ? 2 : -2 }; });
+          add(at + 1.7, () => this.pass(w.pid));
+          add(at + 1.9, () => { const d = this.defOf(w.pid); if (d) d.beh = { k: 'guard', man: w.pid, tight: 0 }; const q = this.spot(off, sideL ? 'lb' : 'rb'); this.go(scr, q.x, q.d, JOG); });
+          vh = w.pid; break;
+        }
+        case 'givego': {
+          // give-and-go: pass to the wing, cut hard to the rim, clear out to the corner when it is not open
+          const w = pickWing(); const cut = vh0;
+          add(at, () => { const q = this.spot(off, w.d < 25 ? 'lw' : 'rw', 2, r); this.go(w, q.x, q.d, JOG); });
+          add(at + 0.5, () => this.pass(w.pid));
+          add(at + 0.8, () => { const p = this.P(cut); if (p) this.go(p, B.x - s * 3, 25 + (w.d < 25 ? -3 : 3), SPRINT); });
+          add(at + 1.8, () => { const p = this.P(cut); if (p) { const q = this.spot(off, w.d < 25 ? 'rc' : 'lc', 2, r); this.go(p, q.x, q.d, RUN); } });
+          vh = w.pid; break;
+        }
+        case 'dho': {
+          // hand-off: the big takes the ball out top and hands it to a guard curling around him
+          const bg = bigs[0], g = vh0, w = pickWing();
+          add(at, () => { this.go(bg, topX - s * 1, 25 + (r() - 0.5) * 6, JOG); });
+          add(at + 0.7, () => this.pass(bg.pid));
+          add(at + 0.9, () => { this.go(w, topX + s * 4, 25 + (r() < 0.5 ? -8 : 8), RUN); const p = this.P(g); if (p) { const q = this.spot(off, p.d < 25 ? 'lc' : 'rc', 2, r); this.go(p, q.x, q.d, JOG); } });
+          add(at + 1.5, () => { const b = this.P(bg.pid); if (b) this.go(w, b.x - s * 1.2, b.d + 1.5, SPRINT); });
+          add(at + 1.9, () => { this.pass(w.pid, true); this.setPose(this.P(bg.pid), 'screen', 0.6); });
+          add(at + 2.1, () => this.go(w, B.x - s * 15, w.d < 25 ? 18 : 32, RUN));
+          vh = w.pid; break;
+        }
+        case 'pnr': case 'horns': {
+          // pick and roll up top (Horns: both bigs start at the elbows, one screens, the other pops)
+          const scr = bigs[0], pop = set === 'horns' ? bigs[1] ?? mates.find(p => p !== scr) : null;
+          if (set === 'horns') add(at, () => { const a = this.spot(off, 'le'), b = this.spot(off, 're'); this.go(scr, a.x, a.d, JOG); if (pop) this.go(pop, b.x, b.d, JOG); });
+          add(at + (set === 'horns' ? 0.7 : 0), () => { const h = this.P(vh0); if (h) this.go(scr, h.x + s * 2, h.d + (h.d < 25 ? 2.5 : -2.5), RUN); });
+          add(at + (set === 'horns' ? 1.4 : 0.8), () => this.setPose(scr, 'screen', 0.7));
+          add(at + (set === 'horns' ? 1.6 : 1.0), () => {
+            const h = this.P(vh0); if (!h) return;
+            this.go(h, B.x - s * 15, 25 + (h.d < 25 ? 6 : -6), RUN);
+            const dh = this.defOf(vh0); if (dh) dh.beh = { k: 'follow', pid: h.pid, dx: -s * 2.6, dd: h.d < 25 ? -1 : 1 };
+          });
+          add(at + (set === 'horns' ? 2.1 : 1.5), () => { const q = this.spot(off, r() < 0.5 ? 'lb' : 'rb'); this.go(scr, q.x, q.d, RUN); if (pop) { const q2 = this.spot(off, 'ls'); this.go(pop, q2.x, q2.d, JOG); } });
+          const to = pop && r() < 0.4 ? pop : pickWing();
+          add(at + (set === 'horns' ? 2.6 : 2.1), () => { const dh = this.defOf(vh0); if (dh) dh.beh = { k: 'guard', man: vh0!, tight: 0 }; this.pass(to.pid); });
+          vh = to.pid; break;
+        }
       }
       { const vhHere = vh; add(at + dur - 0.5, () => this.respace(off, [this.ball.holder ?? vhHere], JOG, r)); }
       t += dur;
@@ -1467,6 +1550,16 @@ export class PixelCourt {
       });
       if (v === 'strip') add(L - 0.25, () => { const st = this.P(stl); if (st) { this.setPose(st, 'block', 0.35); const a = A(); if (a) st.face = Math.sign(a.x - st.x) || st.face; } });
       if (v === 'travel') add(L - 0.5, () => { const a = A(); if (a) { this.go(a, a.x + s * 1.5, a.d, WALK); this.setPose(a, 'gather', 0.45); } });
+    }
+    if (v === 'clock') {
+      // the defence takes everything away: the drive is cut off, the kick-out is run off the line, no shot in time
+      const mates = this.ord(off).filter(p => p.pid !== pid);
+      const out = mates.filter(p => this.posN(p.pid) <= 3.5)[0] ?? mates[0];
+      add(Math.max(0, L - 3.4), () => { const a = A(); if (!a) return; this.go(a, B.x - s * 14, a.d < 25 ? 18 : 32, RUN); const da = pressure(); if (da) { da.beh = { k: 'mark', pid: a.pid, dist: 1.6 }; this.label2 = { pid: da.pid, t: 2 }; } this.label = { pid: a.pid, t: 2 }; });
+      add(Math.max(0, L - 2.6), () => { const a = A(); if (a) { this.helpSide(off, pid, null); this.go(a, a.x - s * 3, a.d, WALK); a.xover = 0.28; a.hand = -(a.hand ?? 1); } });
+      if (out) add(Math.max(0, L - 1.8), () => { this.pass(out.pid); });
+      if (out) add(Math.max(0, L - 1.4), () => { const d = this.defOf(out.pid); if (d) { d.beh = { k: 'mark', pid: out.pid, dist: 1.2 }; this.setPose(d, 'contest', 1.4); } });
+      if (out) add(Math.max(0, L - 0.9), () => { const o = this.P(out.pid); if (o) { this.go(o, o.x + s * 1.5, o.d, WALK); this.setPose(o, 'gather', 0.5); } });
     }
     if (v === 'pick' || v === 'bad') {
       add(T(0), () => { this.label = pid ? { pid, t: 2 } : null; const st = this.P(stl); if (st && tgt) { const a = A(); if (a) this.go(st, (a.x + tgt.x) / 2 + s * 2.5, (a.d + tgt.d) / 2, JOG); this.label2 = { pid: st.pid, t: 2 }; } });
