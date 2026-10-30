@@ -125,6 +125,7 @@ export interface PbpEv {
   txt: string;
   hs: number; as: number;
   x?: number; y?: number;
+  cr?: string;                              // who set the shot up (the assist, or the pass before a miss)
   pl?: string;                              // the play that produced it (iso, pnrDrive, pnrPull, roll, pop, post, cut, kick, offscreen, drive, pullup, fb, putback)
   sk?: string;                              // shot kind (dunk, layup, putback, hook, turnaround, floater, jumper, fadeaway, three, stepback)
   m?: string;                               // primary defender on the play (matchup)
@@ -389,26 +390,39 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
    * Roles decide: a centre who does not handle the ball scores from the post, rolls or cuts – he does not
    * drive from the three-point line; ball-dominant stars isolate; shooters come off screens or spot up.
    */
-  const playOf = (actor: GP, three: boolean, spot: { rim: boolean; sk: string }, fb: boolean, afterOrb: boolean, passed: boolean): string => {
+  const playOf = (actor: GP, mates: GP[], three: boolean, spot: { rim: boolean; sk: string }, fb: boolean, afterOrb: boolean, passer: GP | null): { pl: string; cr?: string } => {
     const big = actor.posNum >= 4, handler = actor.ast >= 0.2 && actor.usg >= 0.22, star = actor.usg >= 0.27;
     const pick = (opts: [string, number][]) => { let r = cr.next() * opts.reduce((a, o) => a + o[1], 0); for (const [k, w] of opts) if ((r -= w) <= 0) return k; return opts[0][0]; };
-    if (afterOrb) return spot.rim ? 'putback' : 'kick';
-    if (fb) return 'fb';
-    if (spot.sk === 'hook' || spot.sk === 'turnaround') return 'post';
+    const passed = !!passer, by = passer?.p.id;
+    // the passer decides how the shot came: a post-up big who draws a double team kicks it out to the open man;
+    // a guard who drives draws help and kicks to a shooter – who either lets it fly or attacks the late closeout
+    const postBig = !!passer && passer.posNum >= 4 && passer.tpr < 0.15;
+    const driver = !!passer && passer.posNum <= 3.5;
+    const P = (pl: string) => ({ pl, cr: by });
+    if (afterOrb) return { pl: spot.rim ? 'putback' : 'kick', cr: spot.rim ? undefined : by };
+    if (fb) return P('fb');
+    if (spot.sk === 'hook' || spot.sk === 'turnaround') return { pl: 'post' };
     if (three) {
-      if (passed) return big ? 'pop' : pick([['kick', 0.55], ['offscreen', 0.45]]);
-      if (big && !handler) return 'pop';
-      return star && cr.chance(0.5) ? 'iso' : pick([['pnrPull', 0.5], ['pullup', 0.5]]);
+      if (passed) return P(big ? 'pop' : postBig ? pick([['double', 0.7], ['kick', 0.3]]) : driver ? pick([['kick', 0.6], ['offscreen', 0.4]]) : pick([['kick', 0.5], ['offscreen', 0.5]]));
+      if (big && !handler) return { pl: 'pop' };
+      return { pl: star && cr.chance(0.5) ? 'iso' : pick([['pnrPull', 0.5], ['pullup', 0.5]]) };
     }
     if (spot.rim) {
-      if (big && !handler) return passed ? pick([['roll', 0.55], ['cut', 0.25], ['post', 0.2]]) : pick([['post', 0.6], ['roll', 0.25], ['cut', 0.15]]);
-      if (big) return passed ? pick([['roll', 0.4], ['cut', 0.3], ['drive', 0.3]]) : pick([['iso', 0.4], ['drive', 0.3], ['post', 0.3]]);
-      if (passed) return pick([['cut', 0.5], ['drive', 0.5]]);
-      return star && cr.chance(0.55) ? 'iso' : pick([['drive', 0.5], ['pnrDrive', 0.5]]);
+      if (big && !handler) return passed ? P(pick([['roll', 0.55], ['cut', 0.25], ['post', 0.2]])) : { pl: pick([['post', 0.6], ['roll', 0.25], ['cut', 0.15]]) };
+      if (big) return passed ? P(pick([['roll', 0.4], ['cut', 0.3], ['drive', 0.3]])) : { pl: pick([['iso', 0.4], ['drive', 0.3], ['post', 0.3]]) };
+      if (passed) return P(postBig ? pick([['double', 0.45], ['cut', 0.55]]) : pick([['cut', 0.4], ['kickdrive', 0.4], ['drive', 0.2]]));
+      return { pl: star && cr.chance(0.55) ? 'iso' : pick([['drive', 0.5], ['pnrDrive', 0.5]]) };
     }
-    if (big && !handler) return passed ? 'pop' : 'post';
-    if (passed) return pick([['offscreen', 0.5], ['kick', 0.5]]);
-    return star && cr.chance(0.45) ? 'iso' : pick([['pullup', 0.5], ['pnrPull', 0.5]]);
+    if (big && !handler) return passed ? P('pop') : { pl: 'post' };
+    if (passed) return P(postBig ? pick([['double', 0.6], ['kick', 0.4]]) : pick([['offscreen', 0.45], ['kick', 0.4], ['kickdrive', 0.15]]));
+    return { pl: star && cr.chance(0.45) ? 'iso' : pick([['pullup', 0.5], ['pnrPull', 0.5]]) };
+  };
+  /** a teammate who could have made the pass (for misses, which have no assist): the playmakers most often */
+  const passerOf = (mates: GP[]): GP | null => {
+    if (!mates.length) return null;
+    let r = cr.next() * mates.reduce((a, g) => a + g.ast + 0.02, 0);
+    for (const g of mates) if ((r -= g.ast + 0.02) <= 0) return g;
+    return mates[0];
   };
   /** how likely a finish at the rim is a dunk: size, finishing and era */
   const dunkP = (g: GP) => Math.max(0.03, Math.min(0.8, (0.12 + 0.05 * (g.p.ht - 77) + 1.4 * (g.p2 - 0.5)) * (seasonOf < 1978 ? 0.5 : 1)));
@@ -659,10 +673,12 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       const mates = on.filter(g => g !== actor);
       const pAst = Math.min(0.95, C.ast * E.ast * mates.reduce((a, g) => a + g.ast, 0) * (three ? 1.18 : 0.94));
       let astTxt = '';
-      if (rng.chance(pAst)) { const as = mates[rng.weighted(mates.map(g => g.ast))]; inc(as, 'ast'); astTxt = ` (assist ${short(as.p.name)})`; }
-      const pl = log ? playOf(actor, three, spot, fb, afterOrb, !!astTxt) : undefined;
+      let asG: GP | null = null;
+      if (rng.chance(pAst)) { const as = mates[rng.weighted(mates.map(g => g.ast))]; inc(as, 'ast'); astTxt = ` (assist ${short(as.p.name)})`; asG = as; }
+      const play = log ? playOf(actor, mates, three, spot, fb, afterOrb, asG) : undefined;
+      const pl = play?.pl;
       ended = 'make';
-      ev(three ? 'make3' : 'make2', off, three ? `${an} hits a ${spot.sk === 'stepback' && !astTxt ? 'step-back ' : ''}three${astTxt}` : `${an} ${MADE[spot.sk] ?? `scores ${fb ? 'on the break' : what}`}${astTxt}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, pl, m: md.p.id, ...tag });
+      ev(three ? 'make3' : 'make2', off, three ? `${an} hits a ${spot.sk === 'stepback' && !astTxt ? 'step-back ' : ''}three${astTxt}` : `${an} ${MADE[spot.sk] ?? `scores ${fb ? 'on the break' : what}`}${astTxt}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, pl, cr: play?.cr, m: md.p.id, ...tag });
       if (!three && rng.chance(C.andOne)) {
         foulOn(def);
         ftTrip(off, def, actor, 1);
@@ -670,7 +686,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       }
       return 'end';
     }
-    ev(three ? 'miss3' : 'miss2', off, blocker ? `${short(blocker.p.name)} blocks ${an}${spot.sk ? `'s ${({ dunk: 'dunk attempt', stepback: 'step-back' } as Record<string, string>)[spot.sk] ?? spot.sk}` : ''}` : three ? `${an} misses a three` : `${an} ${MISS[spot.sk] ?? `misses ${what === 'at the rim' ? 'at the rim' : what === 'a putback' ? 'the putback' : 'a mid-range jumper'}`}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, pl: log ? playOf(actor, three, spot, fb, afterOrb, cr.chance(three ? 0.55 : spot.rim ? 0.4 : 0.35)) : undefined, m: md.p.id, ...tag });
+    ev(three ? 'miss3' : 'miss2', off, blocker ? `${short(blocker.p.name)} blocks ${an}${spot.sk ? `'s ${({ dunk: 'dunk attempt', stepback: 'step-back' } as Record<string, string>)[spot.sk] ?? spot.sk}` : ''}` : three ? `${an} misses a three` : `${an} ${MISS[spot.sk] ?? `misses ${what === 'at the rim' ? 'at the rim' : what === 'a putback' ? 'the putback' : 'a mid-range jumper'}`}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, ...(log ? (() => { const ms = on.filter(g => g !== actor); const pp = playOf(actor, ms, three, spot, fb, afterOrb, cr.chance(three ? 0.55 : spot.rim ? 0.4 : 0.35) ? passerOf(ms) : null); return { pl: pp.pl, cr: pp.cr }; })() : {}), m: md.p.id, ...tag });
     return rebound(off, def, false);
   }
 

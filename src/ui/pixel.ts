@@ -1127,10 +1127,11 @@ export class PixelCourt {
   // ------------------------------------------------------------ shots
   private planShot(k: number, L: number, add: Add, r: () => number) {
     const items = this.tl!.items, e = items[k].e;
+    const abs = (t: number) => items[k].a + t;
     const off = e.s as Side, def = other(off), B = this.basket(off), s = this.dir(off);
     const actor = this.pidOf(e, 'fga');
     const blocker = this.pidOf(e, 'blk');
-    let assist = this.pidOf(e, 'ast');
+    let assist = this.pidOf(e, 'ast') ?? (e.cr && this.players.has(e.cr) ? e.cr : null); // the assist, or who set up the miss
     const made = e.k.startsWith('make'), three = e.k.endsWith('3');
     const ex = e.x ?? 25, ey = e.y ?? 12;
     const S = { x: off === 'h' ? LEN - ey : ey, d: off === 'h' ? ex : WID - ex };
@@ -1166,10 +1167,12 @@ export class PixelCourt {
     const FL: Record<string, number> = { dunk: 0.14, tip: 0.35, layup: 0.45, floater: 0.7, hook: 0.62 };
     const fl = Math.min(L * 0.45, FL[motion] ?? 0.62 + dist0 * 0.017);
     const release = L - fl;
-    const creator = ['roll', 'pop', 'kick', 'cut', 'offscreen'].includes(type) ? (assist ?? pg) : actor;
+    const postMan = o.filter(p => p.pid !== actor && this.inside(p.pid)).sort((p, q) => this.posN(q.pid) - this.posN(p.pid))[0]?.pid ?? null;
+    if (type === 'double' && !(assist && this.inside(assist)) && !postMan) type = rim ? 'cut' : 'kick';
+    const creator = type === 'double' ? (assist && this.inside(assist) ? assist : postMan) : ['roll', 'pop', 'kick', 'kickdrive', 'cut', 'offscreen'].includes(type) ? (assist ?? pg) : actor;
     const screener = o.filter(p => p.pid !== actor && p.pid !== creator).sort((p, q) => this.posN(q.pid) - this.posN(p.pid))[0]?.pid ?? null;
     const DUR: Record<string, number> = { iso: 3.4, putback: 0.35, fb: 0, roll: 2.9, pop: 2.7, pnrDrive: 2.6, pnrPull: 2.5, drive: 2.6, pullup: 1.9, post: 2.8, kick: 2.1, offscreen: 2.1, cut: 1.6 };
-    let finDur = DUR[type] ?? 2;
+    let finDur = type === 'double' ? (rim ? 3.7 : 3.0) : type === 'kickdrive' ? 3.2 : DUR[type] ?? 2;
     if (type === 'fb') {
       const hpid = h.pid && this.players.has(h.pid) ? h.pid : this.ball.holder;
       const hp = this.P(hpid);
@@ -1273,6 +1276,48 @@ export class PixelCourt {
         add(T(2.15), () => this.go(A(), S.x, S.d, RUN / c));
         break;
       }
+      case 'double': {
+        // the big posts up, the shooter's man leaves him to double – the big kicks it out to the open man
+        const sideL = S.d < 25;
+        const outSpot = rim ? this.spot(off, sideL ? 'lw' : 'rw') : S;
+        cap(`${name(creator)} posts up`);
+        add(T(0), () => {
+          const q = this.spot(off, sideL ? 'lb' : 'rb'); const b = this.P(creator); if (b) this.go(b, q.x, q.d, RUN / c);
+          const db = this.defOf(creator); if (db && creator) db.beh = { k: 'guard', man: creator, tight: 1.5 };
+          this.go(A(), outSpot.x, outSpot.d, JOG / c);
+        });
+        add(T(0.8), () => this.pass(creator, true));
+        add(T(1.3), () => { const b = this.P(creator); if (b) { this.go(b, b.x + s * 1.5, b.d + (25 - b.d) * 0.1, WALK); b.face = -s; } });
+        add(T(1.6), () => {
+          const da = DA(), b = this.P(creator); if (!da || !b) return;
+          da.beh = { k: 'mark', pid: b.pid, dist: 1.3 };
+          this.sayAt(da.pid, 'DOUBLE TEAM', '#9fd3ff', 1.2); this.label2 = { pid: da.pid, t: 1.6 }; this.label = { pid: b.pid, t: 1.4 };
+          this.call(off, `Double team on ${name(creator)}!`);
+        });
+        add(T(2.3), () => { const b = this.P(creator); if (b) b.face = Math.sign((A()?.x ?? b.x) - b.x) || b.face; this.pass(actor); this.call(off, `${name(creator)} kicks it out to ${name(actor)} – open!`); });
+        add(T(2.5), () => { const da = DA(), a = A(); if (da && a) { da.beh = { k: 'mark', pid: a.pid, dist: rim ? 3 : 2.4 }; da.spd = SPRINT; } });
+        if (rim) {
+          // the closeout comes flying – a shot fake and he drives right past it
+          add(T(2.75), () => { const a = A(); if (a) this.setPose(a, 'gather', 0.25 * c); });
+          add(T(3.0), () => { const a = A(); if (!a) return; a.beh = { k: 'arrive', x: S.x, d: S.d, at: abs(release - 0.4) }; const da = DA(); if (da) da.beh = { k: 'follow', pid: a.pid, dx: -s * 2.2, dd: a.d < 25 ? -1 : 1 }; this.call(off, `${name(actor)} attacks the closeout`); });
+          add(T(3.3), () => this.helpSide(off, actor, blocker));
+        }
+        break;
+      }
+      case 'kickdrive': {
+        // drive, draw the help, kick it out – and the shooter attacks the closeout all the way to the rim
+        const sideL = S.d < 25, outSpot = this.spot(off, sideL ? 'lw' : 'rw');
+        cap(`${name(creator)} drives and kicks to ${name(actor)}`);
+        add(T(0), () => this.go(A(), outSpot.x, outSpot.d, JOG / c));
+        add(T(0.25), () => { const hnd = this.P(creator); if (hnd) this.go(hnd, B.x - s * 8, 25 + (r() - 0.5) * 8, SPRINT / c); });
+        add(T(0.6), () => { const da = DA(), a = A(), h = this.P(creator); if (da && a && h) this.go(da, (a.x + h.x) / 2, (a.d + h.d) / 2, RUN / c); });
+        add(T(1.3), () => this.pass(actor));
+        add(T(1.45), () => { const da = DA(), a = A(); if (da && a) { da.beh = { k: 'mark', pid: a.pid, dist: 2.5 }; } });
+        add(T(1.75), () => { const a = A(); if (a) this.setPose(a, 'gather', 0.25 * c); });
+        add(T(2.0), () => { const a = A(); if (!a) return; a.beh = { k: 'arrive', x: S.x, d: S.d, at: abs(release - 0.4) }; const da = DA(); if (da) da.beh = { k: 'follow', pid: a.pid, dx: -s * 2.2, dd: a.d < 25 ? -1 : 1 }; this.call(off, `${name(actor)} attacks the closeout`); });
+        add(T(2.4), () => this.helpSide(off, actor, blocker));
+        break;
+      }
       case 'kick': {
         cap(`${name(creator)} drives and kicks to ${name(actor)}`);
         add(T(0), () => this.go(A(), S.x, S.d, JOG / c));
@@ -1360,7 +1405,7 @@ export class PixelCourt {
     const due = sb ? Math.max(0.3, release - 0.8) : gatherAt;
     // far away (just got the ball back at the other end): head there right from the start
     add(0, () => { const a = A(); if (a && hyp(a.x - P0.x, a.d - P0.d) / RUN > due - 1.9) a.beh = { k: 'arrive', x: P0.x, d: P0.d, at: abs(due) }; });
-    for (const lead of type === 'fb' ? [3.2, 1.9, 0.9] : [1.9, 0.9]) add(Math.max(0, due - lead), () => { const a = A(); if (a && hyp(a.x - P0.x, a.d - P0.d) > 0.5) a.beh = { k: 'arrive', x: P0.x, d: P0.d, at: abs(due) }; });
+    for (const lead of type === 'fb' ? [3.2, 1.9, 0.9] : (type === 'kickdrive' || type === 'double') && rim ? [0.7] : [1.9, 0.9]) add(Math.max(0, due - lead), () => { const a = A(); if (a && hyp(a.x - P0.x, a.d - P0.d) > 0.5) a.beh = { k: 'arrive', x: P0.x, d: P0.d, at: abs(due) }; });
     // the move into the shot
     const showOff = (txt: string) => { if (star > 0 || r() < 0.35) this.sayAt(actor, txt, '#ffd34d', 1.0); };
     if (sb) add(Math.max(0, release - 0.78), () => {
