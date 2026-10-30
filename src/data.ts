@@ -112,13 +112,18 @@ export function ovrOf(z: number[]): number {
   return Math.max(25, Math.min(99, Math.round(48 + 5.5 * bpmOf(z))));
 }
 /**
- * Displayed overall (presentation only; the simulation keeps using ovrOf).
- * Spread like a basketball game's ratings: an average rotation player ~75,
- * a solid starter ~80, an all-star ~88–91, the very best 95–99.
+ * Displayed overall (presentation only; the simulation keeps using ovrOf, uncapped).
+ * Spread like a basketball game's ratings: a typical rotation player ~74, a good starter ~80,
+ * an all-star ~88–91, the era's superstars 95+, and 99 already for the very best – anyone
+ * above that is still 99 on the card but keeps his full impact in the games.
  */
+const SHOWN: [number, number][] = [[-1.3, 74], [0.6, 80], [2.1, 86], [3.6, 91], [5.0, 95], [6.5, 99]];
 export function shownFromBpm(b: number): number {
-  const lin = 75.2 + 3.6 * b;
-  const v = lin <= 88 ? lin : 88 + 0.6 * (lin - 88);
+  const T = SHOWN;
+  let v: number;
+  if (b <= T[0][0]) v = T[0][1] + 3.2 * (b - T[0][0]);
+  else if (b >= T[T.length - 1][0]) v = 99;
+  else { let i = 0; while (b > T[i + 1][0]) i++; v = T[i][1] + (T[i + 1][1] - T[i][1]) * (b - T[i][0]) / (T[i + 1][0] - T[i][0]); }
   return Math.max(40, Math.min(99, Math.round(v)));
 }
 export function shownOvr(z: number[]): number { return shownFromBpm(bpmOf(z)); }

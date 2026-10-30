@@ -199,7 +199,7 @@ function seriesStory(lg: any, s: any, rh: any, rl: any, odds: any, wa: number, w
   const per = (p: any) => { const c = p.cur; if (!c.gp) return ''; const pts = c.pts / c.gp, reb = (c.orb + c.drb) / c.gp, ast = c.ast / c.gp; const parts = [`${pts.toFixed(1)} pts`]; if (reb >= 8) parts.push(`${reb.toFixed(1)} reb`); if (ast >= 6) parts.push(`${ast.toFixed(1)} ast`); return ` (${parts.join(', ')})`; };
   if (th[0] && tl[0]) {
     out.push(`The marquee duel: ${th[0].name}${per(th[0])} against ${tl[0].name}${per(tl[0])}.`);
-    const stars = (xs: any[]) => xs.filter(p => ovrOf(p.z) >= 85).length;
+    const stars = (xs: any[]) => xs.filter(p => ovrOf(p.z) >= 88).length;
     const sh = stars(th), sl2 = stars(tl);
     if (sh >= 2 && sl2 <= 1) out.push(`${ab(s.hi)} have more star power – ${th.slice(0, sh).map(p => short(p.name)).join(', ')} can each take over a game.`);
     else if (sl2 >= 2 && sh <= 1) out.push(`${ab(s.lo)} have more star power – ${tl.slice(0, sl2).map(p => short(p.name)).join(', ')} can each take over a game.`);

@@ -69,7 +69,7 @@ export function aiExtensions(lg: League, rng: Rng) {
       if (nextPayroll(lg, t.tid) + offer > hardCap(lg)) continue;
       p.ext = { sal: offer, exp: lg.season + years };
       addTx(p, lg.season, `Signed an in-season extension with ${t.name}: ${years} yrs, ${(offer * 100).toFixed(1)}% of the cap per season`, lg.day);
-      if (shownOvr(p.z) >= 82) lg.news.push({ s: lg.season, t: `${t.name} extended ${tagOf(p, lg.season)}: ${years} yrs.` });
+      if (shownOvr(p.z) >= 85) lg.news.push({ s: lg.season, t: `${t.name} extended ${tagOf(p, lg.season)}: ${years} yrs.` });
     }
   }
 }

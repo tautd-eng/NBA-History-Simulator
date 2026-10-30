@@ -1,6 +1,7 @@
 // Off-season: expansion, lottery and draft, retirements, development, contracts,
 // arrivals and free agency.
 import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, agingIndex, NK, shownOvr, shownFromRaw } from '../data';
+import { rosterFit, GMFIT } from '../archetypes';
 import { Rng } from '../rng';
 import { League, Player, Team, emptyLine, ExpansionDraft, Lottery, FreeAgency } from '../types';
 import { newPlayer, prospectZ, realTarget, lastRealSeason, ageIn, firstRealSeason, snapRatings, tagOf, addTx } from '../players';
@@ -749,6 +750,19 @@ function reachFloor(lg: League, rng: Rng) {
   }
 }
 
+/** How much a player would improve the fit of a team's rotation (−0.3 … +0.3). */
+const fitBase = new Map<string, number>();
+function teamFitGain(lg: League, tid: string, p: Player) {
+  const ros = lg.teams[tid].roster.map(pid => lg.players[pid]);
+  const key = tid + ros.length + lg.season + (lg.fa?.log.length ?? 0);
+  const byB = (a: Player, b: Player) => bpmOf(b.z) - bpmOf(a.z);
+  let base = fitBase.get(key);
+  if (base === undefined) { if (fitBase.size > 500) fitBase.clear(); base = rosterFit([...ros].sort(byB)); fitBase.set(key, base); }
+  const withP = [...ros, p].sort(byB);
+  if (!GMFIT.on || withP.indexOf(p) >= 8) return 0;               // not in the rotation: fit does not matter
+  return Math.max(-0.3, Math.min(0.3, 0.6 * (rosterFit(withP) - base)));
+}
+
 /** One wave of AI signings. Later stages: lower demands, everyone with an offer signs. */
 function aiSignings(lg: League, rng: Rng, stage: number) {
   const N = lg.season;
@@ -775,7 +789,10 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
       else if (!pre && N >= 1995 && !fa.mle.includes(t.tid) && askT <= MLE * 1.35 && pay + MLE <= hardCap(lg)) { sal = Math.min(MLE, askT); mle = true; }
       else continue;
       if (pay + sal > hardCap(lg) + 1e-9 && !(t.roster.length < ROSTER_MIN && sal <= MIN_SAL * 1.0001)) continue;
-      const v = playerValue(p, N, t.strategy);
+      // a player who fills a hole in the rotation (shooting, a ball-handler, rim protection) is worth more to this team
+      const fitD = teamFitGain(lg, t.tid, p);
+      const v = playerValue(p, N, t.strategy) * (1 + fitD);
+      if (fitD > 0 && room >= askT) sal = Math.min(max, room, sal * (1 + 0.5 * fitD));
       // only if he would be one of the team's twelve most valuable players
       const vals = t.roster.map(pid => playerValue(lg.players[pid], N, t.strategy)).sort((a, b) => b - a);
       const twelfth = vals[Math.min(vals.length, 12) - 1] ?? 0;

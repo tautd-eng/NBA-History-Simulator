@@ -2466,7 +2466,7 @@ export class PixelCourt {
   }
 
   /** 2 = superstar, 1 = star, 0 = everybody else */
-  starOf(pid: string) { const o = this.o.looks?.[pid]?.ovr ?? 0; return o >= 88 ? 2 : o >= 82 ? 1 : 0; }
+  starOf(pid: string) { const o = this.o.looks?.[pid]?.ovr ?? 0; return o >= 91 ? 2 : o >= 85 ? 1 : 0; }
   /** player height on the buffer (pixels) at depth d */
   private heightPx(lk: Look, d = 25) {
     // differences in height a little exaggerated, so a point guard next to a centre reads at a glance

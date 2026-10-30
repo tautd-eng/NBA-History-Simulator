@@ -189,3 +189,43 @@ export function ctr0(season: number): Record<EdgeType, number> {
   const L = (k: number) => T[i][k] + (T[i + 1][k] - T[i][k]) * t;
   return { drive: L(1), shoot: L(2), post: L(3), handle: L(4) };
 }
+
+// ------------------------------------------------------------------ roster fit (for GMs)
+/** Switch for tests: GMs value fit. */
+export const GMFIT = { on: true };
+const roleCache = new Map<string, { r: Role; ft: FitTraits; ed: ReturnType<typeof edgeTraits> }>();
+function cached(p: { id: string; z: number[]; pos: string }) {
+  const k = p.id + '|' + p.z[0].toFixed(3) + p.z[13].toFixed(3) + p.pos;
+  let v = roleCache.get(k);
+  if (!v) {
+    if (roleCache.size > 20000) roleCache.clear();
+    v = { r: roleOf(p.z, p.pos), ft: fitTraits(p.z, posN(p.pos)), ed: edgeTraits(p.z, p.pos) };
+    roleCache.set(k, v);
+  }
+  return v;
+}
+const cl = (x: number, a = -1, b = 1) => Math.max(a, Math.min(b, x));
+const BALL = ['creator', 'post', 'slasher', 'general', 'playbig', 'pointfwd'];
+/**
+ * How well a rotation fits together, roughly −1 (a pile of the same pieces) to +1 (complementary roles):
+ * spacing, a ball-handler, a rim protector, not too many ball-dominant scorers, answers on defence to
+ * every way of attacking, and more than one way to attack. Players must be sorted best first.
+ */
+export function rosterFit(players: { id: string; z: number[]; pos: string }[]) {
+  const top = players.slice(0, 8).map(cached);
+  if (top.length < 5) return 0;
+  const five = top.slice(0, 5);
+  let sh = 0, hd = -1, rp = -1, ck = 0;
+  for (const x of five) { sh += x.ft.sh; hd = Math.max(hd, x.ft.hd); rp = Math.max(rp, x.ft.rp); ck += x.ft.cr; }
+  let s = 0.3 * cl((sh - 1.9) / 1.2) + 0.25 * cl((hd - 1.2) / 1) + 0.25 * cl((rp - 1.2) / 1) - 0.35 * Math.max(0, ck - 1.4);
+  for (const t of EDGE_TYPES) {
+    let c = 0, a = 0;
+    top.forEach((x, i) => { const w = i < 5 ? 1 : 0.5; c += w * x.ed.ctr[t]; a += w * x.ed.att[t]; });
+    if (c < 0.5) s -= 0.1 * (1 - c / 0.5);   // no answer on defence to this kind of attack
+    if (a >= 0.9) s += 0.06;                  // another way to attack
+  }
+  const n: Record<string, number> = {};
+  for (const x of top) n[x.r.arch.id] = (n[x.r.arch.id] ?? 0) + 1;
+  for (const [id, k] of Object.entries(n)) if (k >= 3 && BALL.includes(id)) s -= 0.12 * (k - 2);
+  return cl(s - 0.15);
+}

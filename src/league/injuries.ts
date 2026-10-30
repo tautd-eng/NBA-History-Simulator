@@ -104,7 +104,7 @@ export function injure(lg: League, p: Player, cal: number, rng: Rng, where: 'gam
   // news for notable players and anything serious on the user's team
   const seasonEnd = lastRegCal(lg) - cal < days && lg.phase === 'regular';
   const team = p.tid ? lg.teams[p.tid] : null;
-  if (team && (g >= 10 && (shownOvr(p.z) >= 78 || p.tid === lg.userTid) || (p.tid === lg.userTid && g >= 4))) {
+  if (team && (g >= 10 && (shownOvr(p.z) >= 81 || p.tid === lg.userTid) || (p.tid === lg.userTid && g >= 4))) {
     lg.news.push({ s: lg.season, t: `${tagOf(p, lg.season)}, ${team.abbr}: ${t.name}${where === 'off' ? ' (away from games)' : ''} – ${t.k === 'acl' || t.k === 'achilles' || seasonEnd ? 'out for the season' : `out ~${g} games`}.` });
   }
 }

@@ -6,6 +6,7 @@ import { tradeLocked, lockLabel } from '../league/contracts';
 import { H, seasonInfo, LAST_SEASON, ovrOf, bpmOf } from '../data';
 import { Rng } from '../rng';
 import { League, Player, Team, Pick, TradeAsset, TradeRec } from '../types';
+import { rosterFit, GMFIT } from '../archetypes';
 import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap, askingSalary } from './value';
 import { playerParts, moneyWeight, prospectValue, tradeValue, horizonOf, Horizon } from './tradevalue';
 import { posNum } from '../engine/game';
@@ -135,6 +136,8 @@ function teamValue(lg: League, t: Team, side: Side, moneyW: number) {
   const fifth = ps[4]?.prod ?? 0;
   const needW = h === 'allin' ? 0.7 : h === 'contend' ? 0.5 : h === 'tank' ? 0.1 : 0.3;
   v -= missing * needW * fifth;
+  // roles that fit together (shooters around a creator, a rim protector, answers on defence) beat a pile of the same pieces
+  if (GMFIT.on) v += needW * 1.2 * fifth * rosterFit(ps.map(x => x.p).sort((a, b) => bpmOf(b.z) - bpmOf(a.z)));
   for (const pk of side.picks) v += pickValue(lg, pk, h, moneyW);
   // tanking: a weaker roster this season moves the own pick up the lottery
   if (t.mode === 'tank') {
