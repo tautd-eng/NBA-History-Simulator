@@ -25,6 +25,8 @@ export interface AthOpts {
   view?: 'side' | 'front' | 'back'; // profile, facing the camera, or running away from it
   name?: string;      // surname on the back of the jersey
   hand?: number;      // dribbling hand (1 = front hand)
+  from?: AthPose;     // the pose he is coming out of
+  blend?: number;     // 0 = still in `from`, 1 = fully in `pose`
   t?: number;         // time left in a timed pose (animations that unfold)
 }
 export interface Hands { front: { x: number; y: number }; back: { x: number; y: number }; head: { x: number; y: number } }
@@ -85,117 +87,128 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
   const pose = o.pose;
   // ---- skeleton
   const Lt = 24 * u, Ls = 24 * u, Lu = 16.5 * u, Lf = 15.5 * u, torso = 31 * u;
-  let hipY = -50 * u, lean = 0;
-  let thA = 0.04, bdA = 0.06, thB = -0.04, bdB = 0.06;      // A = front leg, B = back leg
-  let uA = 0.12, fA = 0.3, uB = -0.12, fB = 0.1;             // arm angles: 0 = hanging, + = forward, π = straight up
-  let spreadA = 0, spreadB = 0;                               // arms out to the side (front/back views)
   const amp = Math.min(1, o.amp);
   const ps = o.ph, pb = o.ph + Math.PI;
   const air = o.air;
-  const runLegs = () => {
-    thA = 0.62 * amp * Math.sin(ps); bdA = amp * (0.2 + 1.25 * Math.max(0, Math.cos(ps))) + 0.06;
-    thB = 0.62 * amp * Math.sin(pb); bdB = amp * (0.2 + 1.25 * Math.max(0, Math.cos(pb))) + 0.06;
-    hipY -= 2 * u * amp * Math.abs(Math.sin(ps));
-    lean = 0.14 * amp;
+  /** joint angles for a pose (blended with the previous pose for a few frames, so nothing snaps) */
+  const rigOf = (pose: AthPose) => {
+    let hipY = -50 * u, lean = 0;
+    let thA = 0.04, bdA = 0.06, thB = -0.04, bdB = 0.06;      // A = front leg, B = back leg
+    let uA = 0.12, fA = 0.3, uB = -0.12, fB = 0.1;             // arm angles: 0 = hanging, + = forward, π = straight up
+    let spreadA = 0, spreadB = 0;                               // arms out to the side (front/back views)
+    const runLegs = () => {
+      thA = 0.62 * amp * Math.sin(ps); bdA = amp * (0.2 + 1.25 * Math.max(0, Math.cos(ps))) + 0.06;
+      thB = 0.62 * amp * Math.sin(pb); bdB = amp * (0.2 + 1.25 * Math.max(0, Math.cos(pb))) + 0.06;
+      hipY -= 2 * u * amp * Math.abs(Math.sin(ps));
+      lean = 0.14 * amp;
+    };
+    switch (pose) {
+      case 'run':
+        runLegs();
+        uA = -0.6 * amp * Math.sin(ps); fA = uA + 0.9 * amp + 0.25;
+        uB = -0.6 * amp * Math.sin(pb); fB = uB + 0.9 * amp + 0.25;
+        break;
+      case 'dribble':
+        if (amp > 0.15) runLegs(); else { thA = 0.18; bdA = 0.45; thB = -0.15; bdB = 0.3; hipY += 3 * u; lean = 0.12; }
+        uA = 0.35; fA = 0.75;
+        uB = 0.55 + 0.2 * amp; fB = 1.25; spreadB = 0.5;
+        break;
+      case 'stand':
+        hipY += 0.5 * u * (1 + Math.sin(ps)); // breathing
+        uA = 0.12 + 0.03 * Math.sin(ps); uB = -0.12 - 0.03 * Math.sin(ps);
+        break;
+      case 'stance':
+        hipY += 0.6 * u * Math.sin(ps * 1.6); // bouncing on his toes
+        hipY += 9 * u; lean = 0.28;
+        // a defensive slide: the feet push apart and come back together, never crossing
+        { const sl = amp > 0.12 ? 0.22 * Math.sin(ps) * Math.min(1, amp * 2) : 0; thA = 0.5 + sl; bdA = 0.95; thB = -0.5 + sl; bdB = 0.35; }
+        uA = 1.25; fA = 1.55; uB = -1.15; fB = -1.45; spreadA = 1.1; spreadB = 1.1;
+        break;
+      case 'shoot':
+        thA = 0.12; bdA = air ? 0.45 : 0.25; thB = -0.05; bdB = air ? 0.55 : 0.2;
+        uA = Math.PI - 0.32; fA = Math.PI - 0.06;
+        uB = Math.PI - 0.75; fB = Math.PI - 0.25;
+        lean = -0.04;
+        break;
+      case 'jump':
+        thA = 0.2; bdA = 0.6; thB = -0.1; bdB = 0.5;
+        uA = Math.PI - 0.2; fA = Math.PI - 0.1; uB = Math.PI - 0.45; fB = Math.PI - 0.2;
+        break;
+      case 'celebrate':
+        thA = 0.15; bdA = 0.2; thB = -0.1; bdB = 0.1;
+        uA = Math.PI - 0.55; fA = Math.PI - 0.15; uB = -(Math.PI - 0.55); fB = -(Math.PI - 0.15); spreadA = 0.5; spreadB = 0.5;
+        break;
+      case 'rest':
+        hipY += 5 * u; lean = 0.62;
+        thA = 0.25; bdA = 0.55; thB = -0.1; bdB = 0.35;
+        uA = 0.55; fA = 0.2; uB = 0.35; fB = 0.15;
+        break;
+      case 'gather': // dip before the jump, ball at the chest
+        hipY += 6 * u; lean = 0.1;
+        thA = 0.35; bdA = 0.8; thB = -0.1; bdB = 0.65;
+        uA = 0.55; fA = 1.9; uB = 0.45; fB = 1.75;
+        break;
+      case 'follow': // follow-through: shooting arm up, wrist snapped down
+        thA = 0.15; bdA = air ? 0.5 : 0.25; thB = -0.05; bdB = air ? 0.6 : 0.2;
+        uA = Math.PI - 0.38; fA = Math.PI - 0.95; uB = Math.PI - 1.2; fB = Math.PI - 0.9;
+        break;
+      case 'fade': // fadeaway: leaning back, arms high
+        thA = 0.35; bdA = 0.55; thB = 0.2; bdB = 0.7; lean = -0.32;
+        uA = Math.PI - 0.15; fA = Math.PI + 0.05; uB = Math.PI - 0.5; fB = Math.PI - 0.2;
+        break;
+      case 'layup': // one knee driving up, ball hand extended to the rim
+        thA = 1.25; bdA = 1.6; thB = -0.25; bdB = 0.35; lean = -0.05;
+        uA = Math.PI - 0.28; fA = Math.PI - 0.12; uB = 0.9; fB = 1.5;
+        break;
+      case 'dunk': // both arms over the head, body arched
+        thA = 0.55; bdA = 1.2; thB = 0.35; bdB = 1.1; lean = -0.12;
+        uA = Math.PI - 0.05; fA = Math.PI + 0.25; uB = Math.PI - 0.2; fB = Math.PI + 0.1;
+        break;
+      case 'hang': // hanging on the rim
+        thA = 0.25; bdA = 0.5; thB = 0.1; bdB = 0.6; lean = 0.05;
+        uA = Math.PI - 0.15; fA = Math.PI - 0.05; uB = Math.PI - 0.25; fB = Math.PI - 0.1;
+        break;
+      case 'hook': // sweeping hook: shooting arm high over the head, the other shielding
+        thA = 0.9; bdA = 1.2; thB = -0.15; bdB = 0.3; lean = -0.18;
+        uA = Math.PI - 0.55; fA = Math.PI - 0.25; uB = 1.35; fB = 1.6; spreadB = 0.9;
+        break;
+      case 'block': case 'reb':
+        thA = 0.25; bdA = 0.7; thB = -0.05; bdB = 0.6;
+        uA = Math.PI - 0.12; fA = Math.PI - 0.04; uB = pose === 'reb' ? Math.PI - 0.3 : 0.6; fB = pose === 'reb' ? Math.PI - 0.15 : 1.1;
+        break;
+      case 'contest': // a hand up in the shooter's face
+        hipY += 4 * u; lean = 0.08;
+        thA = 0.3; bdA = 0.55; thB = -0.3; bdB = 0.3;
+        uA = Math.PI - 0.15; fA = Math.PI - 0.08; uB = -0.6; fB = -0.9; spreadB = 0.8;
+        break;
+      case 'pass': // both arms pushed out toward the target
+        thA = 0.3; bdA = 0.45; thB = -0.25; bdB = 0.3; lean = 0.14;
+        uA = 1.45; fA = 1.6; uB = 1.3; fB = 1.5;
+        break;
+      case 'screen': // feet set wide, arms crossed in front
+        hipY += 3 * u; thA = 0.22; bdA = 0.35; thB = -0.22; bdB = 0.35;
+        uA = 0.35; fA = 1.75; uB = 0.25; fB = 1.9;
+        break;
+      case 'boxout': // low, wide, arms out, backside into the man
+        hipY += 8 * u; lean = 0.2;
+        thA = 0.55; bdA = 0.9; thB = -0.55; bdB = 0.4;
+        uA = 1.0; fA = 1.6; uB = -1.0; fB = -1.5; spreadA = 1.3; spreadB = 1.3;
+        break;
+      case 'sit':
+        hipY = -22 * u; lean = -0.05;
+        thA = Math.PI / 2 - 0.08; bdA = Math.PI / 2 - 0.05; thB = Math.PI / 2 - 0.12; bdB = Math.PI / 2 - 0.1;
+        uA = 0.35; fA = 1.3; uB = 0.25; fB = 1.2;
+        break;
+    }
+    return { hipY, lean, thA, bdA, thB, bdB, uA, fA, uB, fB, spreadA, spreadB };
   };
-  switch (pose) {
-    case 'run':
-      runLegs();
-      uA = -0.6 * amp * Math.sin(ps); fA = uA + 0.9 * amp + 0.25;
-      uB = -0.6 * amp * Math.sin(pb); fB = uB + 0.9 * amp + 0.25;
-      break;
-    case 'dribble':
-      if (amp > 0.15) runLegs(); else { thA = 0.18; bdA = 0.45; thB = -0.15; bdB = 0.3; hipY += 3 * u; lean = 0.12; }
-      uA = 0.35; fA = 0.75;
-      uB = 0.55 + 0.2 * amp; fB = 1.25; spreadB = 0.5;
-      break;
-    case 'stand':
-      hipY += 0.5 * u * (1 + Math.sin(ps)); // breathing
-      uA = 0.12 + 0.03 * Math.sin(ps); uB = -0.12 - 0.03 * Math.sin(ps);
-      break;
-    case 'stance':
-      hipY += 0.6 * u * Math.sin(ps * 1.6); // bouncing on his toes
-      hipY += 9 * u; lean = 0.28;
-      // a defensive slide: the feet push apart and come back together, never crossing
-      { const sl = amp > 0.12 ? 0.22 * Math.sin(ps) * Math.min(1, amp * 2) : 0; thA = 0.5 + sl; bdA = 0.95; thB = -0.5 + sl; bdB = 0.35; }
-      uA = 1.25; fA = 1.55; uB = -1.15; fB = -1.45; spreadA = 1.1; spreadB = 1.1;
-      break;
-    case 'shoot':
-      thA = 0.12; bdA = air ? 0.45 : 0.25; thB = -0.05; bdB = air ? 0.55 : 0.2;
-      uA = Math.PI - 0.32; fA = Math.PI - 0.06;
-      uB = Math.PI - 0.75; fB = Math.PI - 0.25;
-      lean = -0.04;
-      break;
-    case 'jump':
-      thA = 0.2; bdA = 0.6; thB = -0.1; bdB = 0.5;
-      uA = Math.PI - 0.2; fA = Math.PI - 0.1; uB = Math.PI - 0.45; fB = Math.PI - 0.2;
-      break;
-    case 'celebrate':
-      thA = 0.15; bdA = 0.2; thB = -0.1; bdB = 0.1;
-      uA = Math.PI - 0.55; fA = Math.PI - 0.15; uB = -(Math.PI - 0.55); fB = -(Math.PI - 0.15); spreadA = 0.5; spreadB = 0.5;
-      break;
-    case 'rest':
-      hipY += 5 * u; lean = 0.62;
-      thA = 0.25; bdA = 0.55; thB = -0.1; bdB = 0.35;
-      uA = 0.55; fA = 0.2; uB = 0.35; fB = 0.15;
-      break;
-    case 'gather': // dip before the jump, ball at the chest
-      hipY += 6 * u; lean = 0.1;
-      thA = 0.35; bdA = 0.8; thB = -0.1; bdB = 0.65;
-      uA = 0.55; fA = 1.9; uB = 0.45; fB = 1.75;
-      break;
-    case 'follow': // follow-through: shooting arm up, wrist snapped down
-      thA = 0.15; bdA = air ? 0.5 : 0.25; thB = -0.05; bdB = air ? 0.6 : 0.2;
-      uA = Math.PI - 0.38; fA = Math.PI - 0.95; uB = Math.PI - 1.2; fB = Math.PI - 0.9;
-      break;
-    case 'fade': // fadeaway: leaning back, arms high
-      thA = 0.35; bdA = 0.55; thB = 0.2; bdB = 0.7; lean = -0.32;
-      uA = Math.PI - 0.15; fA = Math.PI + 0.05; uB = Math.PI - 0.5; fB = Math.PI - 0.2;
-      break;
-    case 'layup': // one knee driving up, ball hand extended to the rim
-      thA = 1.25; bdA = 1.6; thB = -0.25; bdB = 0.35; lean = -0.05;
-      uA = Math.PI - 0.28; fA = Math.PI - 0.12; uB = 0.9; fB = 1.5;
-      break;
-    case 'dunk': // both arms over the head, body arched
-      thA = 0.55; bdA = 1.2; thB = 0.35; bdB = 1.1; lean = -0.12;
-      uA = Math.PI - 0.05; fA = Math.PI + 0.25; uB = Math.PI - 0.2; fB = Math.PI + 0.1;
-      break;
-    case 'hang': // hanging on the rim
-      thA = 0.25; bdA = 0.5; thB = 0.1; bdB = 0.6; lean = 0.05;
-      uA = Math.PI - 0.15; fA = Math.PI - 0.05; uB = Math.PI - 0.25; fB = Math.PI - 0.1;
-      break;
-    case 'hook': // sweeping hook: shooting arm high over the head, the other shielding
-      thA = 0.9; bdA = 1.2; thB = -0.15; bdB = 0.3; lean = -0.18;
-      uA = Math.PI - 0.55; fA = Math.PI - 0.25; uB = 1.35; fB = 1.6; spreadB = 0.9;
-      break;
-    case 'block': case 'reb':
-      thA = 0.25; bdA = 0.7; thB = -0.05; bdB = 0.6;
-      uA = Math.PI - 0.12; fA = Math.PI - 0.04; uB = pose === 'reb' ? Math.PI - 0.3 : 0.6; fB = pose === 'reb' ? Math.PI - 0.15 : 1.1;
-      break;
-    case 'contest': // a hand up in the shooter's face
-      hipY += 4 * u; lean = 0.08;
-      thA = 0.3; bdA = 0.55; thB = -0.3; bdB = 0.3;
-      uA = Math.PI - 0.15; fA = Math.PI - 0.08; uB = -0.6; fB = -0.9; spreadB = 0.8;
-      break;
-    case 'pass': // both arms pushed out toward the target
-      thA = 0.3; bdA = 0.45; thB = -0.25; bdB = 0.3; lean = 0.14;
-      uA = 1.45; fA = 1.6; uB = 1.3; fB = 1.5;
-      break;
-    case 'screen': // feet set wide, arms crossed in front
-      hipY += 3 * u; thA = 0.22; bdA = 0.35; thB = -0.22; bdB = 0.35;
-      uA = 0.35; fA = 1.75; uB = 0.25; fB = 1.9;
-      break;
-    case 'boxout': // low, wide, arms out, backside into the man
-      hipY += 8 * u; lean = 0.2;
-      thA = 0.55; bdA = 0.9; thB = -0.55; bdB = 0.4;
-      uA = 1.0; fA = 1.6; uB = -1.0; fB = -1.5; spreadA = 1.3; spreadB = 1.3;
-      break;
-    case 'sit':
-      hipY = -22 * u; lean = -0.05;
-      thA = Math.PI / 2 - 0.08; bdA = Math.PI / 2 - 0.05; thB = Math.PI / 2 - 0.12; bdB = Math.PI / 2 - 0.1;
-      uA = 0.35; fA = 1.3; uB = 0.25; fB = 1.2;
-      break;
-  }
+  const R0 = rigOf(pose);
+  const R1 = o.from && o.from !== pose && (o.blend ?? 1) < 1 ? rigOf(o.from) : null;
+  const bl = R1 ? Math.max(0, Math.min(1, o.blend ?? 1)) : 1, e = bl * bl * (3 - 2 * bl);
+  const mixR = (key: keyof typeof R0) => (R1 ? R1[key] + (R0[key] - R1[key]) * e : R0[key]);
+  const hipY = mixR('hipY'), lean = mixR('lean');
+  const thA = mixR('thA'), bdA = mixR('bdA'), thB = mixR('thB'), bdB = mixR('bdB');
+  const uA = mixR('uA'), fA = mixR('fA'), uB = mixR('uB'), fB = mixR('fB'), spreadA = mixR('spreadA'), spreadB = mixR('spreadB');
   const hx = X, hy = Y + hipY;
   const legSide = (s: number) => side ? s * 2.6 * u * f : s * 4 * u * (view === 'back' ? -1 : 1);
   const leg = (s: number, th: number, bd: number) => {
