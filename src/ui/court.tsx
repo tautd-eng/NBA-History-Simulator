@@ -38,7 +38,7 @@ function looksFor(names: Record<string, string>) {
  * The pixel court. Live viewer: pass `v` (broadcast time from the timeline). Clutch mode: pass `upto`
  * (events to play) and the court plays forward on its own at `speed`, calling onIdle when it catches up.
  */
-export function CourtCanvas({ home, away, names, sides, pos, events, v, upto, speed = 1, onIdle, onShown, mode = 'classic' }: any) {
+export function CourtCanvas({ home, away, names, sides, pos, events, v, upto, speed = 1, onIdle, onShown, mode = 'classic', replays = true }: any) {
   const ref = useRef<HTMLCanvasElement>(null);
   const court = useRef<PixelCourt | null>(null);
   const idle = useRef(onIdle);
@@ -66,6 +66,7 @@ export function CourtCanvas({ home, away, names, sides, pos, events, v, upto, sp
   useEffect(() => { const c = court.current; if (c && upto != null) { if (c.tl?.items.length !== events.length) c.setEvents(events); c.setUpto(upto); } }, [upto]);
   useEffect(() => { if (court.current && upto == null) court.current.ext = v ?? 0; }, [v]);
   useEffect(() => { if (court.current) court.current.speed = speed; }, [speed]);
+  useEffect(() => { if (court.current) { court.current.replays = replays; if (!replays) court.current.pending = null; } }, [replays]);
   useEffect(() => { court.current?.setStyle(mode, mode === 'arena' ? looksFor(names) : undefined); }, [mode]);
 
   return <canvas ref={ref} className="pixel-court" aria-label="Court" />;

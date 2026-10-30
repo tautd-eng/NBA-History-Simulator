@@ -20,6 +20,7 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(late ? 2 : 4);
   const [view, setView] = useState<'court' | 'arena' | 'chart'>(() => late ? 'arena' : 'court');
+  const [replays, setReplays] = useState(() => { try { return localStorage.getItem('replays') !== '0'; } catch { return true; } });
   const t = tl.gameAt(v);
   const setT = (g: number) => setV(Math.min(endV, tl.vOfGame(g)));
   const raf = useRef(0);
@@ -118,6 +119,7 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
             <button className={view === 'arena' ? 'on' : ''} onClick={() => setView('arena')}>Arena</button>
             <button className={view === 'chart' ? 'on' : ''} onClick={() => setView('chart')}>Shot chart</button>
           </div>
+          {view !== 'chart' && <label className="chk" title="Slow-motion replays of dunks, blocks and late daggers (at ×1–×2)"><input type="checkbox" checked={replays} onChange={e => { setReplays(e.target.checked); try { localStorage.setItem('replays', e.target.checked ? '1' : '0'); } catch { /* optional */ } }} /> Replays</label>}
           <button disabled={done} onClick={() => { const nx = period < 4 ? period * 720 : period === 4 ? 2880 : 2880 + (period - 4) * 300; setT(Math.min(endT, nx)); }}>Next quarter ⏭</button>
           <button disabled={done || t >= 2580} onClick={() => { setT(Math.min(endT, 2580)); setView('arena'); setSpeed(2); }}>Last 5 min</button>
           <button onClick={() => { setV(endV); setPlaying(false); }}>To the end</button>
@@ -126,7 +128,7 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
         <div className="live-grid">
           <div className="live-left">
             {view !== 'chart' ? (
-              <CourtCanvas mode={view} home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos} events={pbp} v={v} />
+              <CourtCanvas mode={view} home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos} events={pbp} v={v} replays={replays} />
             ) : (
               <div className="court-wrap">
                 <svg viewBox="-1 -1 52 36" className="court" role="img" aria-label="Shot chart">
