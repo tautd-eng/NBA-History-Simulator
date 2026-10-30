@@ -10,7 +10,7 @@ export interface Body {
   build?: number; socks?: string; sockH?: number; shoe?: string; sleeve?: number; knee?: boolean; wrist?: boolean;
   tat?: number; goggles?: boolean; legSleeve?: number; // tattoos (1 one arm, 2 both), goggles, a compression sleeve on one leg (1 front, -1 back)
 }
-export type AthPose = 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'sit' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
+export type AthPose = 'stumble' | 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'sit' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
 export interface AthOpts {
   H: number;          // standing height in canvas pixels
   face: number;       // 1 = facing right, -1 = left
@@ -189,6 +189,11 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
       case 'screen': // feet set wide, arms crossed in front
         hipY += 3 * u; thA = 0.22; bdA = 0.35; thB = -0.22; bdB = 0.35;
         uA = 0.35; fA = 1.75; uB = 0.25; fB = 1.9;
+        break;
+      case 'stumble': // knocked off balance: leaning back, arms out
+        hipY += 4 * u; lean = -0.35;
+        thA = 0.5; bdA = 0.45; thB = -0.4; bdB = 0.25;
+        uA = 1.7; fA = 2.1; uB = -1.4; fB = -1.8; spreadA = 1.2; spreadB = 1.2;
         break;
       case 'boxout': // low, wide, arms out, backside into the man
         hipY += 8 * u; lean = 0.2;

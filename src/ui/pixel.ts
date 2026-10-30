@@ -50,7 +50,7 @@ export interface CourtOpts {
 export interface Look extends Body { ovr?: number; ath?: number; tz?: number; az?: number }
 
 type Side = 'h' | 'a';
-type Pose = 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
+type Pose = 'stumble' | 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
 type Beh =
   | { k: 'spot' }
   | { k: 'guard'; man: string; tight: number }
@@ -75,6 +75,9 @@ interface PSprite {
   next?: [Pose, number];     // the pose that follows the current one
   ft?: number;               // time since he last turned around
   spin?: number;             // spin move in progress (seconds left)
+  stun?: number;             // just ran into a screen (seconds he is held up)
+  bumpT?: number;            // when he last hit a screen (broadcast time)
+  xkind?: 'cross' | 'btl' | 'btb'; // the dribble move: crossover, between the legs, behind the back
   curPose?: AthPose; fromPose?: AthPose; poseAt?: number; // pose blending
 }
 interface Fly { x0: number; d0: number; z0: number; x1: number; d1: number; z1: number; peak: number; t: number; dur: number; to?: string; done?: () => void; bounce?: boolean }
@@ -602,7 +605,8 @@ export class PixelCourt {
       if (p.hang && p.hang > 0) p.hang -= dt;
       else if (p.jd > 0) { p.jt += dt; const u = p.jt / p.jd; if (u >= 1) { p.jd = 0; p.z = 0; } else p.z = p.jh * 4 * u * (1 - u); }
       const dx = p.tx - p.x, dd = p.td - p.d, dist = hyp(dx, dd);
-      const vmax = p.spd * p.mul;
+      if (p.stun && p.stun > 0) p.stun -= dt;
+      const vmax = p.spd * p.mul * (p.stun && p.stun > 0 ? 0.25 : 1);
       const vdes = dist < 0.08 ? 0 : Math.min(vmax, Math.sqrt(2 * ACC * 0.8 * dist));
       const ux = dist ? dx / dist : 0, ud = dist ? dd / dist : 0;
       let wx = ux * vdes - p.vx, wd = ud * vdes - p.vd;
@@ -634,7 +638,12 @@ export class PixelCourt {
           // crossovers: when he changes direction, and now and then to shake his man
           const turn = Math.abs(p.vx) > 3 && Math.sign(p.vx) !== Math.sign(p.lvx ?? p.vx);
           const dm = this.defOf(pid), close = dm ? hyp(dm.x - p.x, dm.d - p.d) < 6 : false;
-          if (turn || (close && hash01(pid + Math.floor(this.v * 3)) < dt * 3 * (0.35 + 0.3 * this.starOf(pid)))) { p.xover = 0.28; p.hand = -(p.hand ?? 1); }
+          if (turn || (close && hash01(pid + Math.floor(this.v * 3)) < dt * 3 * (0.35 + 0.3 * this.starOf(pid)))) {
+            p.xover = 0.28; p.hand = -(p.hand ?? 1);
+            // the best ball handlers mix it up: between the legs, behind the back
+            const u = hash01(pid + '|x' + Math.floor(this.v * 7)), st = this.starOf(pid) + ((this.o.looks?.[pid]?.az ?? 0) > 1 ? 1 : 0);
+            p.xkind = st >= 1 && u < 0.3 ? 'btl' : st >= 1 && u < 0.5 ? 'btb' : 'cross';
+          }
         }
         p.lvx = p.vx;
       } else p.xover = 0;
@@ -658,10 +667,24 @@ export class PixelCourt {
       const a = ps[i], b = ps[j];
       const dx = b.x - a.x, dd = b.d - a.d, dist = hyp(dx, dd);
       // teammates keep their spacing; opponents can get close but not inside each other
-      const min = a.side === b.side ? (a.z > 0.5 || b.z > 0.5 ? 1.9 : 3.4) : 2.1;
+      // a defender running into a set screen is held up for a moment – then he fights over or slides under it
+      if (a.side !== b.side && dist < 2.6) {
+        const [scr, dfd] = a.pose === 'screen' && a.pt > 0 ? [a, b] : b.pose === 'screen' && b.pt > 0 ? [b, a] : [null, null];
+        if (scr && dfd && hyp(dfd.vx, dfd.vd) > 4 && this.v - (dfd.bumpT ?? -9) > 1.5) {
+          dfd.bumpT = this.v; dfd.stun = 0.38;
+          dfd.vx *= 0.2; dfd.vd *= 0.2;
+          this.setPose(dfd, 'stumble', 0.3);
+          if (!this.ff && hash01(dfd.pid + Math.floor(this.v)) < 0.35) this.sayAt(scr.pid, 'SCREEN!', '#c9d2e3', 0.7);
+        }
+      }
+      // a shooter rising into his shot is not shoved off his spot by anybody
+      const busy = (q: PSprite) => q.pt > 0 && ['gather', 'shoot', 'follow', 'fade', 'layup', 'dunk', 'hook'].includes(q.pose) || q.beh.k === 'arrive';
+      const min = a.side === b.side ? (a.z > 0.5 || b.z > 0.5 || busy(a) || busy(b) ? 1.9 : 3.4) : 2.1;
+      const fixA = busy(a), fixB = busy(b);
       if (dist < min && dist > 0.001) {
         const push = (min - dist) * 0.5 * Math.min(1, dt * (a.side === b.side ? 5 : 12));
-        a.x -= dx / dist * push; a.d -= dd / dist * push; b.x += dx / dist * push; b.d += dd / dist * push;
+        const wa = fixA && !fixB ? 0 : fixB && !fixA ? 2 : 1, wb = 2 - wa;
+        a.x -= dx / dist * push * wa; a.d -= dd / dist * push * wa; b.x += dx / dist * push * wb; b.d += dd / dist * push * wb;
       }
     }
   }
@@ -1281,7 +1304,9 @@ export class PixelCourt {
     switch (type) {
       case 'roll': case 'pop': {
         cap(`Pick and ${type}: ${name(creator)} & ${name(actor)}`);
-        add(T(0), () => { const hnd = this.P(creator), a = A(); if (hnd && a) this.go(a, hnd.x + s * 2, hnd.d + (hnd.d < 25 ? 2.5 : -2.5), RUN / c); });
+        // the pick is set on the side of the floor where the screener will finish (rim or his pop spot)
+        const slot = this.spot(off, S.d < 25 ? 'ls' : 'rs');
+        add(T(0), () => { const hnd = this.P(creator), a = A(); if (hnd) this.go(hnd, slot.x, slot.d, RUN / c); if (a) this.go(a, slot.x + s * 2, slot.d + (slot.d < 25 ? 2.5 : -2.5), RUN / c); });
         add(T(0.75), () => this.setPose(A(), 'screen', 0.6 * c));
         add(T(1.0), () => {
           const hnd = this.P(creator), dh = this.defOf(creator), a = A();
@@ -1530,7 +1555,7 @@ export class PixelCourt {
     if (motion === 'jumper' || motion === 'stepback' || motion === 'fade') add(release - up - 0.13, () => {
       const a = A(); if (!a) return;
       if (this.ball.holder !== actor && !this.ball.fly) this.getBall(actor);
-      a.beh = { k: 'spot' }; a.tx = S.x; a.td = S.d; a.spd = WALK; this.setPose(a, 'gather', 0.16);
+      if (hyp(a.x - S.x, a.d - S.d) > 0.4) a.beh = { k: 'arrive', x: S.x, d: S.d, at: abs(release - 0.12) }; else { a.beh = { k: 'spot' }; a.tx = S.x; a.td = S.d; a.spd = WALK; } this.setPose(a, 'gather', 0.16);
     });
     add(release - up, () => {
       const a = A(); if (!a) return;
@@ -1563,7 +1588,7 @@ export class PixelCourt {
     // the shot
     add(release, () => {
       const a = A();
-      if (a && this.dbg) this.dbg({ L, release, type, three, rim, dist: hyp(a.x - S.x, a.d - S.d), fromRim: hyp(a.x - B.x, a.d - B.d), want: hyp(S.x - B.x, S.d - B.d) });
+      if (a && this.dbg) this.dbg({ beh: JSON.stringify(a.beh), tgt: [a.tx.toFixed(1), a.td.toFixed(1), S.x.toFixed(1), S.d.toFixed(1), a.x.toFixed(1), a.d.toFixed(1)].join(','), pose: a.pose, z: a.z.toFixed(1), L, release, type, three, rim, dist: hyp(a.x - S.x, a.d - S.d), fromRim: hyp(a.x - B.x, a.d - B.d), want: hyp(S.x - B.x, S.d - B.d) });
       if (blocker) {
         const bp = this.P(blocker);
         if (bp && a) { this.go(bp, a.x + s * 1.2, a.d, SPRINT); this.jump(bp, 3.6, 0.6, 'block'); }
@@ -1617,7 +1642,7 @@ export class PixelCourt {
         this.scored(actor, three ? 3 : 2, made);
         const lateClose = e.p >= 4 && e.c < 120 && Math.abs(e.hs - e.as) <= 5;
         if (three || lateClose || type === 'fb') { this.setPose(A(), 'celebrate', 1.4); if (lateClose) this.cheer = 2; }
-        if (andOne) this.say('AND ONE!', '#ffd34d', false, 1.4, { x: S.x, d: S.d, z: 24 });
+        if (andOne) { this.say('AND ONE!', '#ffd34d', false, 1.4, { x: S.x, d: S.d, z: 24 }); const a = A(); if (a) { this.setPose(a, 'stumble', 0.45); a.next = ['celebrate', 1.0]; } const df = DA(); if (df) this.setPose(df, 'block', 0.4); }
         // the scorers jog back on defence
         const back = other(off);
         for (const p of this.on(off)) if (p.pid !== actor || !andOne) this.go(p, this.basket(back).x + this.dir(back) * (10 + r() * 14), 12 + r() * 26, JOG);
@@ -1787,6 +1812,10 @@ export class PixelCourt {
     add(L - 0.35, () => { const a = this.P(shooter); this.jump(a, 3, 0.55, 'shoot'); const f = this.P(fouler); this.jump(f, 2.4, 0.5); });
     add(L, () => {
       this.sayAt(fouler, 'FOUL', '#ffd34d', 1.1);
+      // the contact: the defender's arm comes down, the shooter is knocked off balance
+      const f = this.P(fouler), a = this.P(shooter);
+      if (f) { this.setPose(f, 'block', 0.4); if (a) f.face = Math.sign(a.x - f.x) || f.face; }
+      if (a) { this.setPose(a, 'stumble', 0.7); a.vx *= 0.3; a.vd *= 0.3; }
       this.flyBall(B.x - s * 2, 25 + (r() - 0.5) * 6, 0, 8, 0.5);
     });
   }
@@ -2378,7 +2407,13 @@ export class PixelCourt {
       const top = hand.y + r, bottom = floorY - r;
       const t = Math.abs(Math.sin(p.dph ?? this.v * 7.5));
       x = hand.x; y = bottom - (bottom - top) * t;
-      if (p.xover && p.xover > 0) { const u = 1 - p.xover / 0.28; x = h.back.x + (h.front.x - h.back.x) * ((p.hand ?? 1) > 0 ? u : 1 - u); y = bottom - r * 0.4 - Math.sin(u * Math.PI) * r * 2; }
+      if (p.xover && p.xover > 0) {
+        const u = 1 - p.xover / 0.28;
+        x = h.back.x + (h.front.x - h.back.x) * ((p.hand ?? 1) > 0 ? u : 1 - u);
+        if (p.xkind === 'btl') y = bottom - r * 0.2 - Math.sin(u * Math.PI) * r * 0.6; // low, through the legs
+        else if (p.xkind === 'btb') { y = (h.front.y + floorY) / 2 + r; if (u > 0.3 && u < 0.7) return; } // around the back: hidden behind him
+        else y = bottom - r * 0.4 - Math.sin(u * Math.PI) * r * 2;
+      }
     } else if (pose === 'shoot' || pose === 'jump' || pose === 'celebrate' || pose === 'dunk' || pose === 'layup' || pose === 'hook') y = h.front.y - r * 0.9;
     else if (pose === 'gather') { x = (h.front.x + h.back.x) / 2; y = (h.front.y + h.back.y) / 2 - r * 0.2; }
     this.ballHD(x, y, r);
