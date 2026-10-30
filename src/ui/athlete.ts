@@ -10,7 +10,7 @@ export interface Body {
   build?: number; socks?: string; sockH?: number; shoe?: string; sleeve?: number; knee?: boolean; wrist?: boolean;
   tat?: number; goggles?: boolean; legSleeve?: number; // tattoos (1 one arm, 2 both), goggles, a compression sleeve on one leg (1 front, -1 back)
 }
-export type AthPose = 'fall' | 'stumble' | 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'sit' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
+export type AthPose = 'fall' | 'stumble' | 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'sit' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade' | 'goggles' | 'flex' | 'dismay';
 export interface AthOpts {
   H: number;          // standing height in canvas pixels
   face: number;       // 1 = facing right, -1 = left
@@ -24,6 +24,7 @@ export interface AthOpts {
   num?: boolean;      // draw the jersey number
   view?: 'side' | 'front' | 'back'; // profile, facing the camera, or running away from it
   name?: string;      // surname on the back of the jersey
+  suit?: string;      // a coach: suit of this colour (long sleeves and trousers)
   hand?: number;      // dribbling hand (1 = front hand)
   headU?: number;     // head size unit (the same for everybody), defaults to H/100
   from?: AthPose;     // the pose he is coming out of
@@ -138,6 +139,19 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
       case 'celebrate':
         thA = 0.15; bdA = 0.2; thB = -0.1; bdB = 0.1;
         uA = Math.PI - 0.55; fA = Math.PI - 0.15; uB = -(Math.PI - 0.55); fB = -(Math.PI - 0.15); spreadA = 0.5; spreadB = 0.5;
+        break;
+      case 'goggles': // three fingers up, the other hand an eye-goggle
+        thA = 0.15; bdA = 0.2; thB = -0.1; bdB = 0.1;
+        uA = Math.PI - 0.25; fA = Math.PI - 0.05; spreadA = 0.4;
+        uB = 2.1; fB = 3.9; spreadB = 0.2;
+        break;
+      case 'flex': // and-one: both arms bent, fists up
+        thA = 0.3; bdA = 0.35; thB = -0.25; bdB = 0.3; hipY += 2 * u;
+        uA = 1.55; fA = Math.PI - 0.15; uB = -1.55; fB = -(Math.PI - 0.15); spreadA = 0.9; spreadB = 0.9;
+        break;
+      case 'dismay': // hands on the head after a big miss
+        thA = 0.05; bdA = 0.1; thB = -0.05; bdB = 0.1; lean = -0.05;
+        uA = 2.45; fA = 4.0; uB = -2.45; fB = -4.0; spreadA = 0.7; spreadB = 0.7;
         break;
       case 'rest':
         hipY += 5 * u; lean = 0.62;
@@ -302,6 +316,7 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
     const col = back ? shade(k.shorts, 0.82) : k.shorts;
     const w1 = (8.8 + 2.2 * t) * u * lw;
     limb(ctx, L.h.x, L.h.y - 1 * u, ex, ey, 9.6 * u * lw, w1, col);
+    if (o.suit) { limb(ctx, L.h.x, L.h.y, L.kn.x, L.kn.y, 6.4 * u * lw, 5.6 * u * lw, col); limb(ctx, L.kn.x, L.kn.y, L.an.x, L.an.y + 1.4 * u, 5.6 * u * lw, 5.2 * u * lw, col); return; }
     if (!back) {
       // side stripe, hem and a fold
       const ox = (side ? -f : (L === LA ? 1 : -1)) * w1 * 0.36;
@@ -314,8 +329,14 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
     const sk = back ? skinD : skin;
     const w = 4.8 * u * lw;
     const sleeve = !!b.sleeve && ((b.sleeve > 0) === !back);
-    const sc = sleeve ? (back ? '#1b1b1b' : '#262626') : sk;
+    const sc = o.suit ? (back ? shade(o.suit, 0.8) : o.suit) : sleeve ? (back ? '#1b1b1b' : '#262626') : sk;
     limb(ctx, A.s0.x, A.s0.y, A.el.x, A.el.y, w * 1.05, w * 0.8, sc);
+    if (o.suit) {
+      const mx = A.el.x + (A.ha.x - A.el.x) * 0.8, my = A.el.y + (A.ha.y - A.el.y) * 0.8;
+      limb(ctx, A.el.x, A.el.y, mx, my, w * 0.85, w * 0.8, sc);
+      limb(ctx, mx, my, A.ha.x, A.ha.y, w * 0.6, w * 0.55, sk);
+      return;
+    }
     // forearm: thicker near the elbow
     const mx = A.el.x + (A.ha.x - A.el.x) * 0.3, my = A.el.y + (A.ha.y - A.el.y) * 0.3;
     limb(ctx, A.el.x, A.el.y, mx, my, w * 0.8, w * 0.88, sc);

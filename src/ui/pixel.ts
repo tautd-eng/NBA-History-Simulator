@@ -50,7 +50,7 @@ export interface CourtOpts {
 export interface Look extends Body { ovr?: number; ath?: number; tz?: number; az?: number }
 
 type Side = 'h' | 'a';
-type Pose = 'fall' | 'stumble' | 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
+type Pose = 'fall' | 'stumble' | 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade' | 'goggles' | 'flex' | 'dismay';
 type Beh =
   | { k: 'spot' }
   | { k: 'guard'; man: string; tight: number }
@@ -73,6 +73,7 @@ interface PSprite {
   lvx?: number;   // last velocity along the court (to notice a change of direction)
   ax?: number; ad?: number; // the spot he was sent to (idle shuffles stay around it)
   inFor?: string; slap?: boolean; // substitution: the man he replaces, and whether they slapped hands
+  five?: { pid: string; until: number; x: number; d: number; big?: boolean }; // running over to a teammate for a high five / chest bump, then back to (x, d)
   next?: [Pose, number];     // the pose that follows the current one
   ft?: number;               // time since he last turned around
   spin?: number;             // spin move in progress (seconds left)
@@ -118,6 +119,9 @@ export class PixelCourt {
   floaters: Floater[] = [];
   speed = 1;
   cheer = 0;
+  cheerSide: Side | null = null; // whose bench is up celebrating
+  coachMood: Record<Side, { pose: AthPose; t: number } | null> = { h: null, a: null };
+  private coachReact(side: Side, pose: AthPose, t = 1.4) { if (!this.ff) this.coachMood[side] = { pose, t }; }
   net = { h: 0, a: 0 };
   last = 0;
   raf = 0;
@@ -292,6 +296,7 @@ export class PixelCourt {
     if (this.label) { this.label.t -= dt; if (this.label.t <= 0) this.label = null; }
     if (this.label2) { this.label2.t -= dt; if (this.label2.t <= 0) this.label2 = null; }
     this.cheer = Math.max(0, this.cheer - dt);
+    for (const sd of ['h', 'a'] as Side[]) { const m = this.coachMood[sd]; if (m) { m.t -= dt; if (m.t <= 0) this.coachMood[sd] = null; } }
     if (this.lower && (this.lower.t += dt) > 3.6) this.lower = null;
     if (this.card && (this.card.t += dt) > 3.2) this.card = null;
     this.net.h = Math.max(0, this.net.h - dt); this.net.a = Math.max(0, this.net.a - dt);
@@ -673,6 +678,17 @@ export class PixelCourt {
         p.lvx = p.vx;
       } else p.xover = 0;
       if (p.leaving && dist < 1.2) this.players.delete(pid);
+      // a high five (or a chest bump after something big) with the scorer, then back on defence
+      if (p.five) {
+        const o = this.players.get(p.five.pid), f = p.five;
+        if (!o || this.v > f.until) { p.five = undefined; this.go(p, f.x, f.d, JOG); }
+        else if (hyp(o.x - p.x, o.d - p.d) < 3.2) {
+          p.five = undefined; p.face = Math.sign(o.x - p.x) || 1; o.face = -p.face;
+          if (f.big && hash01(pid + Math.floor(this.v)) < 0.45) { this.jump(p, 2.2, 0.32, 'celebrate'); this.jump(o, 2.2, 0.32, 'celebrate'); }
+          else { this.setPose(p, 'pass', 0.3); this.setPose(o, 'pass', 0.3); }
+          this.go(p, f.x, f.d, JOG); if (o.beh.k === 'spot' && hyp(o.tx - o.x, o.td - o.d) < 2) this.go(o, f.x + this.dir(o.side) * 4, 50 - f.d, JOG);
+        } else if (p.beh.k !== 'follow') p.beh = { k: 'follow', pid: o.pid, dx: -Math.sign(o.x - p.x || 1) * 1.6, dd: 0 };
+      }
       // the sub and the man he replaces slap hands as they pass
       if (p.inFor && !p.slap) {
         const o = this.players.get(p.inFor);
@@ -957,6 +973,13 @@ export class PixelCourt {
       }
       if (nx.k !== 'foul' && nx.k !== 'ft' && nx.k !== 'ftm' && nx.k !== 'timeout') break;
     }
+    // the coaches on the sideline react
+    const es = e.s as Side;
+    if (es === 'h' || es === 'a') {
+      if (e.k === 'tov') add(Math.max(0, L - 0.3), () => this.coachReact(es, r() < 0.55 ? 'dismay' : 'pass', 1.3));
+      else if (e.k === 'timeout') add(0, () => this.coachReact(es, 'pass', 2.2));
+      else if ((e.k === 'make3' || e.k === 'make2') && r() < (e.k === 'make3' ? 0.35 : 0.12)) add(L, () => { this.coachReact(es, 'flex', 1.0); if (r() < 0.4) this.coachReact(other(es), 'dismay', 1.0); });
+    }
     switch (e.k) {
       case 'make2': case 'make3': case 'miss2': case 'miss3': this.planShot(k, L, add, r); break;
       case 'tov': this.planTov(k, L, add, r); break;
@@ -967,7 +990,7 @@ export class PixelCourt {
       case 'timeout': add(0, () => { this.say('TIMEOUT', '#ffffff', false, 1.4); this.huddle(); }); break;
       case 'period': case 'end': add(0, () => {
         this.say(e.k === 'end' ? 'FINAL' : e.txt.toUpperCase(), '#ffd34d', true, 2);
-        if (e.k === 'end') { const win: Side = e.hs > e.as ? 'h' : 'a'; for (const p of this.on(win)) { this.go(p, p.x + (r() - 0.5) * 6, p.d + (r() - 0.5) * 6, JOG); this.setPose(p, 'celebrate', 3); } this.cheer = 2; }
+        if (e.k === 'end') { const win: Side = e.hs > e.as ? 'h' : 'a'; for (const p of this.on(win)) { this.go(p, p.x + (r() - 0.5) * 6, p.d + (r() - 0.5) * 6, JOG); this.setPose(p, 'celebrate', 3); } this.cheer = 2; this.cheerSide = win; }
         else this.huddle();
       }); break;
       case 'inj': { const pid = this.pidOf(e, 'inj') ?? e.d?.[0]?.[0] ?? null; add(0, () => { const p = this.P(pid); if (p) this.go(p, p.side === 'h' ? 14 : 80, -3, WALK * 0.6); }); break; }
@@ -1748,7 +1771,7 @@ export class PixelCourt {
         this.ball.fly = { x0: B.x, d0: B.d, z0: 10, x1: B.x - s * 0.5, d1: B.d, z1: 0.3, peak: 10, t: 0, dur: 0.35 };
         this.ball.holder = null;
         this.net[off] = 0.4;
-        this.cheer = off === 'h' ? 1.2 : 0.5;
+        this.cheer = off === 'h' ? 1.2 : 0.5; this.cheerSide = off;
         this.say(three ? '+3' : '+2', '#5dff8a', true, 1.3, atRim);
         if (motion === 'dunk') { const pz = this.poster === actor; this.poster = null; this.shake = pz ? 0.9 : oop || star > 0 || ath > 0.6 ? 0.7 : 0.35; this.cheer = 2; this.net[off] = 0.8; this.sayAt(actor, pz ? 'POSTERIZED!' : oop ? 'ALLEY-OOP!' : star > 0 ? 'SLAM!' : 'DUNK!', '#ffd34d', 1.5); }
         // a great pass gets its credit
@@ -1756,11 +1779,18 @@ export class PixelCourt {
         if (ap && !oop && (this.starOf(ap) > 0 || (this.o.looks?.[ap]?.az ?? 0) > 1.2) && r() < 0.3 && (motion === 'layup' || motion === 'dunk')) this.sayAt(ap, 'DIME!', '#9fd3ff', 1.2);
         this.scored(actor, three ? 3 : 2, made);
         const lateClose = e.p >= 4 && e.c < 120 && Math.abs(e.hs - e.as) <= 5;
-        if (three || lateClose || type === 'fb') { this.setPose(A(), 'celebrate', 1.4); if (lateClose) this.cheer = 2; }
-        if (andOne) { this.say('AND ONE!', '#ffd34d', false, 1.4, { x: S.x, d: S.d, z: 24 }); const a = A(); if (a) { this.setPose(a, 'stumble', 0.45); a.next = ['celebrate', 1.0]; } const df = DA(); if (df) this.setPose(df, 'block', 0.4); }
+        const big = three || lateClose || type === 'fb' || andOne || motion === 'dunk';
+        if (three || lateClose || type === 'fb') { this.setPose(A(), three && (star > 0 || r() < 0.35) ? 'goggles' : 'celebrate', 1.4); if (lateClose) this.cheer = 2; }
+        if (andOne) { this.say('AND ONE!', '#ffd34d', false, 1.4, { x: S.x, d: S.d, z: 24 }); const a = A(); if (a) { this.setPose(a, 'stumble', 0.45); a.next = [r() < 0.6 ? 'flex' : 'celebrate', 1.0]; } const df = DA(); if (df) this.setPose(df, 'block', 0.4); }
         // the scorers jog back on defence
         const back = other(off);
-        for (const p of this.on(off)) if (p.pid !== actor || !andOne) this.go(p, this.basket(back).x + this.dir(back) * (10 + r() * 14), 12 + r() * 26, JOG);
+        for (const p of this.on(off)) if (p.pid !== actor || !andOne) this.go(p, this.basket(back).x - this.dir(back) * (10 + r() * 14), 12 + r() * 26, JOG);
+        // the closest teammate comes over to celebrate a big one with him
+        const sc = A();
+        if (sc && big && !this.ff && (r() < 0.75 || lateClose)) {
+          const mate = this.on(off).filter(p => p.pid !== actor).sort((a, b) => hyp(a.x - sc.x, a.d - sc.d) - hyp(b.x - sc.x, b.d - sc.d))[0];
+          if (mate && hyp(mate.x - sc.x, mate.d - sc.d) < 22) { mate.five = { pid: sc.pid, until: this.v + 1.8, x: mate.tx, d: mate.td, big: true }; this.go(mate, sc.x, sc.d, RUN); mate.beh = { k: 'follow', pid: sc.pid, dx: 0, dd: 0 }; }
+        }
       } else if (!blocker) {
         this.rimFx = { side: off, made, t: 0 };
         this.say('MISS', '#ff6b6b', true, 1.1, atRim);
@@ -1772,6 +1802,9 @@ export class PixelCourt {
         const b = this.ball;
         this.ball.fly = { x0: b.x, d0: b.d, z0: Math.max(10, b.z), x1: tx, d1: td, z1: 7, peak: 13 + r() * 2, t: 0, dur: 0.7, to: reb && hyp(reb.x - tx, reb.d - td) < 6 ? reb.pid : undefined };
         this.scored(actor, 0, false);
+        const lateClose = e.p >= 4 && e.c < 60 && Math.abs(e.hs - e.as) <= 3;
+        const a = A();
+        if (a && (lateClose || (three && this.starOf(actor ?? '') > 0 && r() < 0.15))) { if (a.pt > 0) a.next = ['dismay', 0.9]; else this.setPose(a, 'dismay', 0.9); }
       }
     });
   }
@@ -1970,6 +2003,16 @@ export class PixelCourt {
     const next = items[k + 1]?.e;
     const firstFt = !items[k - 1] || (items[k - 1].e.k !== 'ft' && items[k - 1].e.k !== 'ftm');
     add(0, () => { this.ftFormation(side, sh, firstFt ? JOG : WALK); if (this.ball.holder !== sh) { const p = this.P(sh); if (p) { this.ball.holder = null; this.ball.fly = { x0: this.ball.x, d0: this.ball.d, z0: this.ball.z, x1: p.x, d1: p.d, z1: 5, peak: 7, t: 0, dur: Math.min(0.8, L * 0.3), done: () => this.give(sh), to: sh ?? undefined }; } } this.label = sh ? { pid: sh, t: 1.6 } : null; this.hl = sh ? { pid: sh, t: L } : null; });
+    // between free throws a teammate from the lane comes over to slap his hand, then goes back
+    if (!firstFt) {
+      add(0.05, () => {
+        const p = this.P(sh); if (!p) return;
+        const mate = this.on(side).filter(q => q.pid !== sh).sort((a, b) => hyp(a.x - p.x, a.d - p.d) - hyp(b.x - p.x, b.d - p.d))[0];
+        if (mate && hyp(mate.x - p.x, mate.d - p.d) < 16 && r() < 0.8) { mate.five = { pid: p.pid, until: this.v + Math.max(0.6, L - 1.4), x: mate.x, d: mate.d }; this.go(mate, p.x - s * 1.5, p.d + (mate.d < p.d ? -1.5 : 1.5), RUN); }
+      });
+    }
+    // his routine: a couple of dribbles, then he sets the ball, eyes on the rim
+    add(L - 1.45, () => { const p = this.P(sh); if (p && this.ball.holder === sh) this.setPose(p, 'gather', 0.45); });
     add(L - 1.0, () => { const p = this.P(sh); if (p) { this.give(sh); this.setPose(p, 'gather', 0.2); } });
     add(L - 0.8, () => { const p = this.P(sh); if (p) { this.give(sh); this.jump(p, 0.6, 0.45, 'shoot'); } });
     add(L - 0.6, () => this.setPose(this.P(sh), 'follow', 0.6));
@@ -1987,7 +2030,7 @@ export class PixelCourt {
         this.ball.fly = { x0: B.x, d0: B.d, z0: 10, x1: tx, d1: td, z1: 7, peak: 12, t: 0, dur: 0.55 };
         this.say('MISS', '#ff6b6b', false, 0.9, { x: B.x, d: B.d, z: 17 });
       }
-      if (last && made) { const back = other(side); for (const p of this.on(side)) this.go(p, this.basket(back).x + this.dir(back) * (12 + r() * 10), 12 + r() * 26, JOG); }
+      if (last && made) { const back = other(side); for (const p of this.on(side)) this.go(p, this.basket(back).x - this.dir(back) * (12 + r() * 10), 12 + r() * 26, JOG); }
     });
   }
 
@@ -2430,7 +2473,7 @@ export class PixelCourt {
     pids.forEach((pid, i) => {
       const { X, Y } = this.toCanvas(x0 + i * gap + 2, AYF - 4.2);
       const lk = this.looksOf(pid);
-      const pose: AthPose = this.cheer > 0.6 && hash01(pid + 'c') < 0.6 ? 'celebrate' : 'sit';
+      const pose: AthPose = this.cheer > 0.6 && this.cheerSide === side && hash01(pid + 'c') < 0.6 ? 'celebrate' : 'sit';
       const H = this.heightPx(lk, -6) * 0.92;
       const key = `${pid}|${pose}|${H.toFixed(1)}`;
       let img = this.benchCache.get(key);
@@ -2441,6 +2484,16 @@ export class PixelCourt {
       }
       if (img) g.drawImage(img, Math.round(X - img.width / 2), Math.round(Y - img.height + 4));
     });
+    // the head coach paces in front of his bench: arms out after a bad play, hands on his head after a big miss
+    const tid = side === 'h' ? this.o.home.tid : this.o.away.tid;
+    const ch = (k: string) => hash01(tid + 'coach' + (this.o.season ?? 0) + k);
+    const cx = x0 + n * gap * (side === 'h' ? 0.75 : 0.25) + Math.sin(time * 0.35 + ch('p') * 6) * 4;
+    const { X, Y } = this.toCanvas(cx, AYF - 1.6);
+    const mood = this.coachMood[side];
+    const pose: AthPose = mood && mood.t > 0 ? mood.pose : Math.abs(Math.cos(time * 0.35 + ch('p') * 6)) > 0.25 ? 'run' : 'stand';
+    const body: Look = { skin: SKIN[Math.floor(ch('s') * SKIN.length)], hair: ch('h') < 0.35 ? 'bald' : 'short', hairColor: ch('g') < 0.4 ? '#9a9a9a' : '#2a1d14', facial: ch('f') < 0.3 ? 'goatee' : 'none', band: false, num: 0, ht: 76, build: 0.65, shoe: '#151515', socks: '#151515' } as any;
+    const H = this.heightPx(body, -2);
+    drawAthlete(g, Math.round(X), Math.round(Y), { H, headU: this.headU(-2), face: side === 'h' ? 1 : -1, pose, ph: time * 4, amp: pose === 'run' ? 0.18 : 0, air: false, kit: { jersey: ch('c') < 0.5 ? '#23262e' : '#3a3f4a', trim: '#e9e9e9', trim2: '#9b2335', shorts: ch('c') < 0.5 ? '#23262e' : '#3a3f4a' }, body, shorts: 0.9, font: this.font, num: false, view: 'side', suit: ch('c') < 0.5 ? '#23262e' : '#3a3f4a' });
   }
 
   private looksOf(pid: string): Look {
