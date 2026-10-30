@@ -46,7 +46,7 @@ export class Timeline {
       else if (k === 'timeout') len = 4.5;
       else if (k === 'period' || k === 'end') len = 2.8;
       else if (k === 'inj') len = 1.6;
-      else if (k === 'sub') len = i === 0 ? 0.2 : 1.2;
+      else if (k === 'sub') len = i === 0 ? 0.2 : prev && (prev.k === 'period' || prev.k === 'timeout') ? 1.2 : 2.8; // the subs need a moment to come on and the others to walk off
       else if (isShot(k) || k === 'tov') { len = 1.5; debt += 1.5; }
       else len = 0.5;
       items.push({ i, e, a: v, b: v + len, g0: g, g1: Math.max(g, e.t), sc0, scb, live: gap > 0 || k === 'orb' || k === 'drb' });

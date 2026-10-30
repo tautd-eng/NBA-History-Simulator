@@ -29,7 +29,7 @@ function looksFor(names: Record<string, string>) {
     const sockH = era < 1988 ? 12 : era < 2000 ? 7 : h('sh') < 0.5 ? 9 : 5;
     const shoe = era < 1995 ? (h('sc') < 0.85 ? '#f4f4f4' : '#202020') : h('sc') < 0.45 ? '#f4f4f4' : h('sc') < 0.8 ? '#1c1c1c' : ['#d23a2a', '#2a62d2', '#f2c230', '#30b060'][Math.floor(h('scc') * 4)];
     const sleeve = era >= 2003 && h('sl') < 0.18 ? (h('sls') < 0.5 ? 1 : -1) : 0;
-    out[pid] = { skin: f.skin, hair: f.hair, hairColor: f.hairColor, facial: f.facial, band: f.band, num, ht: p.ht ?? 79, build, socks, sockH, shoe, sleeve, knee: pn >= 4 && h('k') < 0.3, tat: era >= 1998 && h('tt') < (era >= 2010 ? 0.5 : 0.3) ? (h('tt2') < 0.45 ? 2 : 1) : 0, goggles: h('gg') < 0.012, legSleeve: era >= 2008 && h('ls') < 0.12 ? (h('ls2') < 0.5 ? 1 : -1) : 0, wrist: h('w') < (era < 1995 ? 0.35 : 0.2), ovr: shownOvr(p.z), ath: Math.max(0, Math.min(1, 0.5 + (p.z?.[3] ?? 0) * 0.15 + (p.z?.[0] ?? 0) * 0.1 - Math.max(0, (p.ht ?? 79) - 82) * 0.04)) };
+    out[pid] = { skin: f.skin, hair: f.hair, hairColor: f.hairColor, facial: f.facial, band: f.band, num, ht: p.ht ?? 79, build, socks, sockH, shoe, sleeve, knee: pn >= 4 && h('k') < 0.3, tat: era >= 1998 && h('tt') < (era >= 2010 ? 0.5 : 0.3) ? (h('tt2') < 0.45 ? 2 : 1) : 0, goggles: h('gg') < 0.012, legSleeve: era >= 2008 && h('ls') < 0.12 ? (h('ls2') < 0.5 ? 1 : -1) : 0, wrist: h('w') < (era < 1995 ? 0.35 : 0.2), ovr: shownOvr(p.z), tz: p.z?.[4] ?? 0, az: p.z?.[7] ?? 0, ath: Math.max(0, Math.min(1, 0.5 + (p.z?.[3] ?? 0) * 0.15 + (p.z?.[0] ?? 0) * 0.1 - Math.max(0, (p.ht ?? 79) - 82) * 0.04)) };
   }
   return out;
 }
@@ -48,7 +48,7 @@ export function CourtCanvas({ home, away, names, sides, pos, events, v, upto, sp
 
   useEffect(() => {
     const season = nav.lg?.season ?? 2000;
-    const c = new PixelCourt(ref.current!, { home, away, names, side: sides, pos, style: mode, looks: mode === 'arena' ? looksFor(names) : undefined, orbReset: season >= 2019 ? 14 : 24, season, homeName: nav.lg?.teams?.[home.tid]?.name });
+    const c = new PixelCourt(ref.current!, { home, away, names, side: sides, pos, style: mode, looks: looksFor(names), orbReset: season >= 2019 ? 14 : 24, season, homeName: nav.lg?.teams?.[home.tid]?.name });
     court.current = c;
     (window as any).__court = c; // handy for debugging the director from the console
     c.onIdle = () => idle.current?.();
@@ -67,7 +67,7 @@ export function CourtCanvas({ home, away, names, sides, pos, events, v, upto, sp
   useEffect(() => { if (court.current && upto == null) court.current.ext = v ?? 0; }, [v]);
   useEffect(() => { if (court.current) court.current.speed = speed; }, [speed]);
   useEffect(() => { if (court.current) { court.current.replays = replays; if (!replays) court.current.pending = null; } }, [replays]);
-  useEffect(() => { court.current?.setStyle(mode, mode === 'arena' ? looksFor(names) : undefined); }, [mode]);
+  useEffect(() => { court.current?.setStyle(mode, looksFor(names)); }, [mode]);
 
   return <canvas ref={ref} className="pixel-court" aria-label="Court" />;
 }

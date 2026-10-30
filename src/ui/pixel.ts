@@ -47,7 +47,7 @@ export interface CourtOpts {
   season?: number;
   homeName?: string;            // full team name (painted on the baselines)
 }
-export interface Look extends Body { ovr?: number; ath?: number }
+export interface Look extends Body { ovr?: number; ath?: number; tz?: number; az?: number }
 
 type Side = 'h' | 'a';
 type Pose = 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
@@ -71,6 +71,7 @@ interface PSprite {
   hang?: number;  // hanging on the rim after a dunk (seconds)
   lvx?: number;   // last velocity along the court (to notice a change of direction)
   ax?: number; ad?: number; // the spot he was sent to (idle shuffles stay around it)
+  inFor?: string; slap?: boolean; // substitution: the man he replaces, and whether they slapped hands
   next?: [Pose, number];     // the pose that follows the current one
 }
 interface Fly { x0: number; d0: number; z0: number; x1: number; d1: number; z1: number; peak: number; t: number; dur: number; to?: string; done?: () => void; bounce?: boolean }
@@ -156,7 +157,8 @@ export class PixelCourt {
   pending: { from: number; to: number; at: number } | null = null;
   extRate = 1; lastExt: number | null = null;
   lastReplayT = -999;
-  notes = new Map<number, string>(); // what happened, explained (turnovers): shown with the play-by-play line
+  notes = new Map<number, string>();
+  waiting: { pid: string; side: Side; i: number }[] = []; // subs crouched at the scorer's table, waiting for a whistle // what happened, explained (turnovers): shown with the play-by-play line
   canvas: HTMLCanvasElement;
   constructor(canvas: HTMLCanvasElement, o: CourtOpts) {
     this.canvas = canvas;
@@ -454,20 +456,32 @@ export class PixelCourt {
   }
 
   // ------------------------------------------------------------ lineups
+  /** where a team's bench is (feet along the court), and the spot at the scorer's table where subs wait */
+  benchX(side: Side) { return side === 'h' ? 19 : 66.5; }
+  tableSpot(side: Side, i: number) { return { x: 47 + (side === 'h' ? -1 : 1) * (2.4 + i * 1.9), d: -2.6 }; }
+
   setLineups(h: string[], a: string[], snap = false) {
     const keep = new Set([...h, ...a]);
     const outs: Record<Side, PSprite[]> = { h: [], a: [] };
     for (const [pid, p] of this.players) if (!keep.has(pid)) {
       if (snap) { this.players.delete(pid); continue; }
-      if (!p.leaving) { outs[p.side].push(p); p.leaving = true; this.go(p, 47 + (p.side === 'h' ? -3 : 3), -3, JOG); }
+      // the man coming out walks off to his bench
+      if (!p.leaving) { outs[p.side].push(p); p.leaving = true; this.go(p, this.benchX(p.side) + (hash01(pid) - 0.5) * 8, -4.6, JOG * 0.8); p.slap = false; }
     }
+    const n: Record<Side, number> = { h: 0, a: 0 };
     for (const [side, ids] of [['h', h], ['a', a]] as const) for (const pid of ids) {
       const ex = this.players.get(pid);
-      if (ex) { ex.leaving = false; continue; }
+      if (ex) { if (ex.leaving) { ex.leaving = false; } continue; }
       const rep = outs[side].shift();
-      if (snap) this.addPlayer(pid, side, 47, 25);
-      else { const p = this.addPlayer(pid, side, 47 + (side === 'h' ? -3 : 3), -3); this.go(p, rep ? rep.x : 47, rep ? rep.d : 25, JOG); }
+      if (snap) { this.addPlayer(pid, side, 47, 25); continue; }
+      // the sub comes in from the scorer's table and takes the place of the man he replaces
+      const w = this.waiting.findIndex(x => x.pid === pid);
+      const at = this.tableSpot(side, w >= 0 ? this.waiting[w].i : n[side]++);
+      const p = this.addPlayer(pid, side, at.x, at.d);
+      p.slap = false; p.inFor = rep?.pid;
+      this.go(p, rep ? rep.x : 47, rep ? rep.d : 25, JOG);
     }
+    this.waiting = this.waiting.filter(x => !this.players.has(x.pid));
     if (this.ball.holder && !this.players.has(this.ball.holder)) this.ball.holder = null;
   }
 
@@ -509,6 +523,9 @@ export class PixelCourt {
         if (this.ball.holder === man.pid) {
           const gap = Math.min(4, dist * 0.35);
           p.tx = man.x + dx / dist * gap; p.td = man.d + dd / dist * gap;
+          // the ball is still in the back court: wait for him a step inside half court
+          const fromB = hyp(p.tx - B.x, p.td - B.d);
+          if (fromB > 40) { p.tx = B.x + (p.tx - B.x) * 40 / fromB; p.td = B.d + (p.td - B.d) * 40 / fromB; }
           // closing out: sprint, then chop the feet with a hand up
           p.spd = hyp(p.tx - p.x, p.td - p.d) > 5 ? SPRINT : RUN;
         } else {
@@ -519,7 +536,10 @@ export class PixelCourt {
           let tx = man.x + dx * f, td = man.d + dd * f;
           const w = db > 18 ? 0.2 : 0.06;
           tx += (bp.x - tx) * w; td += (bp.d - td) * w;
-          p.tx = tx; p.td = td; p.spd = RUN;
+          // nobody guards a man 40 feet from the basket: the defence gets back and builds its wall first
+          const fromB = hyp(tx - B.x, td - B.d), lim = 23;
+          if (fromB > lim) { tx = B.x + (tx - B.x) * lim / fromB; td = B.d + (td - B.d) * lim / fromB; }
+          p.tx = tx; p.td = td; p.spd = hyp(tx - p.x, td - p.d) > 12 ? SPRINT : RUN;
         }
       } else if (b.k === 'follow') {
         const o = this.P(b.pid);
@@ -567,6 +587,12 @@ export class PixelCourt {
         p.lvx = p.vx;
       } else p.xover = 0;
       if (p.leaving && dist < 1.2) this.players.delete(pid);
+      // the sub and the man he replaces slap hands as they pass
+      if (p.inFor && !p.slap) {
+        const o = this.players.get(p.inFor);
+        if (!o) p.slap = true;
+        else if (hyp(o.x - p.x, o.d - p.d) < 3) { p.slap = true; o.slap = true; p.face = Math.sign(o.x - p.x) || 1; o.face = -p.face; this.setPose(p, 'pass', 0.3); this.setPose(o, 'pass', 0.3); }
+      }
     }
     // nobody stands inside anybody else
     const ps = [...this.players.values()];
@@ -646,6 +672,7 @@ export class PixelCourt {
     for (let j = k - 1; j >= 0; j--) if (items[j].e.on) { lu = items[j].e.on!; break; }
     if (!lu && items[k].e.on) lu = items[k].e.on!;
     this.players.clear();
+    this.waiting = [];
     this.ball = { x: 47, d: 25, z: 3, holder: null, fly: null };
     if (lu) { for (const pid of lu.h) this.addPlayer(pid, 'h', 47, 25); for (const pid of lu.a) this.addPlayer(pid, 'a', 47, 25); }
     this.match.clear();
@@ -719,6 +746,22 @@ export class PixelCourt {
 
   /** half-court spots by position (point guard first); stretch fours space to the corner in later eras */
   homes() { return (this.o.season ?? 2000) >= 2008 ? ['top', 'lw', 'rw', 'rc', 'lb'] : ['top', 'lw', 'rw', 're', 'lb']; }
+  /** a big who doesn't shoot threes lives inside the arc */
+  inside(pid: string) { const l = this.o.looks?.[pid]; return this.posN(pid) >= 4 && (l?.tz ?? -1) < -0.2; }
+  /** half-court spot of every player by role: the point guard up top, non-shooting bigs on the block or the
+   *  elbow, shooters on the wings and in the corners (the corners fill up in the three-point era) */
+  homeSpots(side: Side): Map<string, string> {
+    const o = this.ord(side), out = new Map<string, string>();
+    if (!o.length) return out;
+    out.set(o[0].pid, 'top');
+    const modern = (this.o.season ?? 2000) >= 2008;
+    const ins = o.slice(1).filter(p => this.inside(p.pid)), outs = o.slice(1).filter(p => !this.inside(p.pid));
+    const inSpots = ['lb', 're', 'rb', 'le'];
+    ins.forEach((p, i) => out.set(p.pid, inSpots[i] ?? 'rb'));
+    const outSpots = (modern ? ['lw', 'rw', 'rc', 'lc'] : ['lw', 'rw', 'lc', 'rc']).filter(n => !(ins.length >= 2 && !modern && n === 'rc'));
+    outs.forEach((p, i) => out.set(p.pid, outSpots[i] ?? 'ls'));
+    return out;
+  }
   /** off-ball players go back to balanced spots: both wings, a corner and a block, away from the ball */
   private respace(off: Side, keep: (string | null)[], spd = JOG, r?: () => number) {
     const hold = this.P(this.ball.holder) ?? this.P(keep[0]);
@@ -734,7 +777,7 @@ export class PixelCourt {
     const pairs: [number, PSprite, typeof pts[0]][] = [];
     for (const p of free) for (const q of pts) {
       if (taken.has(q.n)) continue;
-      const big = this.posN(p.pid) >= 4.5, inside = q.n.endsWith('b') || q.n.endsWith('e');
+      const big = this.inside(p.pid), inside = q.n.endsWith('b') || q.n.endsWith('e');
       pairs.push([hyp(q.x - p.x, q.d - p.d) + (big === inside ? 0 : 25), p, q]);
     }
     pairs.sort((a, b) => a[0] - b[0]);
@@ -744,8 +787,8 @@ export class PixelCourt {
 
   /** the offence in its half-court spots, the defence on its men */
   private halfcourt(off: Side) {
-    const o = this.ord(off), names = this.homes();
-    o.forEach((p, i) => { const q = this.spot(off, names[i] ?? 'top'); p.tx = q.x; p.td = q.d; p.beh = { k: 'spot' }; });
+    const o = this.ord(off), hs = this.homeSpots(off);
+    o.forEach(p => { const q = this.spot(off, hs.get(p.pid) ?? 'top'); p.tx = q.x; p.td = q.d; p.beh = { k: 'spot' }; });
     this.matchUp(off);
     const B = this.basket(off);
     for (const [op, dp] of this.match) {
@@ -781,7 +824,32 @@ export class PixelCourt {
     if (e.on && e.k === 'sub') {
       const on = e.on;
       add(0, () => this.setLineups(on.h, on.a, k === 0 || this.players.size === 0));
+      // while the subs come on, somebody picks the loose ball up
+      if (k > 0) add(0.2, () => {
+        if (this.ball.holder || this.ball.fly) return;
+        const side = this.possSide(Math.min(items.length - 1, k + 1));
+        const p = this.on(side).sort((a, b) => hyp(a.x - this.ball.x, a.d - this.ball.d) - hyp(b.x - this.ball.x, b.d - this.ball.d))[0];
+        if (!p) return;
+        this.go(p, this.ball.x, this.ball.d, JOG);
+        const bx = this.ball.x, bd = this.ball.d;
+        add(Math.min(L - 0.1, 0.2 + hyp(p.x - bx, p.d - bd) / JOG + 0.2), () => { if (!this.ball.holder && !this.ball.fly) this.give(p.pid); });
+      });
       if (k === 0) add(0, () => this.setupTip());
+    }
+    // subs check in at the scorer's table a few seconds before the whistle that brings them in
+    for (let j = k + 1; j < Math.min(items.length, k + 3); j++) {
+      const nx = items[j].e;
+      if (nx.k === 'sub' && nx.on && j > 0) {
+        const lu = nx.on;
+        add(Math.max(0, L - 3.2), () => {
+          for (const side of ['h', 'a'] as const) {
+            const ins = lu[side].filter(pid => !this.players.has(pid));
+            ins.forEach((pid, i) => { if (!this.waiting.some(w => w.pid === pid)) this.waiting.push({ pid, side, i }); });
+          }
+        });
+        break;
+      }
+      if (nx.k !== 'foul' && nx.k !== 'ft' && nx.k !== 'ftm' && nx.k !== 'timeout') break;
     }
     switch (e.k) {
       case 'make2': case 'make3': case 'miss2': case 'miss3': this.planShot(k, L, add, r); break;
@@ -890,8 +958,8 @@ export class PixelCourt {
         if (first && first !== holder) { const f = this.P(first); const hp = this.P(holder); if (f && hp) this.go(f, hp.x + s * 14, hp.d < 25 ? 8 : 42, RUN / sc); }
       }
       // everyone else runs to the front court
-      const names = this.homes();
-      others.forEach(p => { const q = this.spot(off, names[o.indexOf(p)] ?? 'lc', 3, r); this.go(p, q.x, q.d, (fb ? SPRINT : slow ? JOG : RUN) / sc); });
+      const hs = this.homeSpots(off);
+      others.forEach(p => { const q = this.spot(off, hs.get(p.pid) ?? 'lc', 3, r); this.go(p, q.x, q.d, (fb ? SPRINT : slow ? JOG : RUN) / sc); });
       if (fb) this.call(off, `${this.abbr(off)} on the break!`);
       else if (call === 'milk') this.call(off, `${this.abbr(off)} milk the clock`);
       else if (call === 'hold') this.call(off, `${this.abbr(off)} hold for the last shot`);
@@ -1002,9 +1070,12 @@ export class PixelCourt {
     // late in the shot clock there is no time for a set play
     const sc0 = items[k].scb - (items[k].g1 - items[k].sc0);
     if (sc0 <= 2.5 && type !== 'putback' && type !== 'fb' && gap > 8) type = rim ? 'drive' : 'pullup';
-    // stars get the floor cleared for them
+    // the engine tells how the play was run (by the players' roles); older logs: stars get the floor cleared for them
     const starA = actor ? this.starOf(actor) : 0;
-    if (!assist && !fb && ['drive', 'pullup', 'pnrDrive', 'pnrPull'].includes(type) && gap > 7 && r() < (starA === 2 ? 0.7 : starA === 1 ? 0.45 : 0.1)) type = 'iso';
+    if (e.pl && (e.pl !== 'fb' || fb) && (e.pl !== 'putback' || type === 'putback')) type = e.pl;
+    else if (!e.pl && !assist && !fb && ['drive', 'pullup', 'pnrDrive', 'pnrPull'].includes(type) && gap > 7 && r() < (starA === 2 ? 0.7 : starA === 1 ? 0.45 : 0.1)) type = 'iso';
+    if (type === 'fb' && !fb) type = rim ? 'drive' : 'pullup';
+    if (sc0 <= 2.5 && gap > 8 && !['putback', 'fb', 'post', 'roll', 'cut'].includes(type)) type = rim ? (big(actor) ? 'post' : 'drive') : (big(actor) ? 'pop' : 'pullup');
     // the shot itself, as the play-by-play describes it
     const sk = e.sk ?? (rim ? 'layup' : three ? 'three' : 'jumper');
     const motion = type === 'putback' ? (sk === 'dunk' ? 'dunk' : 'tip') : sk === 'dunk' ? 'dunk' : sk === 'layup' || sk === 'putback' ? 'layup' : sk === 'floater' ? 'floater' : sk === 'hook' ? 'hook' : sk === 'fadeaway' || sk === 'turnaround' ? 'fade' : sk === 'stepback' ? 'stepback' : 'jumper';
@@ -1858,12 +1929,18 @@ export class PixelCourt {
     g.fillText(this.o.home.abbr + ' · ' + this.o.away.abbr, Math.round((a.X + b.X) / 2), Math.round(a.Y + 2.7 * K));
     // benches
     this.drawBench('h', AXC - 96, time); this.drawBench('a', AXC + 36, time);
+    // subs crouched at the table, waiting to come in
+    for (const w of this.waiting) {
+      const at = this.tableSpot(w.side, w.i), q = this.proj(at.x, at.d), P = this.toCanvas(q.x, q.y);
+      const lk = this.looksOf(w.pid);
+      drawAthlete(g, Math.round(P.X), Math.round(P.Y), { H: this.heightPx(lk, at.d), face: w.side === 'h' ? 1 : -1, pose: 'rest', ph: 0, amp: 0, air: false, kit: this.kitOf(w.side), body: lk, shorts: this.shortsLen(), font: this.font, view: 'side' });
+    }
   }
 
   /** Substitutes sitting on the bench, in team colours. */
   private drawBench(side: 'h' | 'a', x0: number, time: number) {
     const g = this.ctx, K = this.K;
-    const pids = Object.keys(this.o.side).filter(pid => this.o.side[pid] === side && !this.players.has(pid)).slice(0, 8);
+    const pids = Object.keys(this.o.side).filter(pid => this.o.side[pid] === side && !this.players.has(pid) && !this.waiting.some(w => w.pid === pid)).slice(0, 8);
     const n = Math.max(5, pids.length), gap = 7.4;
     const a = this.toCanvas(x0 - 3, AYF - 5.2), b = this.toCanvas(x0 + n * gap, AYF - 3.6);
     g.fillStyle = '#3a2a1c'; g.fillRect(Math.round(a.X), Math.round(a.Y), Math.round(b.X - a.X), Math.round(b.Y - a.Y));
@@ -1896,6 +1973,7 @@ export class PixelCourt {
     if (p.pt > 0) return p.pose;
     if (p.leaving) return 'stand';
     if (this.ball.holder === p.pid && !this.ball.fly) return 'dribble';
+    if (this.ball.fly?.to === p.pid) return 'pass'; // hands up, ready for the catch
     if (p.beh.k === 'guard' && this.ball.holder === p.beh.man) { const m = this.players.get(p.beh.man); if (m) { const dm = Math.hypot(m.x - p.x, m.d - p.d), v = Math.hypot(p.vx, p.vd); if (dm < 9 && v > 6 && dm > 4) return 'contest'; if (dm < 7) return 'stance'; } }
     // off the ball, a defender near the action stays down in his stance
     if (p.beh.k === 'guard' && Math.hypot(p.vx, p.vd) < 4) { const h = this.P(this.ball.holder); if (h && h.side !== p.side && Math.hypot(h.x - p.x, h.d - p.d) < 16) return 'stance'; }
@@ -1953,7 +2031,7 @@ export class PixelCourt {
     const along = Math.abs(p.vx) * AFX, across = Math.abs(p.vd) * AFY * 2.2;
     const view = pose === 'stance' || pose === 'shoot' || pose === 'layup' || pose === 'dunk' || pose === 'hook' ? 'side' : sp > 3 && across > along * 1.4 ? (p.vd < 0 ? 'back' : 'front') : 'side';
     const nm = (this.o.names[p.pid] ?? '').split(' ').slice(1).join(' ').toUpperCase();
-    const hands = drawAthlete(g, Math.round(X), Math.round(Y - lift), { H, face, pose: ap, ph: ap === 'stand' || ap === 'stance' ? time * 2.6 + hash01(p.pid) * 6 : p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm, hand: p.hand ?? 1, t: p.pt > 0 ? p.pt : 0 });
+    const hands = drawAthlete(g, Math.round(X), Math.round(Y - lift), { H, face, pose: ap, ph: ap === 'stand' || (ap === 'stance' && sp < 2) ? time * 2.6 + hash01(p.pid) * 6 : p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm, hand: p.hand ?? 1, t: p.pt > 0 ? p.pt : 0 });
     if (this.ball.holder === p.pid && !this.ball.fly) this.drawHeldBall(p, hands, Y, pose, H);
     // on fire: a flicker of flames around a hot shooter
     if (this.hot.get(p.pid) && !this.ff) {

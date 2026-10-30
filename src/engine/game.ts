@@ -74,7 +74,7 @@ function tired(z: number[], f: number): number[] {
   return o;
 }
 
-function prep(p: Player, season: number): GP {
+export function prep(p: Player, season: number): GP {
   const fat = Math.max(0, ((p as any).fatNow ?? 0) - FATIGUE.free);
   const z = tired(p.z, (p as any).fatNow ?? 0);
   const bpm = bpmOf(p.z);
@@ -125,6 +125,7 @@ export interface PbpEv {
   txt: string;
   hs: number; as: number;
   x?: number; y?: number;
+  pl?: string;                              // the play that produced it (iso, pnrDrive, pnrPull, roll, pop, post, cut, kick, offscreen, drive, pullup, fb, putback)
   sk?: string;                              // shot kind (dunk, layup, putback, hook, turnaround, floater, jumper, fadeaway, three, stepback)
   m?: string;                               // primary defender on the play (matchup)
   v?: string;                               // turnover type: strip, pick (intercepted pass), bad (pass out of bounds), travel, oob, clock (shot clock)
@@ -267,6 +268,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   let offCall: OffCall = 'auto', defCall: DefCall = 'normal', isoPid: string | null = null;
   // how the last possession ended decides whether the next one can be a fast break
   let ended: 'make' | 'drb' | 'stl' | 'dead' = 'dead';
+  let stopped = false; // the ball went dead during the possession (free throws, a timeout)
   let fastBreak = false, lateClock = false;
   let userFive: string[] | null = null;
   let timeoutsLeft = ctl?.timeouts ?? 0;
@@ -365,6 +367,32 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const r = 14 + cr.next() * 6.5;
     return { ...at(spot < 0.12 ? 0 : ang, r), rim: false, sk: actor.usg > 0.25 && cr.chance(0.3) ? 'fadeaway' : 'jumper' };
   };
+  /**
+   * The kind of play that produced the shot (cosmetic stream – it only tells the viewer how it happened).
+   * Roles decide: a centre who does not handle the ball scores from the post, rolls or cuts – he does not
+   * drive from the three-point line; ball-dominant stars isolate; shooters come off screens or spot up.
+   */
+  const playOf = (actor: GP, three: boolean, spot: { rim: boolean; sk: string }, fb: boolean, afterOrb: boolean, passed: boolean): string => {
+    const big = actor.posNum >= 4, handler = actor.ast >= 0.2 && actor.usg >= 0.22, star = actor.usg >= 0.27;
+    const pick = (opts: [string, number][]) => { let r = cr.next() * opts.reduce((a, o) => a + o[1], 0); for (const [k, w] of opts) if ((r -= w) <= 0) return k; return opts[0][0]; };
+    if (afterOrb) return spot.rim ? 'putback' : 'kick';
+    if (fb) return 'fb';
+    if (spot.sk === 'hook' || spot.sk === 'turnaround') return 'post';
+    if (three) {
+      if (passed) return big ? 'pop' : pick([['kick', 0.55], ['offscreen', 0.45]]);
+      if (big && !handler) return 'pop';
+      return star && cr.chance(0.5) ? 'iso' : pick([['pnrPull', 0.5], ['pullup', 0.5]]);
+    }
+    if (spot.rim) {
+      if (big && !handler) return passed ? pick([['roll', 0.55], ['cut', 0.25], ['post', 0.2]]) : pick([['post', 0.6], ['roll', 0.25], ['cut', 0.15]]);
+      if (big) return passed ? pick([['roll', 0.4], ['cut', 0.3], ['drive', 0.3]]) : pick([['iso', 0.4], ['drive', 0.3], ['post', 0.3]]);
+      if (passed) return pick([['cut', 0.5], ['drive', 0.5]]);
+      return star && cr.chance(0.55) ? 'iso' : pick([['drive', 0.5], ['pnrDrive', 0.5]]);
+    }
+    if (big && !handler) return passed ? 'pop' : 'post';
+    if (passed) return pick([['offscreen', 0.5], ['kick', 0.5]]);
+    return star && cr.chance(0.45) ? 'iso' : pick([['pullup', 0.5], ['pnrPull', 0.5]]);
+  };
   /** how likely a finish at the rim is a dunk: size, finishing and era */
   const dunkP = (g: GP) => Math.max(0.03, Math.min(0.8, (0.12 + 0.05 * (g.p.ht - 77) + 1.4 * (g.p2 - 0.5)) * (seasonOf < 1978 ? 0.5 : 1)));
   const foulOn = (s: Side, weights?: number[]) => {
@@ -399,7 +427,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         const dec: Decision = (yield snapshot(period, rem, off)) ?? {};
         const user = ctl.side === 'h' ? H : A;
         if (dec.timeout && timeoutsLeft > 0) {
-          timeoutsLeft--;
+          timeoutsLeft--; stopped = true;
           for (const s2 of [H, A]) for (const g of s2.gps) g.e = Math.min(1, g.e + (s2 === user ? 0.14 : 0.08));
           ev('timeout', user, 'Timeout');
         }
@@ -439,10 +467,17 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       // silent (non-shooting, non-bonus) fouls by the defence
       if (rem > 0 && rng.chance(C.silentPf * E.pf * leaguePf * 10)) foulOn(def);
       offense = def;
-      // dead ball: coaches may substitute
+      // substitutions only on a dead ball: a whistle (free throws, a violation, a ball out of bounds, a timeout)
+      // or a made basket in the last two minutes, when the clock stops – never on a live rebound or a steal.
+      // A fouled-out or hurt player is replaced at once.
+      const forced = [...H.on, ...A.on].some(g => g.fouls >= 6 || g.hurt);
+      const dead = stopped || ended === 'dead' || (ended === 'make' && period >= 4 && rem < 120) || forced;
+      stopped = false;
       const ph = H.on, pa = A.on;
-      chooseLineup(H, period, rem, H.pts - A.pts, false, elapsed);
-      chooseLineup(A, period, rem, A.pts - H.pts, false, elapsed);
+      if (dead) {
+        chooseLineup(H, period, rem, H.pts - A.pts, false, elapsed);
+        chooseLineup(A, period, rem, A.pts - H.pts, false, elapsed);
+      }
       if (clutch) applyUserFive();
       if (rem > 0) logSubs(ph, pa);
     }
@@ -605,8 +640,9 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       const pAst = Math.min(0.95, C.ast * E.ast * mates.reduce((a, g) => a + g.ast, 0) * (three ? 1.18 : 0.94));
       let astTxt = '';
       if (rng.chance(pAst)) { const as = mates[rng.weighted(mates.map(g => g.ast))]; inc(as, 'ast'); astTxt = ` (assist ${short(as.p.name)})`; }
+      const pl = log ? playOf(actor, three, spot, fb, afterOrb, !!astTxt) : undefined;
       ended = 'make';
-      ev(three ? 'make3' : 'make2', off, three ? `${an} hits a ${spot.sk === 'stepback' && !astTxt ? 'step-back ' : ''}three${astTxt}` : `${an} ${MADE[spot.sk] ?? `scores ${fb ? 'on the break' : what}`}${astTxt}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, m: md.p.id, ...tag });
+      ev(three ? 'make3' : 'make2', off, three ? `${an} hits a ${spot.sk === 'stepback' && !astTxt ? 'step-back ' : ''}three${astTxt}` : `${an} ${MADE[spot.sk] ?? `scores ${fb ? 'on the break' : what}`}${astTxt}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, pl, m: md.p.id, ...tag });
       if (!three && rng.chance(C.andOne)) {
         foulOn(def);
         ftTrip(off, def, actor, 1);
@@ -614,11 +650,12 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       }
       return 'end';
     }
-    ev(three ? 'miss3' : 'miss2', off, blocker ? `${short(blocker.p.name)} blocks ${an}${spot.sk ? `'s ${({ dunk: 'dunk attempt', stepback: 'step-back' } as Record<string, string>)[spot.sk] ?? spot.sk}` : ''}` : three ? `${an} misses a three` : `${an} ${MISS[spot.sk] ?? `misses ${what === 'at the rim' ? 'at the rim' : what === 'a putback' ? 'the putback' : 'a mid-range jumper'}`}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, m: md.p.id, ...tag });
+    ev(three ? 'miss3' : 'miss2', off, blocker ? `${short(blocker.p.name)} blocks ${an}${spot.sk ? `'s ${({ dunk: 'dunk attempt', stepback: 'step-back' } as Record<string, string>)[spot.sk] ?? spot.sk}` : ''}` : three ? `${an} misses a three` : `${an} ${MISS[spot.sk] ?? `misses ${what === 'at the rim' ? 'at the rim' : what === 'a putback' ? 'the putback' : 'a mid-range jumper'}`}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, pl: log ? playOf(actor, three, spot, fb, afterOrb, cr.chance(three ? 0.55 : spot.rim ? 0.4 : 0.35)) : undefined, m: md.p.id, ...tag });
     return rebound(off, def, false);
   }
 
   function ftTrip(off: Side, def: Side, actor: GP, n: number): 'end' | 'orb' {
+    stopped = true; // free throws: the clock is stopped, the table can wave subs in
     let lastMade = true;
     for (let i = 0; i < n; i++) {
       inc(actor, 'fta');

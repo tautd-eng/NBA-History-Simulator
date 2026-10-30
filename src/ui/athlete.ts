@@ -116,7 +116,8 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
     case 'stance':
       hipY += 0.6 * u * Math.sin(ps * 1.6); // bouncing on his toes
       hipY += 9 * u; lean = 0.28;
-      thA = 0.5; bdA = 0.95; thB = -0.5; bdB = 0.35;
+      // a defensive slide: the feet push apart and come back together, never crossing
+      { const sl = amp > 0.12 ? 0.22 * Math.sin(ps) * Math.min(1, amp * 2) : 0; thA = 0.5 + sl; bdA = 0.95; thB = -0.5 + sl; bdB = 0.35; }
       uA = 1.25; fA = 1.55; uB = -1.15; fB = -1.45; spreadA = 1.1; spreadB = 1.1;
       break;
     case 'shoot':
