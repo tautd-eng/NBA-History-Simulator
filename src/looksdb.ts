@@ -1,3 +1,4 @@
+import { NEW_2027 } from './rosters2027';
 // Appearance of the league's best players for the generated portraits and arena sprites:
 // skin tone (index into SKINS, 0 lightest … 7 darkest), signature hairstyle, facial hair and hair colour.
 // Hair can change with the years: 'short|1990:bald' = short hair, shaved from the 1989–90 season on.
@@ -1546,7 +1547,8 @@ export const GOGGLES = new Set(['abdulka01', 'worthja01', 'grantho01', 'rambiku0
 
 /** The listed look of a player for a season, or null. */
 export function lookFor(id: string, season: number) {
-  const r = LOOKS[id.split('~')[0]];
+  const n = NEW_2027[id.split('~')[0]];
+  const r = LOOKS[id.split('~')[0]] ?? (n ? [n[5]] as LookRow : undefined);
   if (!r) return null;
   let hair = r[1];
   if (hair?.includes('|')) {

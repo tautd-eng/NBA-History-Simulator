@@ -5,6 +5,7 @@ import { simDay } from './league/league';
 import { initDraft, draftAdvance, enterFreeAgency, faStage, startSeason } from './league/offseason';
 import { fantasyAdvance } from './league/fantasy';
 import { registerClones } from './league/classes';
+import { registerNew2027 } from './rosters2027';
 import { deadlineDay } from './ai/trades';
 
 export type Target = 'day' | 'week' | 'deadline' | 'playoffs' | 'seasonEnd' | 'nextSeason' | 'years5';
@@ -130,6 +131,7 @@ import { awardLabel } from './ui/player';
 /** Older saves: award names from the Lithuanian version. */
 const AWARD_EN: Record<string, string> = { 'čempionas': 'Champion', 'Finalo MVP': 'Finals MVP', '6-as žaidėjas': '6MOY' };
 function migrate(lg: League) {
+  registerNew2027();
   registerClones(lg);
   for (const p of Object.values(lg.players) as any[]) {
     if (!p.awards?.length) continue;

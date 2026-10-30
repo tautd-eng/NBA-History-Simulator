@@ -8,6 +8,8 @@ import {
 } from '../types';
 import { newPlayer, ageIn, realTarget, prospectZ, tagOf } from '../players';
 import { buildClasses, ClassMode } from './classes';
+import { ROSTERS_2027, INACTIVE_2027, registerNew2027 } from '../rosters2027';
+import { rookieContract } from './contracts';
 import { nextCal, fatigueAt, addLoad, fatigueExcess, calDay } from './fatigue';
 import { rollGameInjury, injure, refreshInjuries, offDayInjuries } from './injuries';
 import { aiExtensions } from './extensions';
@@ -26,8 +28,10 @@ function saveRng(lg: League, r: Rng) { lg.rng = [...r.s] as any; }
 export function newLeague(destiny: number, seed: number, settings: Settings = { games: null, series: null }, opts: { fantasy?: boolean; start?: number; classMode?: ClassMode } = {}): League {
   const rng = new Rng(seed);
   // starting after the data ends: the league is set up with the last real rosters and begins with that summer's off-season
+  // today's league: the real 2026–27 opening rosters (the ratings are the players' latest real season)
   const future = (opts.start ?? 1980) > LAST_SEASON;
-  const season = Math.max(1980, Math.min(LAST_SEASON, opts.start ?? 1980));
+  if (future) registerNew2027();
+  const season = future ? LAST_SEASON + 1 : Math.max(1980, Math.min(LAST_SEASON - 1, opts.start ?? 1980));
   const si = seasonInfo(season);
   const lg: League = {
     version: VERSION, seed, rng: [...rng.s] as any, destiny, userTid: null, season, phase: 'regular', day: 0,
@@ -55,6 +59,11 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
   };
   const rosters: Record<string, string[]> = {};
   if (season === 1980) Object.assign(rosters, H.roster1980);
+  else if (future) {
+    // opening-night rosters plus the injured who have not played yet; the best fifteen stay
+    const val = (pid: string) => { const hp = H.players[pid]; const r = hp?.s[hp.s.length - 1]; return r ? bpmOf(r[7]) : (hp?.d ? -1 - hp.d[1] / 30 : -4); };
+    for (const [tid, ids] of Object.entries(ROSTERS_2027)) rosters[tid] = [...ids, ...(INACTIVE_2027[tid] ?? [])].filter(pid => H.players[pid]).sort((a, b) => val(b) - val(a));
+  }
   else {
     for (const [pid, hp] of Object.entries(H.players)) {
       const row = hp.s.find(r => r[0] === season);
@@ -65,11 +74,14 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
   for (const [tid, pids] of Object.entries(rosters)) {
     pids.forEach((pid, i) => {
       const hp = H.players[pid];
-      const rs = hp.s.find(r => r[0] === season)!;
-      const p = newPlayer(pid, rs[7], i < 15 ? tid : null, season);
-      p.entered = season === 1980 ? (hp.f === 1980 ? 1980 : 1979) : Math.min(season, hp.s[0][0]);
+      if (!hp) return;
+      const z = future ? (hp.s.length ? (realTarget(pid, LAST_SEASON)?.z ?? hp.s[hp.s.length - 1][7]) : prospectZ(pid, 2026, 0, rng)) : hp.s.find(r => r[0] === season)![7];
+      const p = newPlayer(pid, z, i < 15 ? tid : null, season);
+      p.entered = season === 1980 ? (hp.f === 1980 ? 1980 : 1979) : hp.s.length ? Math.min(season, hp.s[0][0]) : season;
       withDraft(p);
+      if (future && p.draft && !p.draft.tid) { p.draft.tid = tid; p.draft.realTid = tid; }
       sign(p);
+      if (future && p.draft?.year === LAST_SEASON) p.contract = rookieContract(p.draft.pick, p.draft.round, LAST_SEASON);
       lg.players[pid] = p;
       if (p.tid) lg.teams[tid].roster.push(pid);
     });
@@ -78,6 +90,11 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
     for (const [pid, hp] of Object.entries(H.players)) {
       if (lg.players[pid] || !hp.s.length) continue;
       const first = hp.s[0][0], last = hp.s[hp.s.length - 1][0];
+      if (future) {
+        // played last season but is on nobody's opening roster: a free agent
+        if (last === LAST_SEASON) { const p = newPlayer(pid, hp.s[hp.s.length - 1][7], null, season); p.entered = first; withDraft(p); sign(p); lg.players[pid] = p; }
+        continue;
+      }
       if (first < season && last > season) {
         // sat out this season in reality: a free agent
         const tgt = realTarget(pid, season)!;
@@ -111,34 +128,23 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
     lg.news.push({ s: season, t: `Fantasy draft: all ${label} players go into one pool and teams pick in snake order.` });
     return lg;
   }
-  if (future) { skipRealSeason(lg, rng); return lg; }
+  if (future) realLastSeason(lg);
   beginFirstSeason(lg, rng);
   lg.news.push({ s: season, t: `The ${label} season begins. Destiny slider: ${Math.round(destiny * 100)}%.` });
   return lg;
 }
 
-/**
- * The last real season counts as already played: real records and champion go into the history,
- * and the league opens with that summer's draft and free agency.
- */
-function skipRealSeason(lg: League, rng: Rng) {
-  const S = lg.season, si = seasonInfo(S);
-  for (const t of activeTeams(lg)) { const r = si.teams[t.tid]; if (r) { t.w = r.w; t.l = r.l; } }
+/** The last real season goes into the league's history as it really happened (records and champion). */
+function realLastSeason(lg: League) {
+  const S = LAST_SEASON, si = seasonInfo(S);
   const champ = realChampion(S);
   const aw = H.awards?.[String(S)];
+  const rows = Object.entries(si.teams).filter(([tid]) => lg.teams[tid]).map(([tid, t]) => ({ tid, name: t.name, abbr: t.abbr, w: t.w, l: t.l, conf: t.conf }))
+    .sort((a, b) => b.w / Math.max(1, b.w + b.l) - a.w / Math.max(1, a.w + a.l));
   lg.history.push({
     season: S, champion: champ && lg.teams[champ] ? champ : undefined, mvp: aw?.mvp && lg.players[aw.mvp] ? aw.mvp : undefined, roy: aw?.roy && lg.players[aw.roy] ? aw.roy : undefined,
-    standings: standings(lg).map(t => ({ tid: t.tid, name: t.name, abbr: t.abbr, w: t.w, l: t.l, conf: t.conf })),
-    leaders: {}, notes: [`The ${S - 1}–${String(S).slice(2)} season as it really happened (not simulated here). The league takes over from its draft.`],
+    standings: rows, leaders: {}, notes: [`The ${S - 1}–${String(S).slice(2)} season as it really happened (not simulated here).`],
   });
-  if (champ && lg.teams[champ]) for (const pid of lg.teams[champ].roster) lg.players[pid].awards.push(`${S} Champion`);
-  updateStrategies(lg);
-  ensurePicks(lg);
-  recordHealth(lg);
-  lg.phase = 'draft';
-  lg.day = 0;
-  saveRng(lg, rng);
-  lg.news.push({ s: S, t: `The league starts in the summer of ${S}: draft, free agency, then the ${S}–${String(S + 1).slice(2)} season. From here on, historical draft classes come round again in a random order. Destiny slider: ${Math.round(lg.destiny * 100)}%.` });
 }
 
 export function beginFirstSeason(lg: League, rng = rngOf(lg)) {

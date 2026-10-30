@@ -477,9 +477,9 @@ function Setup({ onStart, onLoad }: any) {
         <label className="field" htmlFor="start">
           <span>Starting season</span>
           <select id="start" value={start} onChange={e => pickYear(+e.target.value)}>
-            {years.map(y => <option key={y} value={y}>{y - 1}–{String(y).slice(2)}{y > LAST_SEASON ? ' – from the summer of ' + LAST_SEASON + ' (beyond the data)' : ''}</option>)}
+            {years.map(y => <option key={y} value={y}>{y - 1}–{String(y).slice(2)}{y > LAST_SEASON ? ' – today\'s rosters' : ''}</option>)}
           </select>
-          <small>{future ? `Today's league: the ${LAST_SEASON - 1}–${String(LAST_SEASON).slice(2)} rosters, and the league opens with the ${LAST_SEASON} draft and free agency. After that every draft class is a historical one coming round again (copies of its players, developing like the originals did), in a random order.` : 'Teams and rosters are as they were that season. The league has no stats from earlier years: history starts here.'}</small>
+          <small>{future ? `Today's NBA: the real ${LAST_SEASON}–${String(LAST_SEASON + 1).slice(2)} opening-night rosters, ${LAST_SEASON} rookies included (rated from their draft slot; everyone else from his ${LAST_SEASON - 1}–${String(LAST_SEASON).slice(2)} season). From the next draft on, every class is a historical one coming round again (copies of its players, developing like the originals did), in a random order.` : 'Teams and rosters are as they were that season. The league has no stats from earlier years: history starts here.'}</small>
         </label>
         {!future && <fieldset className="field radio-set">
           <legend>Draft classes</legend>
