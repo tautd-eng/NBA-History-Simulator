@@ -168,7 +168,8 @@ export class PixelCourt {
   notes = new Map<number, string>();
   heldAt: { pid: string; x: number; z: number; v: number } | null = null;
   pickup: { pid: string; then?: () => void } | null = null;
-  lower: { pid: string; t: number } | null = null; // the lower-third graphic with a player's line
+  lower: { pid: string; t: number } | null = null;
+  poster: string | null = null; // a dunk on somebody // the lower-third graphic with a player's line
   featured = new Map<string, number>(); lastLower = -999;
   card: { kind: 'period' | 'timeout'; k: number; t: number } | null = null; // who is going to pick up the loose ball
   waiting: { pid: string; side: Side; i: number }[] = []; // subs crouched at the scorer's table, waiting for a whistle // what happened, explained (turnovers): shown with the play-by-play line
@@ -1520,7 +1521,8 @@ export class PixelCourt {
     const P0 = sb ? { x: S.x + (B.x - S.x) / dS * 3.2, d: S.d + (B.d - S.d) / dS * 3.2 } : S;
     const due = sb ? Math.max(0.3, release - 0.8) : gatherAt;
     // far away (just got the ball back at the other end): head there right from the start
-    add(0, () => { const a = A(); if (a && hyp(a.x - P0.x, a.d - P0.d) / RUN > due - 1.9) a.beh = { k: 'arrive', x: P0.x, d: P0.d, at: abs(due) }; });
+    // behind schedule at any point (he is still at the other end): he heads for his spot right away
+    for (let t0 = 0; t0 < due - 1.9; t0 += 1.2) { const tt = t0; add(tt, () => { const a = A(); if (a && a.beh.k !== 'arrive' && hyp(a.x - P0.x, a.d - P0.d) / (RUN * 0.9) > due - tt - 1.6) a.beh = { k: 'arrive', x: P0.x, d: P0.d, at: abs(due) }; }); }
     for (const lead of type === 'fb' ? [3.2, 1.9, 0.9] : (type === 'kickdrive' || type === 'double') && rim ? [0.7] : [1.9, 0.9]) add(Math.max(0, due - lead), () => { const a = A(); if (a && hyp(a.x - P0.x, a.d - P0.d) > 0.5) a.beh = { k: 'arrive', x: P0.x, d: P0.d, at: abs(due) }; });
     // the move into the shot
     const showOff = (txt: string) => { if (star > 0 || r() < 0.35) this.sayAt(actor, txt, '#ffd34d', 1.0); };
@@ -1543,6 +1545,13 @@ export class PixelCourt {
     } else if ((motion === 'layup' || motion === 'dunk' || motion === 'floater') && isGuard && flashy && ['drive', 'iso', 'pnrDrive', 'kickdrive'].includes(type) && r() < 0.4) {
       add(release - 1.25, () => { const a = A(); if (!a) return; const p1 = perp(a, r() < 0.5 ? 1 : -1, 2.4, Math.max(5, hyp(a.x - B.x, a.d - B.d) - 4)); a.beh = { k: 'arrive', x: p1.x, d: p1.d, at: abs(release - 0.85) }; a.spin = 0.32; showOff('SPIN MOVE'); });
     }
+    // post moves: a fake to the baseline, a spin back to the middle – the Dream Shake – then the hook or the turnaround
+    if ((motion === 'hook' || motion === 'fade') && type === 'post' && (star > 0 || ath > 0.55 || r() < 0.35)) {
+      add(Math.max(0, release - 1.15), () => { const a = A(); if (!a) return; const p1 = perp(a, a.d < 25 ? -1 : 1, 1.6, Math.max(3, hyp(a.x - B.x, a.d - B.d))); a.beh = { k: 'arrive', x: p1.x, d: p1.d, at: abs(release - 0.85) }; this.setPose(a, 'gather', 0.3); a.face = -a.face; });
+      add(Math.max(0, release - 0.82), () => { const a = A(); if (!a) return; a.beh = { k: 'arrive', x: S.x, d: S.d, at: abs(release - 0.4) }; a.spin = 0.32; showOff(star > 0 ? 'DREAM SHAKE' : 'DROP STEP'); const da = DA(); if (da) { da.stun = 0.35; this.setPose(da, 'stumble', 0.3); } });
+    }
+    // coming in from the baseline side, a guard finishes on the far side of the rim
+    const reverse = motion === 'layup' && isGuard && type !== 'putback' && Math.abs(S.d - B.d) > 1.2 && r() < (flashy ? 0.35 : 0.18);
     if (oop) add(Math.max(0, release - 0.88), () => {
       // the lob is in the air before he leaves the floor
       const a = A(); if (!a) return;
@@ -1568,7 +1577,10 @@ export class PixelCourt {
           this.jump(a, 3.1 + ath * 1.1, 0.95, 'dunk');
           break;
         }
-        case 'layup': a.beh = { k: 'arrive', x: B.x - s * 1.3, d: B.d + Math.max(-1.2, Math.min(1.2, (a.d - B.d) * 0.3)), at: abs(release) }; this.jump(a, 2.6 + ath * 0.6, 0.8, 'layup'); break;
+        case 'layup':
+          if (reverse) { a.beh = { k: 'arrive', x: B.x - s * 0.2, d: B.d - Math.sign(a.d - B.d) * 1.6, at: abs(release) }; this.jump(a, 2.6 + ath * 0.6, 0.8, 'layup'); showOff('REVERSE'); }
+          else { a.beh = { k: 'arrive', x: B.x - s * 1.3, d: B.d + Math.max(-1.2, Math.min(1.2, (a.d - B.d) * 0.3)), at: abs(release) }; this.jump(a, 2.6 + ath * 0.6, 0.8, 'layup'); }
+          break;
         case 'floater': this.go(a, a.x + s * 1.5, a.d, JOG); this.jump(a, 1.9, 0.7, 'layup'); break;
         case 'hook': this.go(a, a.x + s * 0.6, a.d + (B.d - a.d) * 0.1, WALK); this.jump(a, 1.3, 0.6, 'hook'); break;
         case 'tip': a.beh = { k: 'arrive', x: B.x - s * 1.1, d: B.d, at: abs(release) }; this.jump(a, 3.0, 0.6, 'reb'); break;
@@ -1582,6 +1594,13 @@ export class PixelCourt {
     add(release - 0.12, () => {
       const da = DA(), a = A(); if (!da || !a || blocker) return;
       const dd = hyp(da.x - a.x, da.d - a.d);
+      if (motion === 'dunk' && made && dd < 6) {
+        // he challenges at the rim – and wears it
+        this.go(da, a.x + s * 0.8, a.d + 0.6, SPRINT); this.jump(da, 2.6, 0.6, 'block');
+        da.next = ['stumble', 0.6];
+        if (!this.ff) this.poster = actor;
+        return;
+      }
       if (dd < 5) this.jump(da, rim ? 2.8 : 1.8, 0.6, rim ? 'block' : 'contest');
       else if (dd < 10) this.setPose(da, 'contest', 0.7);
     });
@@ -1635,7 +1654,7 @@ export class PixelCourt {
         this.net[off] = 0.4;
         this.cheer = off === 'h' ? 1.2 : 0.5;
         this.say(three ? '+3' : '+2', '#5dff8a', true, 1.3, atRim);
-        if (motion === 'dunk') { this.shake = oop || star > 0 || ath > 0.6 ? 0.7 : 0.35; this.cheer = 2; this.net[off] = 0.8; this.sayAt(actor, oop ? 'ALLEY-OOP!' : star > 0 ? 'SLAM!' : 'DUNK!', '#ffd34d', 1.4); }
+        if (motion === 'dunk') { const pz = this.poster === actor; this.poster = null; this.shake = pz ? 0.9 : oop || star > 0 || ath > 0.6 ? 0.7 : 0.35; this.cheer = 2; this.net[off] = 0.8; this.sayAt(actor, pz ? 'POSTERIZED!' : oop ? 'ALLEY-OOP!' : star > 0 ? 'SLAM!' : 'DUNK!', '#ffd34d', 1.5); }
         // a great pass gets its credit
         const ap = this.pidOf(e, 'ast');
         if (ap && !oop && (this.starOf(ap) > 0 || (this.o.looks?.[ap]?.az ?? 0) > 1.2) && r() < 0.3 && (motion === 'layup' || motion === 'dunk')) this.sayAt(ap, 'DIME!', '#9fd3ff', 1.2);
