@@ -7,44 +7,17 @@ import { memo } from 'react';
 import { hash01 } from '../rng';
 import { teamColor } from './pixel';
 import { lookFor } from '../looksdb';
+import { emblemURL, eraColors } from './emblem';
 
-// colours of historical abbreviations whose franchise later changed identity
-const ERA_COLORS: Record<string, [string, string]> = {
-  SEA: ['#00653a', '#ffc200'], NJN: ['#002a60', '#cd1041'], VAN: ['#00b2a9', '#e43c40'], KCK: ['#0b3d91', '#e03a3e'],
-  SDC: ['#1d428a', '#e03a3e'], WSB: ['#002b5c', '#e31837'], CHH: ['#00778b', '#3f2a73'], NOH: ['#0c2340', '#b4975a'],
-  NOK: ['#0c2340', '#b4975a'], CHA: ['#f26532', '#1d8cab'], NOJ: ['#4b2f87', '#00a19b'], BUF: ['#002b5c', '#e31837'],
-};
-export const colorsOf = (tid: string, abbr?: string): [string, string] => (abbr && ERA_COLORS[abbr]) || teamColor(tid);
+export const colorsOf = (tid: string, abbr?: string): [string, string] => (abbr ? eraColors(abbr) : null) || teamColor(tid);
 
 const lum = (hex: string) => { const n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; };
 
-/** Original emblem: one of four shapes in the team colours with the abbreviation. */
-export const Logo = memo(function Logo({ t, size = 18 }: { t: { tid: string; abbr: string }; size?: number }) {
+/** Original emblem in the team colours (see emblem.ts). */
+export const Logo = memo(function Logo({ t, size = 18 }: { t: { tid: string; abbr: string; name?: string }; size?: number }) {
   if (!t) return null;
-  const [a, b] = colorsOf(t.tid, t.abbr);
-  const shape = Math.floor(hash01(t.tid + 'shape') * 4);
-  const text = lum(a) > 0.6 ? '#111' : lum(b) > 0.45 ? b : '#fff';
-  const paths = [
-    <circle key="s" cx="20" cy="20" r="18" />,
-    <path key="s" d="M20 2 L36 8 V20 C36 30 28 36 20 39 C12 36 4 30 4 20 V8 Z" />,
-    <path key="s" d="M20 2 L36 11 V29 L20 38 L4 29 V11 Z" />,
-    <rect key="s" x="3" y="3" width="34" height="34" rx="9" />,
-  ];
-  const inner = [
-    <circle key="i" cx="20" cy="20" r="14.5" />,
-    <path key="i" d="M20 6 L32.5 10.5 V20 C32.5 28 26.5 32.5 20 35 C13.5 32.5 7.5 28 7.5 20 V10.5 Z" />,
-    <path key="i" d="M20 6 L32.5 13 V27 L20 34 L7.5 27 V13 Z" />,
-    <rect key="i" x="6.5" y="6.5" width="27" height="27" rx="6.5" />,
-  ];
-  const fs = t.abbr.length > 3 ? 9 : 11;
-  return (
-    <svg className="logo" width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
-      <g fill={a} stroke={b} strokeWidth="2.5">{paths[shape]}</g>
-      <g fill="none" stroke={b} strokeOpacity="0.55" strokeWidth="1">{inner[shape]}</g>
-      <path d="M8 21 Q20 15 32 21" fill="none" stroke={b} strokeOpacity="0.35" strokeWidth="1" />
-      <text x="20" y="24.5" textAnchor="middle" fontFamily="system-ui, sans-serif" fontWeight="800" fontSize={fs} fill={text} letterSpacing="-0.3">{t.abbr}</text>
-    </svg>
-  );
+  const src = emblemURL(t.tid, t.abbr, t.name ?? t.abbr, colorsOf(t.tid, t.abbr), size < 30);
+  return <img className="logo" src={src} width={size} height={size} alt="" aria-hidden="true" draggable={false} />;
 });
 
 // ---------------------------------------------------------------- faces

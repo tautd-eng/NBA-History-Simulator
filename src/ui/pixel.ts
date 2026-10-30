@@ -10,6 +10,7 @@
 import type { PbpEv } from '../engine/game';
 import { hash01 } from '../rng';
 import { Timeline } from './timeline';
+import { emblemURL, eraColors } from './emblem';
 import { drawAthleteOutlined as drawAthlete, shade, Body, Hands, AthPose } from './athlete';
 import { AZ, AXC, AFX, AFY, AYF, VZ, aproj, depthScale, renderCourt, renderStands, Layer } from './arena';
 
@@ -161,6 +162,8 @@ export class PixelCourt {
   Rw = 1; // arena: resolution of the pixel buffer the scene is drawn into (scaled up ×R)
   buf: HTMLCanvasElement | null = null;
   courtL: Layer | null = null;
+  private emblemImg: HTMLImageElement | null = null;
+  private emblemOk = false;
   standsL: (Layer & { cheer: HTMLCanvasElement }) | null = null;
   shake = 0;
   hot = new Map<string, boolean>(); // players on fire (three makes in a row)
@@ -2294,7 +2297,14 @@ export class PixelCourt {
     if (this.courtL || typeof document === 'undefined') return;
     const [p, s2] = teamColor(this.o.home.tid);
     const name = (this.o.homeName ?? this.o.home.abbr).split(' ').slice(-1)[0];
-    this.courtL = renderCourt(this.K, { primary: p, secondary: s2, abbr: this.o.home.abbr, name, season: this.o.season ?? 2000, font: this.font });
+    // the home team's emblem on the centre circle (an SVG image: redraw the floor once it has loaded)
+    if (!this.emblemImg && typeof Image !== 'undefined') {
+      const im = new Image();
+      im.onload = () => { this.emblemOk = true; this.courtL = null; };
+      im.src = emblemURL(this.o.home.tid, this.o.home.abbr, this.o.homeName ?? this.o.home.abbr, eraColors(this.o.home.abbr) ?? teamColor(this.o.home.tid));
+      this.emblemImg = im;
+    }
+    this.courtL = renderCourt(this.K, { primary: p, secondary: s2, abbr: this.o.home.abbr, name, season: this.o.season ?? 2000, font: this.font, emblem: this.emblemOk ? this.emblemImg : null });
     this.standsL = renderStands(this.K, { primary: p, secondary: s2, font: this.font, label: name.toUpperCase() });
   }
   private drawLayer(L: { img: HTMLCanvasElement; x0: number; y0: number }, img = L.img) {

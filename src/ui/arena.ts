@@ -37,7 +37,7 @@ export const mix = (a: string, b: string, t: number) => { const A = hex(a), B = 
 const shadeHex = (h: string, f: number) => { const A = hex(h); return `rgb(${A.map(v => Math.max(0, Math.min(255, Math.round(v * f)))).join(',')})`; };
 
 /** The floor: planks, sheen, apron, paint, lines, logos. k = buffer pixels per view unit. */
-export function renderCourt(k: number, o: { primary: string; secondary: string; abbr: string; name: string; season: number; font: string }): Layer {
+export function renderCourt(k: number, o: { primary: string; secondary: string; abbr: string; name: string; season: number; font: string; emblem?: CanvasImageSource | null }): Layer {
   const x0 = -30, x1 = 350, y0 = AYF - 9, y1 = AYF + 70;
   const { c, x: g } = mk((x1 - x0) * k, (y1 - y0) * k);
   const W = c.width, H = c.height;
@@ -81,13 +81,19 @@ export function renderCourt(k: number, o: { primary: string; secondary: string; 
   // centre logo
   const cc = F(47, 25);
   const ry = (F(47, 31)[1] - F(47, 19)[1]) / 2, rx = 6 * AFX * depthScale(25) * k;
-  g.fillStyle = o.primary; g.beginPath(); g.ellipse(cc[0], cc[1], rx, ry, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = o.secondary; g.beginPath(); g.ellipse(cc[0], cc[1], rx * 0.8, ry * 0.8, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = o.primary; g.beginPath(); g.ellipse(cc[0], cc[1], rx * 0.68, ry * 0.68, 0, 0, Math.PI * 2); g.fill();
-  g.save(); g.translate(cc[0], cc[1]); g.scale(1, ry / rx * 1.6);
-  g.font = `${Math.round(rx * 0.62)}px ${o.font}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillStyle = '#111'; g.fillText(o.abbr, 1, 2); g.fillStyle = '#fff'; g.fillText(o.abbr, 0, 1);
-  g.restore();
+  if (o.emblem) {
+    // the team's emblem painted on the floor, lying flat (squashed by the camera angle)
+    const w = rx * 2.25, h = ry * 2.25;
+    g.save(); g.globalAlpha = 0.95; g.imageSmoothingEnabled = true; g.drawImage(o.emblem, cc[0] - w / 2, cc[1] - h / 2, w, h); g.restore();
+  } else {
+    g.fillStyle = o.primary; g.beginPath(); g.ellipse(cc[0], cc[1], rx, ry, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = o.secondary; g.beginPath(); g.ellipse(cc[0], cc[1], rx * 0.8, ry * 0.8, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = o.primary; g.beginPath(); g.ellipse(cc[0], cc[1], rx * 0.68, ry * 0.68, 0, 0, Math.PI * 2); g.fill();
+    g.save(); g.translate(cc[0], cc[1]); g.scale(1, ry / rx * 1.6);
+    g.font = `${Math.round(rx * 0.62)}px ${o.font}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#111'; g.fillText(o.abbr, 1, 2); g.fillStyle = '#fff'; g.fillText(o.abbr, 0, 1);
+    g.restore();
+  }
   // team name on the baseline aprons, written along the depth
   for (const [fx, rot] of [[-4.6, -Math.PI / 2], [98.6, Math.PI / 2]] as const) {
     const a = F(fx, 25);
