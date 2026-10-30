@@ -25,6 +25,7 @@ export interface AthOpts {
   view?: 'side' | 'front' | 'back'; // profile, facing the camera, or running away from it
   name?: string;      // surname on the back of the jersey
   hand?: number;      // dribbling hand (1 = front hand)
+  headU?: number;     // head size unit (the same for everybody), defaults to H/100
   from?: AthPose;     // the pose he is coming out of
   blend?: number;     // 0 = still in `from`, 1 = fully in `pose`
   t?: number;         // time left in a timed pose (animations that unfold)
@@ -240,7 +241,9 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
     return { s0, el, ha };
   };
   const AA = arm(1, uA, fA, spreadA), AB = arm(-1, uB, fB, spreadB);
-  const head = { x: sh.x + Math.sin(lean) * 4 * u * f * sx, y: sh.y - 11.2 * u + (side ? 0 : Math.sin(lean) * 2 * u) };
+  // heads are about the same size on everybody: a seven-footer is tall in the legs and the body, not the head
+  const uh = o.headU ?? u;
+  const head = { x: sh.x + Math.sin(lean) * 4 * u * f * sx, y: sh.y - 4.2 * u - 7 * uh + (side ? 0 : Math.sin(lean) * 2 * u) };
 
   // ---- parts
   const drawLeg = (L: typeof LA, back: boolean) => {
@@ -380,9 +383,9 @@ export function drawAthlete(ctx: Ctx, X: number, Y: number, o: AthOpts): Hands {
   // neck and head
   limb(ctx, sh.x + (side ? 0.5 * u * f : 0), sh.y + 1 * u, head.x, head.y + 5 * u, 4.8 * u, 4.4 * u, skinD);
   if (view !== 'back') limb(ctx, sh.x + (side ? 1.4 * u * f : 0), sh.y, head.x + (side ? 1.4 * u * f : 0), head.y + 5 * u, 1.1 * u, 1.1 * u, skinDD);
-  drawHead(ctx, head.x, head.y, u, f, b, skin, skinD, skinL, k, view);
+  drawHead(ctx, head.x, head.y, uh, f, b, skin, skinD, skinL, k, view);
   if (side) drawArm(AA, false); else { drawArm(AB, false); drawArm(AA, false); }
-  return { front: AA.ha, back: AB.ha, head: { x: head.x, y: head.y - 8 * u } };
+  return { front: AA.ha, back: AB.ha, head: { x: head.x, y: head.y - 8 * uh } };
 }
 
 function drawHead(ctx: Ctx, cx: number, cy: number, u: number, f: number, b: Body, skin: string, skinD: string, skinL: string, k: Kit, view: 'side' | 'front' | 'back') {

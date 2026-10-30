@@ -332,6 +332,8 @@ export class PixelCourt {
   }
   private enter(k: number) {
     const items = this.tl?.items ?? [];
+    // a pickup belongs to the play it was meant for: a new play starts fresh (unless the man is right on the ball)
+    if (this.pickup) { const p = this.P(this.pickup.pid); if (!p || hyp(p.x - this.ball.x, p.d - this.ball.d) > 6 || items[k]?.e.k === 'tov') this.pickup = null; }
     this.keys = k < items.length ? this.plan(k) : [];
   }
 
@@ -428,6 +430,16 @@ export class PixelCourt {
       const t = this.tl.items[Math.min(this.cur, this.tl.items.length - 1)]?.e.t ?? 0;
       if (t - (this.featured.get(pid) ?? -999) > 240 && t - this.lastLower > 45) { this.featured.set(pid, t); this.lastLower = t; this.lower = { pid, t: 0 }; }
     }
+  }
+  /** the ball has to get to him: a quick pass from a teammate, a pickup if it is loose nearby – never a jump */
+  private getBall(pid: string | null) {
+    const p = this.P(pid); if (!p) return;
+    const bp = this.ballPos(), dist = hyp(p.x - bp.x, p.d - bp.d);
+    if (dist < 3) { this.give(pid); return; }
+    const h = this.P(this.ball.holder);
+    if (h && h.side === p.side) { this.pass(pid); return; }
+    // a loose ball: it bounces his way
+    this.flyBall(p.x, p.d, 4.5, 6, Math.min(0.5, 0.15 + dist / 45), () => this.give(pid), pid);
   }
   /** a player's line so far (play-by-play up to the event on screen) */
   lineNow(pid: string) {
@@ -598,11 +610,19 @@ export class PixelCourt {
       if (wl > amax) { wx *= amax / wl; wd *= amax / wl; }
       p.vx += wx; p.vd += wd;
       p.x += p.vx * dt; p.d += p.vd * dt;
-      p.ph = (p.ph + hyp(p.vx, p.vd) * dt * (Math.PI * 2 / 8.5)) % (Math.PI * 2); // one stride cycle every ~8.5 ft
+      // one stride cycle every ~8.5 ft; moving backwards (backpedalling) the legs run the other way
+      const back = Math.abs(p.vx) > 1 && Math.sign(p.vx) !== p.face && Math.abs(p.vx) > Math.abs(p.vd) * 0.6;
+      p.ph = (p.ph + (back ? -1 : 1) * hyp(p.vx, p.vd) * dt * (Math.PI * 2 / (back ? 6 : 8.5)) + Math.PI * 2) % (Math.PI * 2);
       // turning: no flicker – he only turns when he clearly runs the other way or has watched the ball a moment
       p.ft = (p.ft ?? 1) + dt;
       if (p.spin && p.spin > 0) p.spin -= dt;
-      const want = Math.abs(p.vx) > 2.5 ? Math.sign(p.vx) : Math.abs(bp.x - p.x) > 2.5 && this.ball.holder !== pid ? Math.sign(bp.x - p.x) : p.face;
+      // a defender keeps his eyes on his man and the ball – he slides and backpedals, and only turns to run when he has to sprint
+      const watching = p.beh.k === 'guard' || p.beh.k === 'mark' || p.beh.k === 'follow' || p.beh.k === 'box';
+      const spd = hyp(p.vx, p.vd);
+      let want: number;
+      if (watching && spd < RUN * 0.95) { const m = p.beh.k === 'follow' ? this.P(p.beh.pid) : p.beh.k === 'mark' ? this.P(p.beh.pid) : this.P((p.beh as any).man); const tx = p.beh.k === 'box' ? bp.x : m ? m.x : bp.x; want = Math.abs(tx - p.x) > 0.8 ? Math.sign(tx - p.x) : p.face; }
+      else if (this.ball.holder === pid && spd < 6) { const B = this.basket(p.side); want = Math.sign(B.x - p.x) || p.face; } // the dribbler faces the basket while he probes
+      else want = Math.abs(p.vx) > 2.5 ? Math.sign(p.vx) : Math.abs(bp.x - p.x) > 2.5 && this.ball.holder !== pid ? Math.sign(bp.x - p.x) : p.face;
       if (want !== p.face && (p.ft > 0.3 || Math.abs(p.vx) > 7)) { p.face = want; p.ft = 0; }
 
       if (p.pt > 0) { p.pt -= dt; if (p.pt <= 0) { p.pose = 'stand'; if (p.next && p.z < 0.2) { [p.pose, p.pt] = p.next; p.next = undefined; } } }
@@ -629,8 +649,8 @@ export class PixelCourt {
     // a loose ball on the floor is picked up when the man going for it gets there
     if (this.pickup) {
       const pl = this.P(this.pickup.pid);
-      if (!pl || this.ball.holder || this.ball.fly) this.pickup = null;
-      else if (hyp(pl.x - this.ball.x, pl.d - this.ball.d) < 2.2) { const then = this.pickup.then; this.give(pl.pid); this.pickup = null; then?.(); }
+      if (!pl || this.ball.holder || (this.ball.fly && this.ball.fly.to)) this.pickup = null;
+      else if (!this.ball.fly && hyp(pl.x - this.ball.x, pl.d - this.ball.d) < 2.2) { const then = this.pickup.then; this.give(pl.pid); this.pickup = null; then?.(); }
     }
     // nobody stands inside anybody else
     const ps = [...this.players.values()];
@@ -920,7 +940,8 @@ export class PixelCourt {
       const cx = side === 'h' ? 14 : 80;
       this.on(side).forEach((p, i) => { const a = (i / 5) * Math.PI * 2; this.go(p, cx + Math.cos(a) * 2.6, -1.5 + Math.sin(a) * 1.4, WALK); });
     }
-    this.ball.holder = null; this.ball.fly = null; this.ball.x = 47; this.ball.d = -1; this.ball.z = 3;
+    if (this.ff) { this.ball.holder = null; this.ball.fly = null; this.ball.x = 47; this.ball.d = -1; this.ball.z = 3; }
+    else this.flyBall(47, -1, 3, 7, 0.9);
   }
 
   /**
@@ -996,7 +1017,13 @@ export class PixelCourt {
       } else if (h.how === 'side' || h.how === 'period') {
         const I = inb, sx = h.how === 'period' ? 47 : 47 + s * 12;
         // the official hands the ball to the inbounder on the sideline
-        if (I) { this.go(I, sx, -2, RUN / sc); this.ball.holder = null; this.ball.fly = null; this.ball.x = sx; this.ball.d = -1.6; this.ball.z = 3; this.pickup = { pid: I.pid }; }
+        if (I) {
+          this.go(I, sx, -2, RUN / sc);
+          // the official bounces the ball to the inbounder's spot on the sideline
+          if (this.ff || hyp(this.ball.x - sx, this.ball.d + 1.6) < 3) { this.ball.holder = null; this.ball.fly = null; this.ball.x = sx; this.ball.d = -1.6; this.ball.z = 3; }
+          else this.flyBall(sx, -1.6, 3, 6, Math.min(0.9, 0.3 + hyp(this.ball.x - sx, this.ball.d + 1.6) / 60));
+          add(0.05, () => { this.pickup = { pid: I.pid }; });
+        }
         const f = this.P(first); if (f) this.go(f, sx + s * 5, 9, RUN / sc);
         this.guardAll(off);
       } else if (h.how === 'tip') {
@@ -1009,9 +1036,10 @@ export class PixelCourt {
         // the ball is where it is: if he is not on it yet, he picks it up on the way
         const hp0 = this.P(holder);
         if (hp0 && !this.ball.holder && !this.ball.fly && hyp(hp0.x - this.ball.x, hp0.d - this.ball.d) > 3) { this.pickup = { pid: hp0.pid }; this.go(hp0, this.ball.x, this.ball.d, SPRINT); }
-        else if (!(this.ball.fly && this.ball.fly.to === holder)) this.give(holder);
+        else if (!(this.ball.fly && this.ball.fly.to === holder)) this.getBall(holder);
         if (fb) this.retreat(def); else if (h.how === 'orb') this.guardAll(off); else this.retreat(def);
-        if (first && first !== holder) { const f = this.P(first); const hp = this.P(holder); if (f && hp) this.go(f, hp.x + s * 14, hp.d < 25 ? 8 : 42, RUN / sc); }
+        // the outlet: up the floor after a defensive board; out to the arc after an offensive one
+        if (first && first !== holder) { const f = this.P(first); const hp = this.P(holder); if (f && hp) { if (h.how === 'orb') this.go(f, B.x - s * 24, hp.d < 25 ? 14 : 36, RUN / sc); else this.go(f, Math.max(4, Math.min(90, hp.x + s * 14)), hp.d < 25 ? 8 : 42, RUN / sc); } }
       }
       // everyone else runs to the front court
       const hs = this.homeSpots(off);
@@ -1501,12 +1529,12 @@ export class PixelCourt {
     const up = motion === 'dunk' ? 0.5 : motion === 'layup' || motion === 'floater' ? 0.45 : motion === 'tip' ? 0.3 : motion === 'hook' ? 0.35 : 0.22;
     if (motion === 'jumper' || motion === 'stepback' || motion === 'fade') add(release - up - 0.13, () => {
       const a = A(); if (!a) return;
-      if (this.ball.holder !== actor && !this.ball.fly) this.give(actor);
+      if (this.ball.holder !== actor && !this.ball.fly) this.getBall(actor);
       a.beh = { k: 'spot' }; a.tx = S.x; a.td = S.d; a.spd = WALK; this.setPose(a, 'gather', 0.16);
     });
     add(release - up, () => {
       const a = A(); if (!a) return;
-      if (this.ball.holder !== actor && !this.ball.fly && !oop) this.give(actor);
+      if (this.ball.holder !== actor && !this.ball.fly && !oop) this.getBall(actor);
       this.label = { pid: a.pid, t: 1.6 }; this.hl = { pid: a.pid, t: 1.6 };
       switch (motion) {
         case 'dunk': {
@@ -2218,7 +2246,7 @@ export class PixelCourt {
     for (const w of this.waiting) {
       const at = this.tableSpot(w.side, w.i), q = this.proj(at.x, at.d), P = this.toCanvas(q.x, q.y);
       const lk = this.looksOf(w.pid);
-      drawAthlete(g, Math.round(P.X), Math.round(P.Y), { H: this.heightPx(lk, at.d), face: w.side === 'h' ? 1 : -1, pose: 'rest', ph: 0, amp: 0, air: false, kit: this.kitOf(w.side), body: lk, shorts: this.shortsLen(), font: this.font, view: 'side' });
+      drawAthlete(g, Math.round(P.X), Math.round(P.Y), { H: this.heightPx(lk, at.d), headU: this.headU(at.d), face: w.side === 'h' ? 1 : -1, pose: 'rest', ph: 0, amp: 0, air: false, kit: this.kitOf(w.side), body: lk, shorts: this.shortsLen(), font: this.font, view: 'side' });
     }
   }
 
@@ -2239,7 +2267,7 @@ export class PixelCourt {
       let img = this.benchCache.get(key);
       if (!img && typeof document !== 'undefined') {
         const c = document.createElement('canvas'); c.width = Math.ceil(H * 1.5); c.height = Math.ceil(H * 1.5);
-        drawAthlete(c.getContext('2d')!, c.width / 2, c.height - 4, { H, face: hash01(pid + 'f') < 0.5 ? 1 : -1, pose, ph: 0, amp: 0, air: false, kit: this.kitOf(side), body: lk, shorts: this.shortsLen(), font: this.font, num: false, view: 'front' });
+        drawAthlete(c.getContext('2d')!, c.width / 2, c.height - 4, { H, headU: this.headU(-6) * 0.92, face: hash01(pid + 'f') < 0.5 ? 1 : -1, pose, ph: 0, amp: 0, air: false, kit: this.kitOf(side), body: lk, shorts: this.shortsLen(), font: this.font, num: false, view: 'front' });
         this.benchCache.set(key, img = c);
       }
       if (img) g.drawImage(img, Math.round(X - img.width / 2), Math.round(Y - img.height + 4));
@@ -2270,7 +2298,12 @@ export class PixelCourt {
   /** 2 = superstar, 1 = star, 0 = everybody else */
   starOf(pid: string) { const o = this.o.looks?.[pid]?.ovr ?? 0; return o >= 88 ? 2 : o >= 82 ? 1 : 0; }
   /** player height on the buffer (pixels) at depth d */
-  private heightPx(lk: Look, d = 25) { return ((lk.ht || 79) / 12) * VZ * depthScale(d) * this.K * 1.08; }
+  private heightPx(lk: Look, d = 25) {
+    // differences in height a little exaggerated, so a point guard next to a centre reads at a glance
+    const ht = lk.ht || 79, eff = 79 + (ht - 79) * 1.45;
+    return (eff / 12) * VZ * depthScale(d) * this.K * 1.08;
+  }
+  private headU(d = 25) { return (79 / 12) * VZ * depthScale(d) * this.K * 1.08 / 100; }
   private kitOf(side: Side) {
     const [prim, sec] = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid);
     return side === 'h'
@@ -2323,7 +2356,7 @@ export class PixelCourt {
     const turning = (p.ft ?? 1) < 0.09 && sp < 9 && !['shoot', 'layup', 'dunk', 'hook', 'stance', 'fade', 'follow'].includes(pose);
     const view = spinView ? spinView : turning ? 'front' : pose === 'stance' || pose === 'shoot' || pose === 'layup' || pose === 'dunk' || pose === 'hook' ? 'side' : sp > 3 && across > along * 1.4 ? (p.vd < 0 ? 'back' : 'front') : 'side';
     const nm = (this.o.names[p.pid] ?? '').split(' ').slice(1).join(' ').toUpperCase();
-    const hands = drawAthlete(g, Math.round(X), Math.round(Y - lift), { H, face: spinFace ? -face : face, pose: ap, ph: ap === 'stand' || (ap === 'stance' && sp < 2) ? time * 2.6 + hash01(p.pid) * 6 : p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm, hand: p.hand ?? 1, t: p.pt > 0 ? p.pt : 0, from: blend < 1 ? p.fromPose : undefined, blend });
+    const hands = drawAthlete(g, Math.round(X), Math.round(Y - lift), { H, headU: this.headU(p.d), face: spinFace ? -face : face, pose: ap, ph: ap === 'stand' || (ap === 'stance' && sp < 2) ? time * 2.6 + hash01(p.pid) * 6 : p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm, hand: p.hand ?? 1, t: p.pt > 0 ? p.pt : 0, from: blend < 1 ? p.fromPose : undefined, blend });
     if (this.ball.holder === p.pid && !this.ball.fly) this.drawHeldBall(p, hands, Y, pose, H);
     // on fire: a flicker of flames around a hot shooter
     if (this.hot.get(p.pid) && !this.ff) {
