@@ -8,7 +8,7 @@ import {
 } from '../types';
 import { newPlayer, ageIn, realTarget, prospectZ, tagOf } from '../players';
 import { buildClasses, ClassMode } from './classes';
-import { ROSTERS_2027, INACTIVE_2027, registerNew2027 } from '../rosters2027';
+import { ROSTERS_2027, INACTIVE_2027, OUT_2027, RETIRED_2027, registerNew2027 } from '../rosters2027';
 import { rookieContract } from './contracts';
 import { nextCal, fatigueAt, addLoad, fatigueExcess, calDay } from './fatigue';
 import { rollGameInjury, injure, refreshInjuries, offDayInjuries } from './injuries';
@@ -92,7 +92,7 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
       const first = hp.s[0][0], last = hp.s[hp.s.length - 1][0];
       if (future) {
         // played last season but is on nobody's opening roster: a free agent
-        if (last === LAST_SEASON) { const p = newPlayer(pid, hp.s[hp.s.length - 1][7], null, season); p.entered = first; withDraft(p); sign(p); lg.players[pid] = p; }
+        if (last === LAST_SEASON && !RETIRED_2027.includes(pid)) { const p = newPlayer(pid, hp.s[hp.s.length - 1][7], null, season); p.entered = first; withDraft(p); sign(p); lg.players[pid] = p; }
         continue;
       }
       if (first < season && last > season) {
@@ -128,7 +128,16 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
     lg.news.push({ s: season, t: `Fantasy draft: all ${label} players go into one pool and teams pick in snake order.` });
     return lg;
   }
-  if (future) realLastSeason(lg);
+  if (future) {
+    realLastSeason(lg);
+    // who starts the season injured
+    for (const [pid, [k, g]] of Object.entries(OUT_2027)) {
+      const p = lg.players[pid];
+      if (!p) continue;
+      p.injury = g; p.inj = { k, until: g * 2 };
+      (p.injHist ??= []).push({ s: LAST_SEASON, k, g, w: 'game' });
+    }
+  }
   beginFirstSeason(lg, rng);
   lg.news.push({ s: season, t: `The ${label} season begins. Destiny slider: ${Math.round(destiny * 100)}%.` });
   return lg;
