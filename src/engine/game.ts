@@ -30,7 +30,7 @@ export const C = {
   foulTrip: 0.976, andOne: 0.055, silentPf: 0.075,
   home: 0.045, def: 0.25, stlDef: 0.06, usgEff: 0.35,
   fatigue: 0.55, fatBase: 0.8, tpa: 0.104, drain: 0.00062, recover: 0.0011,
-  possSec: 1.09, putback3: 0.45, zoneGap: 1.0,
+  possSec: 1.09, putback3: 0.45, zoneGap: 1.0, charge: 0.11,
   fbStl: 0.55, fbDrb: 0.15, fbMake: 0.45, fbThree: 0.6, lateClock: 0.2, // transition and shot-clock pressure
   star: 1.35, stay: 1.2, depth: 10, minAlpha: 1.0, maxMin: 40,
   mmDef: 0.5, mmHt: 0.01, mmUsg: 0.15, mmSize: 0.03, // matchups: own defender's weight, size edge inside, shot selection toward mismatches
@@ -130,7 +130,7 @@ export interface PbpEv {
   pl?: string;                              // the play that produced it (iso, pnrDrive, pnrPull, roll, pop, post, cut, kick, offscreen, drive, pullup, fb, putback)
   sk?: string;                              // shot kind (dunk, layup, putback, hook, turnaround, floater, jumper, fadeaway, three, stepback)
   m?: string;                               // primary defender on the play (matchup)
-  v?: string;                               // turnover type: strip, pick (intercepted pass), bad (pass out of bounds), travel, oob, clock (shot clock)
+  v?: string;                               // turnover type: strip, pick (intercepted pass), bad (pass out of bounds), travel, oob, clock (shot clock), charge (offensive foul)
   fb?: 1;                                   // fast break
   call?: string;                            // the offence's situational call (milk, quick, hold, two4one, three)
   d?: [string, string, number][];          // stat deltas [pid, stat, n]
@@ -637,6 +637,11 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         // his own man strips him; anyone else jumps a passing lane
         ended = 'stl';
         if (log) ev('tov', off, st === md ? `${short(st.p.name)} strips ${an}` : `${an}'s pass is picked off by ${short(st.p.name)}`, { m: md.p.id, v: st === md ? 'strip' : 'pick', ...tag });
+      } else if (cr.chance(C.charge * (actor.drw > 0.3 ? 1.3 : 1) * (actor.posNum >= 4 ? 0.8 : 1))) {
+        // an offensive foul: the defender beat him to the spot and took the charge – a turnover and a foul on him
+        const drawer = cr.chance(0.6) ? md : dOn[Math.floor(cr.next() * dOn.length)];
+        actor.fouls++; inc(actor, 'pf');
+        if (log) ev('tov', off, `Offensive foul on ${an} (${actor.fouls}) – ${short(drawer.p.name)} takes the charge`, { m: drawer.p.id, v: 'charge', ...tag });
       } else if (log) {
         const r = cr.next();
         const v = lc && r < 0.18 ? 'clock' : r < 0.45 ? 'bad' : r < 0.7 ? 'travel' : 'oob';

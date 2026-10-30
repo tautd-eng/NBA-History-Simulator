@@ -50,7 +50,7 @@ export interface CourtOpts {
 export interface Look extends Body { ovr?: number; ath?: number; tz?: number; az?: number }
 
 type Side = 'h' | 'a';
-type Pose = 'stumble' | 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
+type Pose = 'fall' | 'stumble' | 'stand' | 'run' | 'shoot' | 'jump' | 'stance' | 'celebrate' | 'rest' | 'dribble' | 'gather' | 'layup' | 'dunk' | 'hang' | 'hook' | 'block' | 'contest' | 'pass' | 'screen' | 'boxout' | 'reb' | 'follow' | 'fade';
 type Beh =
   | { k: 'spot' }
   | { k: 'guard'; man: string; tight: number }
@@ -631,7 +631,7 @@ export class PixelCourt {
       else if (p.jd > 0) { p.jt += dt; const u = p.jt / p.jd; if (u >= 1) { p.jd = 0; p.z = 0; } else p.z = p.jh * 4 * u * (1 - u); }
       const dx = p.tx - p.x, dd = p.td - p.d, dist = hyp(dx, dd);
       if (p.stun && p.stun > 0) p.stun -= dt;
-      const vmax = p.spd * p.mul * (p.stun && p.stun > 0 ? 0.25 : 1);
+      const vmax = p.pose === 'fall' && p.pt > 0 ? 0 : p.spd * p.mul * (p.stun && p.stun > 0 ? 0.25 : 1); // on the floor: he gets up first
       const vdes = dist < 0.08 ? 0 : Math.min(vmax, Math.sqrt(2 * ACC * 0.8 * dist));
       const ux = dist ? dx / dist : 0, ud = dist ? dd / dist : 0;
       let wx = ux * vdes - p.vx, wd = ud * vdes - p.vd;
@@ -1841,6 +1841,7 @@ export class PixelCourt {
       travel: `${nm(pid)} shuffles his feet under pressure${md ? ` from ${nm(md)}` : ''} – travel`,
       oob: `${nm(pid)} drives into ${md ? nm(md) : 'traffic'} and loses it over the line`,
       clock: `${md ? `${nm(md)} and the defence` : 'The defence'} take away every option – no shot in time`,
+      charge: `${nm(md)} beats ${nm(pid)} to the spot, sets his feet – offensive foul`,
     };
     this.notes.set(k, why[v] ?? '');
     if (v === 'strip' || v === 'travel' || v === 'oob') {
@@ -1853,6 +1854,23 @@ export class PixelCourt {
       });
       if (v === 'strip') add(L - 0.25, () => { const st = this.P(stl); if (st) { this.setPose(st, 'block', 0.35); const a = A(); if (a) st.face = Math.sign(a.x - st.x) || st.face; } });
       if (v === 'travel') add(L - 0.5, () => { const a = A(); if (a) { this.go(a, a.x + s * 1.5, a.d, WALK); this.setPose(a, 'gather', 0.45); } });
+    }
+    if (v === 'charge') {
+      // the drive, the defender sliding over to plant himself in the lane, the collision
+      add(T(0), () => {
+        const a = A(); if (!a) return;
+        this.go(a, B.x - s * 7, 25 + (a.d - 25) * 0.4, SPRINT / P.sc);
+        this.label = { pid: a.pid, t: 2 };
+        const dr = this.P(md); if (dr) { dr.beh = { k: 'spot' }; this.label2 = { pid: dr.pid, t: 2 }; }
+      });
+      add(Math.max(0, L - 1.0), () => {
+        const a = A(), dr = this.P(md); if (!a || !dr) return;
+        // he gets to the spot in front of the driver – outside the restricted area – and stops
+        const x = a.x + (B.x - a.x) * 0.45, d = a.d + (B.d - a.d) * 0.45;
+        dr.beh = { k: 'arrive', x, d, at: this.tl!.items[k].a + L - 0.45 };
+        this.go(a, x, d, SPRINT);
+      });
+      add(Math.max(0, L - 0.42), () => { const dr = this.P(md), a = A(); if (dr) { dr.beh = { k: 'spot' }; dr.tx = dr.x; dr.td = dr.d; this.setPose(dr, 'stance', 0.5); if (a) dr.face = Math.sign(a.x - dr.x) || dr.face; } });
     }
     if (v === 'clock') {
       // the defence takes everything away: the drive is cut off, the kick-out is run off the line, no shot in time
@@ -1884,6 +1902,13 @@ export class PixelCourt {
       } else if (v === 'pick' && st) { if (hyp(st.x - this.ball.x, st.d - this.ball.d) > 3) this.pickup = { pid: st.pid }; else this.give(stl); this.sayAt(stl, 'STEAL!', '#ffd34d', 1.3); }
       else if (v === 'travel') { this.sayAt(pid, 'TRAVELING', '#ffd34d', 1.2); this.ball.holder = null; this.ball.z = 3; }
       else if (v === 'clock') { this.say('SHOT CLOCK VIOLATION', '#ff6b6b', true, 1.5); this.ball.holder = null; }
+      else if (v === 'charge') {
+        const dr = this.P(md), a = A();
+        if (dr) { this.setPose(dr, 'fall', 1.1); dr.next = ['stand', 0.2]; if (a) { dr.tx = dr.x + Math.sign(dr.x - a.x) * 1.5; dr.td = dr.d; } }
+        if (a) { this.setPose(a, 'stumble', 0.6); a.vx *= 0.2; a.vd *= 0.2; a.tx = a.x; a.td = a.d; }
+        this.sayAt(md, 'CHARGE!', '#ffd34d', 1.4);
+        if (a) { this.ball.holder = a.pid; this.flyBall(a.x + this.dir(off) * 2, a.d + 1, 0.5, 4, 0.5); }
+      }
       else { this.sayAt(pid, v === 'bad' ? 'BAD PASS' : 'OUT OF BOUNDS', '#ffd34d', 1.2); if (v === 'oob') this.flyBall(this.ball.x, this.ball.d < 25 ? -4 : WID + 4, 0.5, 3, 0.4); }
       // the other team takes over; their guards leak out on a steal
       if (st && (v === 'strip' || v === 'pick')) for (const p of this.on(other(off))) if (p !== st && this.posN(p.pid) <= 2.5) this.go(p, 47 - s * 8, p.d, RUN);
