@@ -7,7 +7,7 @@ For every player-season since 1980 it computes era-relative skill z-scores
 z-score back into a rate with the current era's league distribution, so a
 player keeps his relative skill when the league around him changes.
 """
-import csv, json, math, sys
+import csv, json, math, os, sys
 from collections import defaultdict
 
 D = sys.argv[1].rstrip('/') + '/'
@@ -190,6 +190,58 @@ z = {}
 for k, v in shr.items():
     e = era[int(k[0])]
     z[k] = {s: (v[s] - e[s][0]) / e[s][1] for s in KEYS}
+
+# ------------------------------------------------ defense: team-defense model instead of raw DBPM
+from defense import build_def
+import numpy as np
+def _age(pid, season):
+    bd = career.get(pid, {}).get('birth_date') or ''
+    try:
+        y, m, d = map(int, bd[:10].split('-'))
+        return season - y - (1 if m > 2 else 0)
+    except ValueError:
+        a = num(comb.get((str(season), pid), {}).get('age'))
+        return int(a) if a else 27
+dval = build_def(tot, teams_raw, z, career, _age, lam_u=float(os.environ.get('LAMU', '3')), lam_v=float(os.environ.get('LAMV', '40')))
+# box part: DBPM with its defensive-rebounding and steal shares taken out (the engine rates both on their own)
+_ks = list(z)
+_X = np.array([[z[k]['drb'], z[k]['stl']] for k in _ks]); _y = np.array([z[k]['def'] for k in _ks]); _w = np.array([info[k]['mp'] for k in _ks])
+b_box = np.linalg.solve((_X * _w[:, None]).T @ _X, (_X * _w[:, None]).T @ _y)
+b_drb = [round(float(b), 3) for b in b_box]
+_box = {k: z[k]['def'] - float(b_box @ x) for k, x in zip(_ks, _X)}
+DEF_TEAM = float(os.environ.get('DEFW', '0.6'))   # weight of the team-defense model
+def _norm(vals):
+    out = {}
+    for season in era:
+        ks = [k for k in z if int(k[0]) == season]
+        W = sum(info[k]['mp'] for k in ks)
+        mu = sum(vals[k] * info[k]['mp'] for k in ks) / W
+        sd = math.sqrt(sum(info[k]['mp'] * (vals[k] - mu) ** 2 for k in ks) / W)
+        for k in ks: out[k] = (vals[k] - mu) / max(sd, 1e-3)
+    return out
+zt = _norm(dval)
+zb = _norm(_box)
+zd = _norm({k: DEF_TEAM * zt[k] + (1 - DEF_TEAM) * zb[k] for k in z})
+# mostly relative to the position: a slow centre is a poor defender even if bigs block more shots
+POSC = float(os.environ.get('POSC', '0.75'))
+gm = defaultdict(lambda: [0.0, 0.0])
+for k in z: a = gm[(k[0], info[k]['grp'])]; a[0] += zd[k] * info[k]['mp']; a[1] += info[k]['mp']
+zd = _norm({k: zd[k] - POSC * gm[(k[0], info[k]['grp'])][0] / gm[(k[0], info[k]['grp'])][1] for k in z})
+for k in z: z[k]['def'] = zd[k]
+print('def: drb/stl share removed from DBPM', b_drb, 'team weight', DEF_TEAM, file=sys.stderr)
+if os.environ.get('DEFDBG'):
+    names = {r['player_id']: r['player'] for r in tot}
+    car = defaultdict(lambda: [0.0, 0.0])
+    for k in z:
+        c = car[k[1]]; c[0] += z[k]['def'] * info[k]['mp']; c[1] += info[k]['mp']
+    rank = sorted([(s / w, names[pid]) for pid, (s, w) in car.items() if w > 15000], reverse=True)
+    for i, (v, n) in enumerate(rank):
+        if i < 25 or i >= len(rank) - 8 or n in os.environ['DEFDBG'].split(','): print(f"C {i+1:4d} {n:26s} {v:5.2f}", file=sys.stderr)
+    cur = sorted([(z[k]['def'], names[k[1]], info[k]['grp']) for k in z if k[0] == '2026' and info[k]['mp'] > 1200], reverse=True)
+    for i, (v, n, g) in enumerate(cur):
+        if i < 25 or i >= len(cur) - 6 or n in os.environ['DEFDBG'].split(','): print(f"N {i+1:4d} {n:26s} {g} {v:5.2f}", file=sys.stderr)
+    for g in 'GFC': 
+        vs = [v for v, n, gg in cur if gg == g]; print('2026 mean', g, round(sum(vs) / len(vs), 2), file=sys.stderr)
 
 # ------------------------------------------------ overall rating: regress BPM on z
 import itertools
