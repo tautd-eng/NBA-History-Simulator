@@ -6,6 +6,7 @@ import { StandingsHistory, TeamStatsExplorer, FaMoves } from './leaguehist';
 import { Logo, TLogo, PFace } from './art';
 import { RoleBadge } from './roles';
 import { SeasonPreview } from './seasonpreview';
+import { Devices } from './devices';
 import { roleOf } from '../archetypes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -330,6 +331,7 @@ function SavesPanel({ lg, close, onLoad, onNew }: any) {
             </span>
           </li>
         ))}</ul>
+        <Devices lg={lg} onLoad={onLoad} />
         <div className="dialog-actions">
           <button onClick={copy}>Save a copy of this league</button>
           <button onClick={onNew}>Start a new league</button>
@@ -473,6 +475,7 @@ function Setup({ onStart, onLoad }: any) {
           <b>Continue a saved league</b>
           <ul>{saves.slice(0, 6).map(sv => <li key={sv.id}><span><b>{sv.name}</b> <span className="dim">{sv.label} · {new Date(sv.updated).toLocaleDateString()}</span></span><button className="small primary" onClick={() => onLoad(sv.id)}>Load</button></li>)}</ul>
         </div>}
+        <details className="more"><summary>Continue from another device</summary><Devices lg={null} onLoad={onLoad} /></details>
         <p className="lede">Rewrite NBA history. The league starts with the real players of {label}. New draft classes arrive every year, and how they develop is up to the simulation and the destiny slider.</p>
         <label className="field" htmlFor="start">
           <span>Starting season</span>

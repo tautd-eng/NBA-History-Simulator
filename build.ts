@@ -62,7 +62,7 @@ self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.a
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== C).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
   const req = e.request;
-  if (req.method !== 'GET') return;
+  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return; // only the game's own files (never the GitHub API)
   const page = req.mode === 'navigate' || req.destination === 'document' || req.url.endsWith('.html') || req.url.endsWith('/');
   if (page) {
     e.respondWith(fetch(req, { cache: 'no-store' }).then(r => { if (r.ok) { const cp = r.clone(); caches.open(C).then(c => c.put(req, cp)); } return r; }).catch(() => caches.match(req).then(h => h || caches.match('index.html'))));

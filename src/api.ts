@@ -119,11 +119,14 @@ async function upsertMeta(info: SaveInfo) {
   meta.push(info);
   await put(META, meta);
 }
+/** Called after every successful local save (the cloud copy hooks in here). */
+export const saveHooks: ((lg: League, id: string) => void)[] = [];
 export async function saveLeague(lg: League, id = slot): Promise<boolean> {
   try {
     (lg as any).saveName ??= defaultName(lg);
     await put(id, JSON.parse(JSON.stringify(lg)));
     await upsertMeta({ id, name: (lg as any).saveName, updated: Date.now(), label: labelOf(lg) });
+    for (const h of saveHooks) try { h(lg, id); } catch { /* never block saving */ }
     return true;
   } catch { return false; }
 }

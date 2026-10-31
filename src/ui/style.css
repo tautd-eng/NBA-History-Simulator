@@ -766,3 +766,11 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .sp-extra { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .sp-extra p { margin: 2px 0 0; font-size: 0.85rem; }
 .sp-confs { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
+
+/* other devices: save files and cloud copy */
+.devices { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; display: grid; gap: 8px; }
+.devices h3 { margin: 0; }
+.dev-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.dev-row input[type=password] { flex: 1; min-width: 200px; }
+.dev-cloud { display: grid; gap: 6px; }
+.dev-auto { display: inline-flex; gap: 6px; align-items: center; font-size: 0.85rem; }
