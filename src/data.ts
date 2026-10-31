@@ -127,8 +127,9 @@ export function shownFromBpm(b: number): number {
   return Math.max(40, Math.min(99, Math.round(v)));
 }
 /** Displayed overall: impact per minute plus a nod to how much of the offence he carries (a 28-point scorer is not a role player). */
-export const OVR_VOLUME = 0.5;
-export function shownOvr(z: number[]): number { return shownFromBpm(bpmOf(z) + OVR_VOLUME * z[K.usg]); }
+// (impact + load is rescaled to the spread impact alone has, so the scale – superstars 95+, starters ~80 – stays put)
+export const OVR_VOLUME = 1.0;
+export function shownOvr(z: number[]): number { const x = bpmOf(z) + OVR_VOLUME * z[K.usg]; return shownFromBpm(-0.35 + (x + 0.35) * 0.753); }
 /** Converts a stored (simulation-scale) overall to the displayed scale. */
 export function shownFromRaw(raw: number): number { return shownFromBpm((raw - 48) / 5.5); }
 /** 0–100 display rating for a single skill */
