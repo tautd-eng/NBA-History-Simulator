@@ -1,4 +1,4 @@
-import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf } from '../data';
+import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, K, OVR_VOLUME } from '../data';
 import { trackGame, playoffFinish } from './records';
 import { Rng } from '../rng';
 import { simGame, gameGen, PbpEv, GameState, Decision } from '../engine/game';
@@ -6,9 +6,9 @@ import { aiTradeRound, ensurePicks, pastDeadline, deadlineDay, complyHardCap } f
 import {
   Settings, League, Team, Player, Game, Series, PlayInGame, GameResult, StatLine, emptyLine, addLine, SeasonSummary, CareerSeason,
 } from '../types';
-import { newPlayer, ageIn, realTarget, prospectZ, tagOf } from '../players';
+import { newPlayer, ageIn, realTarget, prospectZ, tagOf, snapRatings } from '../players';
 import { buildClasses, ClassMode, FutureMode } from './classes';
-import { ROSTERS_2027, INACTIVE_2027, OUT_2027, RETIRED_2027, registerNew2027 } from '../rosters2027';
+import { ROSTERS_2027, INACTIVE_2027, OUT_2027, RETIRED_2027, EXPERT_2027, EXPERT_PULL, registerNew2027 } from '../rosters2027';
 import { rookieContract } from './contracts';
 import { nextCal, fatigueAt, addLoad, fatigueExcess, calDay } from './fatigue';
 import { rollGameInjury, injure, refreshInjuries, offDayInjuries } from './injuries';
@@ -130,6 +130,7 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
     return lg;
   }
   if (future) {
+    expertPull(lg);
     realLastSeason(lg);
     // who starts the season injured
     for (const [pid, [k, g]] of Object.entries(OUT_2027)) {
@@ -157,6 +158,28 @@ function recentZ(pid: string): number[] {
   if (!w) return hp.s[hp.s.length - 1][7].slice();
   const KM = 400;
   return z.map((v, i) => (v + KM * prior[i]) / (w + KM));
+}
+
+/**
+ * Statistics miss some things experts see: perimeter defence, playoff reputation, the young about to break out.
+ * Every player of the experts' top 100 moves part of the way toward the level our own ranking gives that place.
+ */
+function expertPull(lg: League) {
+  const score = (z: number[]) => bpmOf(z) + OVR_VOLUME * z[K.usg];   // what the displayed overall ranks by
+  const ps = Object.values(lg.players).filter(p => !p.retired && !(p as any).stash);
+  const ranked = ps.map(p => score(p.z)).sort((a, b) => b - a);
+  // direction that raises impact evenly across the skills it is made of
+  const zero = new Array(K.def + 1).fill(0), base = bpmOf(zero);
+  const g = zero.map((_, i) => { const e = zero.slice(); e[i] = 1; return bpmOf(e) - base; });
+  const g2 = g.reduce((a, v) => a + v * v, 0);
+  const byName = new Map(ps.map(p => [p.name, p]));
+  EXPERT_2027.forEach((name, i) => {
+    const p = byName.get(name);
+    if (!p) return;
+    const d = EXPERT_PULL * (ranked[i] - score(p.z));
+    for (let k = 0; k < g.length; k++) p.z[k] += d * g[k] / g2;
+    snapRatings(p, lg.season);
+  });
 }
 
 /** The last real season goes into the league's history as it really happened (records and champion). */
