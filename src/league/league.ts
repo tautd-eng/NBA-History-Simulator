@@ -7,7 +7,7 @@ import {
   Settings, League, Team, Player, Game, Series, PlayInGame, GameResult, StatLine, emptyLine, addLine, SeasonSummary, CareerSeason,
 } from '../types';
 import { newPlayer, ageIn, realTarget, prospectZ, tagOf } from '../players';
-import { buildClasses, ClassMode } from './classes';
+import { buildClasses, ClassMode, FutureMode } from './classes';
 import { ROSTERS_2027, INACTIVE_2027, OUT_2027, RETIRED_2027, registerNew2027 } from '../rosters2027';
 import { rookieContract } from './contracts';
 import { nextCal, fatigueAt, addLoad, fatigueExcess, calDay } from './fatigue';
@@ -25,7 +25,7 @@ export function rngOf(lg: League) { return new Rng(lg.rng); }
 function saveRng(lg: League, r: Rng) { lg.rng = [...r.s] as any; }
 
 // ---------------------------------------------------------------- creation
-export function newLeague(destiny: number, seed: number, settings: Settings = { games: null, series: null }, opts: { fantasy?: boolean; start?: number; classMode?: ClassMode } = {}): League {
+export function newLeague(destiny: number, seed: number, settings: Settings = { games: null, series: null }, opts: { fantasy?: boolean; start?: number; classMode?: ClassMode; futureMode?: FutureMode } = {}): League {
   const rng = new Rng(seed);
   // starting after the data ends: the league is set up with the last real rosters and begins with that summer's off-season
   // today's league: the real 2026–27 opening rosters (the ratings are the players' latest real season)
@@ -117,6 +117,7 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
     if (pay > hc - 0.02) for (const pid of t.roster) lg.players[pid].contract.sal *= (hc - 0.02) / pay;
   }
   buildClasses(lg, opts.classMode ?? 'real', rng);
+  lg.future = { order: [], cls: {}, mode: opts.futureMode ?? 'shuffle' };
   const label = `${season - 1}–${String(season).slice(2)}`;
   if (opts.fantasy) {
     // everybody goes into one pool; teams draft new rosters (snake order)

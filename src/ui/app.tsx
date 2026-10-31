@@ -37,7 +37,7 @@ function FatigueBar({ f }: any) {
   const cls = s < 2 ? 'ok' : s < 8 ? 'mild' : s < 15 ? 'mid' : 'high';
   return <span className={`fbar ${cls}`} title={`${fatigueLabel(f)} (${Math.round(f)})`}><span style={{ width: `${Math.max(4, pctv)}%` }}></span></span>;
 }
-import { CLASS_MODES } from '../league/classes';
+import { CLASS_MODES, FUTURE_MODES } from '../league/classes';
 import { advance, saveLeague, loadLeague, Target, listSaves, setSlot, newSlotId, deleteSave, renameSave, currentSlot } from '../api';
 import { ageIn } from '../players';
 import { payroll, peakBpm, hardCap } from '../ai/value';
@@ -136,8 +136,8 @@ function App() {
     if (lg) setSaved((await saveLeague(lg)) ? 'ok' : 'fail');
   }
 
-  function start(destiny: number, seed: number, userTid: string | null, settings: any, fantasy = false, startYear = 1980, classMode: any = 'real') {
-    const l = newLeague(destiny, seed, settings, { fantasy, start: startYear, classMode });
+  function start(destiny: number, seed: number, userTid: string | null, settings: any, fantasy = false, startYear = 1980, classMode: any = 'real', futureMode: any = 'shuffle') {
+    const l = newLeague(destiny, seed, settings, { fantasy, start: startYear, classMode, futureMode });
     l.userTid = userTid;
     setLg(l); setTeam(userTid ?? 'LAL'); setTab('apzvalga');
     saveLeague(l).then(ok => setSaved(ok ? 'ok' : 'fail'));
@@ -455,6 +455,7 @@ function Setup({ onStart, onLoad }: any) {
   const [user, setUser] = useState('');
   const [start, setStart] = useState(1980);
   const [mode, setMode] = useState<'real' | 'shuffle' | 'mixed'>('real');
+  const [fmode, setFmode] = useState<'shuffle' | 'chrono' | 'mixed'>('shuffle');
   const si = seasonInfo(start);
   const teams = Object.entries(si.teams).sort((a, b) => a[1].name.localeCompare(b[1].name));
   const years: number[] = [];
@@ -482,8 +483,18 @@ function Setup({ onStart, onLoad }: any) {
           <select id="start" value={start} onChange={e => pickYear(+e.target.value)}>
             {years.map(y => <option key={y} value={y}>{y - 1}–{String(y).slice(2)}{y > LAST_SEASON ? ' – today\'s rosters' : ''}</option>)}
           </select>
-          <small>{future ? `Today's NBA: the real ${LAST_SEASON}–${String(LAST_SEASON + 1).slice(2)} opening-night rosters, ${LAST_SEASON} rookies included (rated from their draft slot; everyone else from his ${LAST_SEASON - 1}–${String(LAST_SEASON).slice(2)} season). From the next draft on, every class is a historical one coming round again (copies of its players, developing like the originals did), in a random order.` : 'Teams and rosters are as they were that season. The league has no stats from earlier years: history starts here.'}</small>
+          <small>{future ? `Today's NBA: the real ${LAST_SEASON}–${String(LAST_SEASON + 1).slice(2)} opening-night rosters, ${LAST_SEASON} rookies included (rated from their draft slot; everyone else from his ${LAST_SEASON - 1}–${String(LAST_SEASON).slice(2)} season). From the next draft on, the rookies are historical ones coming round again (copies of the players, developing like the originals did) – choose how below.` : 'Teams and rosters are as they were that season. The league has no stats from earlier years: history starts here.'}</small>
         </label>
+        {future && <fieldset className="field radio-set">
+          <legend>Draft classes from {LAST_SEASON + 1} on</legend>
+          {FUTURE_MODES.map(([k, l, txt]) => (
+            <label key={k} className={`radio ${fmode === k ? 'on' : ''}`}>
+              <input type="radio" name="futuremode" value={k} checked={fmode === k} onChange={() => setFmode(k)} />
+              <span><b>{l}</b><small>{txt}</small></span>
+            </label>
+          ))}
+          <small>A class (or, mixed, a player) only comes round again once every one of its players has retired – nobody plays against his own copy.</small>
+        </fieldset>}
         {!future && <fieldset className="field radio-set">
           <legend>Draft classes</legend>
           {CLASS_MODES.map(([k, l, txt]) => (
@@ -518,7 +529,7 @@ function Setup({ onStart, onLoad }: any) {
           <summary>Season and playoff format</summary>
           <SeasonFields form={form} setForm={setForm} />
         </details>
-        <button className="primary big" onClick={() => onStart(d / 100, seed, user || null, settingsOf(form), fantasy, start, mode)}>{fantasy ? 'To the fantasy draft' : 'Start the league'}</button>
+        <button className="primary big" onClick={() => onStart(d / 100, seed, user || null, settingsOf(form), fantasy, start, mode, fmode)}>{fantasy ? 'To the fantasy draft' : 'Start the league'}</button>
       </div>
     </div>
   );

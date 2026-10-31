@@ -94,18 +94,55 @@ export function lastClassYear() {
   if (!lastCls) lastCls = Math.max(...Object.keys(H.classes).filter(y => H.classes[y]?.length).map(Number));
   return lastCls;
 }
+export type FutureMode = 'shuffle' | 'chrono' | 'mixed';
+export const FUTURE_MODES: [FutureMode, string, string][] = [
+  ['shuffle', 'Whole classes, random order', 'Every year a whole historical class comes round again – you never know which one.'],
+  ['chrono', 'Whole classes, oldest first', 'The classes come round in draft order: 1980, 1981, 1982 … and start over at the end.'],
+  ['mixed', 'Mixed classes', 'All historical rookies are pooled and dealt out so every year gets a similar share of stars, starters and role players.'],
+];
+/**
+ * Next year's prospects once the real drafts have run out. A historical class (or, mixed, a player from it)
+ * can only come round again once every player of it has left the league: no one plays against his own copy.
+ */
 function futureClass(lg: League, Y: number): string[] {
   const f = (lg.future ??= { order: [], cls: {} });
   if (f.cls[String(Y)]) return f.cls[String(Y)];
-  if (!f.order.length) {
-    const ys = Object.keys(H.classes).map(Number).filter(y => H.classes[String(y)]?.length >= 20).sort((a, b) => a - b);
-    f.order = new Rng(lg.seed * 31 + Y).shuffle(ys);
+  const mode: FutureMode = f.mode ?? 'shuffle';
+  const rng = new Rng(lg.seed * 31 + Y);
+  // classes whose players (originals or earlier copies) are all retired
+  const orig = new Set<string>(), copies = new Set<string>();
+  for (const p of Object.values(lg.players)) if (!p.retired) (p.id.includes('~') ? copies : orig).add(cloneBase(p.id));
+  const years = Object.keys(H.classes).map(Number).filter(y => H.classes[String(y)]?.length >= 20).sort((a, b) => a - b);
+  // whole classes: every original and every earlier copy gone; mixed: the originals of his class gone, and his own last copy
+  const alive = mode === 'mixed' ? orig : new Set([...orig, ...copies]);
+  const free = years.filter(y => !H.classes[String(y)].some(pid => alive.has(pid)));
+  let ids: string[];
+  if (mode === 'mixed') {
+    const used = new Set(f.usedP ?? []);
+    let pool = free.flatMap(y => H.classes[String(y)]).filter(pid => !used.has(pid) && !copies.has(pid));
+    const size = Math.round(years.reduce((a, y) => a + H.classes[String(y)].length, 0) / years.length);
+    if (pool.length < size) { used.clear(); pool = free.flatMap(y => H.classes[String(y)]).filter(pid => !copies.has(pid)); }
+    // every k-th player down the list of how good they turned out: each year gets stars, starters and role players alike
+    pool.sort((a, b) => careerValue(b) - careerValue(a));
+    const k = pool.length / Math.max(1, Math.min(size, pool.length)), off = rng.next() * k;
+    const pick: string[] = [];
+    for (let x = off; x < pool.length && pick.length < size; x += k) pick.push(pool[Math.floor(x)]);
+    pick.forEach(pid => used.add(pid));
+    f.usedP = [...used];
+    ids = pick.map(pid => `${pid}~${Y}`);
+  } else {
+    const usedY = new Set(f.used ?? []);
+    let cand = free.filter(y => !usedY.has(y));
+    if (!cand.length) { usedY.clear(); cand = free.slice(); } // every free class has had its turn: a new cycle
+    if (!cand.length) cand = [years[0]];                       // (cannot happen in practice)
+    const src = mode === 'chrono' ? cand[0] : cand[Math.floor(rng.next() * cand.length)];
+    usedY.add(src);
+    f.used = [...usedY];
+    ids = H.classes[String(src)].map(pid => `${pid}~${Y}`);
+    (lg.classSrc ??= {})[String(Y)] = src;
   }
-  const src = f.order.shift()!;
-  const ids = H.classes[String(src)].map(pid => `${pid}~${Y}`);
   ids.forEach(registerClone);
   f.cls[String(Y)] = ids;
-  (lg.classSrc ??= {})[String(Y)] = src;
   return ids;
 }
 
