@@ -2,7 +2,7 @@
 // Result of a finished game: line score by quarter and both box scores.
 import { useEffect, useRef } from 'react';
 import { BoxPair } from './court';
-import { teamColor } from './pixel';
+import { colorsOf } from './art';
 
 export function GameModal({ lg, res, close, openPlayer, hold }: any) {
   const holdRef = useRef(hold);
@@ -38,8 +38,8 @@ export function GameModal({ lg, res, close, openPlayer, hold }: any) {
           <button className="ghost" onClick={close}>Close</button>
         </div>
         <BoxPair openPlayer={openPlayer} teams={[
-          { label: away.name, score: res.away.pts, color: teamColor(away.tid)[0], rows: rows(res.away) },
-          { label: home.name, score: res.home.pts, color: teamColor(home.tid)[0], rows: rows(res.home) },
+          { label: away.name, score: res.away.pts, color: colorsOf(away.tid, away.abbr)[0], rows: rows(res.away) },
+          { label: home.name, score: res.home.pts, color: colorsOf(home.tid, home.abbr)[0], rows: rows(res.home) },
         ]} />
       </div>
     </div>

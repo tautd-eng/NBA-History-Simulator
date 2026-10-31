@@ -3,7 +3,7 @@
 // on the pixel court or the shot chart, with both teams' box scores side by side.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CourtCanvas, BoxPair, rosterMaps, fmtTxt, mmss, periodName } from './court';
-import { teamColor } from './pixel';
+import { colorsOf } from './art';
 import { Timeline } from './timeline';
 import { nav } from './nav';
 
@@ -172,8 +172,8 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
           </div>
           <div className="live-right">
             <BoxPair openPlayer={openPlayer} teams={[
-              { label: away.name, score: lastEv.as, color: teamColor(away.tid)[0], rows: rows('a') },
-              { label: home.name, score: lastEv.hs, color: teamColor(home.tid)[0], rows: rows('h') },
+              { label: away.name, score: lastEv.as, color: colorsOf(away.tid, away.abbr)[0], rows: rows('a') },
+              { label: home.name, score: lastEv.hs, color: colorsOf(home.tid, home.abbr)[0], rows: rows('h') },
             ]} />
           </div>
         </div>

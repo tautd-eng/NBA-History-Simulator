@@ -27,7 +27,7 @@ const COLORS: Record<string, [string, string]> = {
   DET: ['#1d42ba', '#c8102e'], GSW: ['#1d428a', '#ffc72c'], HOU: ['#ce1141', '#c4ced4'], IND: ['#002d62', '#fdbb30'],
   LAC: ['#1d428a', '#c8102e'], LAL: ['#552583', '#fdb927'], MEM: ['#2b3a6b', '#5d76a9'], MIA: ['#98002e', '#111111'],
   MIL: ['#00471b', '#eee1c6'], MIN: ['#0c2340', '#78be20'], NOP: ['#00788c', '#4b2f87'], NYK: ['#006bb6', '#f58426'],
-  OKC: ['#00653a', '#ffc200'], ORL: ['#0077c0', '#111111'], PHI: ['#006bb6', '#ed174c'], PHO: ['#5a2d81', '#e56020'],
+  OKC: ['#007ac1', '#ef3b24'], ORL: ['#0077c0', '#111111'], PHI: ['#006bb6', '#ed174c'], PHO: ['#5a2d81', '#e56020'],
   POR: ['#c8102e', '#111111'], SAC: ['#5a2d81', '#63727a'], SAS: ['#2a2a2a', '#c4ced4'], TOR: ['#753bbd', '#ce1141'],
   UTA: ['#3e2680', '#f9a01b'], WAS: ['#c8102e', '#002b5c'],
 };
@@ -403,7 +403,9 @@ export class PixelCourt {
   /** what the team is doing (shown until the play happens) */
   private call(side: Side, text: string) { this.caption = { text, side, kind: 'call', t: 0 }; }
   abbr(s: Side) { return s === 'h' ? this.o.home.abbr : this.o.away.abbr; }
-  private sideColor(s: Side | '') { return s === 'h' ? teamColor(this.o.home.tid)[0] : s === 'a' ? teamColor(this.o.away.tid)[0] : '#ffffff'; }
+  /** team colours of the era (Sonics green in Seattle, Thunder blue in Oklahoma City) */
+  tc(s: Side | string): [string, string] { const t = s === 'h' ? this.o.home : this.o.away; return eraColors(t.abbr) ?? teamColor(t.tid); }
+  private sideColor(s: Side | '') { return s === 'h' ? this.tc('h')[0] : s === 'a' ? this.tc('a')[0] : '#ffffff'; }
   on(side: Side) { return [...this.players.values()].filter(p => p.side === side && !p.leaving); }
   /** on-court players by position: point guard first, centre last */
   ord(side: Side) { return this.on(side).sort((p, q) => (this.o.pos[p.pid] ?? 3) - (this.o.pos[q.pid] ?? 3) || (p.pid < q.pid ? -1 : 1)); }
@@ -2071,7 +2073,7 @@ export class PixelCourt {
     }
     // ad board
     this.px(0, FAR_Y - 12, VW, 9, '#1b2433');
-    const hc = teamColor(this.o.home.tid);
+    const hc = this.tc('h');
     for (let x = 0; x < VW; x += 40) this.px(x + 4, FAR_Y - 10, 30, 5, x % 80 ? hc[1] : hc[0]);
     this.px(0, FAR_Y - 3, VW, 3, '#0b0e14');
     // floor
@@ -2111,7 +2113,7 @@ export class PixelCourt {
     for (const m of this.marks) {
       const q = this.proj(m.x, m.d);
       ctx.globalAlpha = Math.max(0, 1 - m.t / 9) * 0.95;
-      const c = m.side === 'h' ? '#ffffff' : teamColor(this.o.away.tid)[0];
+      const c = m.side === 'h' ? '#ffffff' : this.tc('a')[0];
       if (m.made) {
         this.px(q.x - 2, q.y - 1, 5, 3, '#0b0d12'); this.px(q.x - 1, q.y - 2, 3, 5, '#0b0d12');
         this.px(q.x - 1, q.y - 1, 3, 3, '#3ddc6e');
@@ -2204,7 +2206,7 @@ export class PixelCourt {
     const side = c.side === 'h' ? this.o.home : c.side === 'a' ? this.o.away : null;
     let x = 10;
     if (side) {
-      const col = side === this.o.home ? teamColor(this.o.home.tid) : teamColor(this.o.away.tid);
+      const col = side === this.o.home ? this.tc('h') : this.tc('a');
       ctx.fillStyle = col[0]; ctx.fillRect(x, 7, 44, H - 14);
       ctx.font = `600 14px "IBM Plex Sans", system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillStyle = '#ffffff'; ctx.fillText(side.abbr, x + 22, H / 2 + 1);
@@ -2261,7 +2263,7 @@ export class PixelCourt {
     const s = this.proj(p.x, p.d);
     const x = Math.round(s.x), y = Math.round(s.y);
     if (this.hl?.pid === p.pid) { this.px(x - 5, y - 1, 11, 1, '#ffd34d'); this.px(x - 4, y + 1, 9, 1, '#ffd34d'); this.px(x - 6, y, 1, 1, '#ffd34d'); this.px(x + 5, y, 1, 1, '#ffd34d'); }
-    const [prim, sec] = teamColor(p.side === 'h' ? this.o.home.tid : this.o.away.tid);
+    const [prim, sec] = this.tc(p.side);
     const jersey = p.side === 'h' ? '#f4f4f4' : prim, trim = p.side === 'h' ? prim : sec;
     const shorts = p.side === 'h' ? '#f4f4f4' : prim;
     const sp = Math.hypot(p.vx, p.vd);
@@ -2295,13 +2297,13 @@ export class PixelCourt {
   private get K() { return this.z * S * this.Rw; }
   private layers() {
     if (this.courtL || typeof document === 'undefined') return;
-    const [p, s2] = teamColor(this.o.home.tid);
+    const [p, s2] = this.tc('h');
     const name = (this.o.homeName ?? this.o.home.abbr).split(' ').slice(-1)[0];
     // the home team's emblem on the centre circle (an SVG image: redraw the floor once it has loaded)
     if (!this.emblemImg && typeof Image !== 'undefined') {
       const im = new Image();
       im.onload = () => { this.emblemOk = true; this.courtL = null; };
-      im.src = emblemURL(this.o.home.tid, this.o.home.abbr, this.o.homeName ?? this.o.home.abbr, eraColors(this.o.home.abbr) ?? teamColor(this.o.home.tid));
+      im.src = emblemURL(this.o.home.tid, this.o.home.abbr, this.o.homeName ?? this.o.home.abbr, this.tc('h'));
       this.emblemImg = im;
     }
     this.courtL = renderCourt(this.K, { primary: p, secondary: s2, abbr: this.o.home.abbr, name, season: this.o.season ?? 2000, font: this.font, emblem: this.emblemOk ? this.emblemImg : null });
@@ -2391,7 +2393,7 @@ export class PixelCourt {
     const fade = (t: number, dur: number) => Math.min(1, t * 5, (dur - t) * 5);
     if (this.lower) {
       const pid = this.lower.pid, ln = this.lineNow(pid);
-      const side = this.o.side[pid] as Side, [col] = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid);
+      const side = this.o.side[pid] as Side, [col] = this.tc(side);
       const name = (this.o.names[pid] ?? '').toUpperCase();
       const reb = (ln.orb ?? 0) + (ln.drb ?? 0);
       const line = `${ln.pts ?? 0} PTS · ${reb} REB · ${ln.ast ?? 0} AST · ${ln.fgm ?? 0}/${ln.fga ?? 0} FG`;
@@ -2453,7 +2455,7 @@ export class PixelCourt {
   /** benches, scorer's table and the camera crews along the far sideline */
   private drawCourtside(time: number) {
     const g = this.ctx, K = this.K;
-    const [hc1, hc2] = teamColor(this.o.home.tid);
+    const [hc1, hc2] = this.tc('h');
     const T = (vx: number, vy: number) => this.toCanvas(vx, vy);
     // scorer's table
     const a = T(AXC - 22, AYF - 8.2), b = T(AXC + 22, AYF - 3.2);
@@ -2479,7 +2481,7 @@ export class PixelCourt {
     const n = Math.max(5, pids.length), gap = 7.4;
     const a = this.toCanvas(x0 - 3, AYF - 5.2), b = this.toCanvas(x0 + n * gap, AYF - 3.6);
     g.fillStyle = '#3a2a1c'; g.fillRect(Math.round(a.X), Math.round(a.Y), Math.round(b.X - a.X), Math.round(b.Y - a.Y));
-    g.fillStyle = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid)[0]; g.fillRect(Math.round(a.X), Math.round(a.Y), Math.round(b.X - a.X), Math.max(1, Math.round(0.5 * K)));
+    g.fillStyle = this.tc(side)[0]; g.fillRect(Math.round(a.X), Math.round(a.Y), Math.round(b.X - a.X), Math.max(1, Math.round(0.5 * K)));
     pids.forEach((pid, i) => {
       const { X, Y } = this.toCanvas(x0 + i * gap + 2, AYF - 4.2);
       const lk = this.looksOf(pid);
@@ -2538,7 +2540,7 @@ export class PixelCourt {
   }
   private headU(d = 25) { return (79 / 12) * VZ * depthScale(d) * this.K * 1.08 / 100; }
   private kitOf(side: Side) {
-    const [prim, sec] = teamColor(side === 'h' ? this.o.home.tid : this.o.away.tid);
+    const [prim, sec] = this.tc(side);
     return side === 'h'
       ? { jersey: '#f4f4f2', trim: prim, trim2: sec, shorts: '#f4f4f2' }
       : { jersey: prim, trim: sec === '#111111' || sec === '#2a2a2a' ? '#f4f4f4' : sec, trim2: shade(prim, 0.55), shorts: prim };
@@ -2655,7 +2657,7 @@ export class PixelCourt {
       // stanchion: padded base out of bounds, pole, arm
       const bx = B.x + s * 8.6;
       const b0 = C(bx - s * 1.3, 25, 0), b1 = C(bx + s * 1.3, 25, 0), bt = C(bx, 25, 2.6);
-      const [pc] = teamColor(this.o.home.tid);
+      const [pc] = this.tc('h');
       const bw = Math.round(Math.abs(b1.X - b0.X)), bxl = Math.round(Math.min(b0.X, b1.X));
       g.fillStyle = '#262b36'; g.fillRect(bxl, Math.round(bt.Y), bw, Math.round(b0.Y - bt.Y));
       g.fillStyle = pc; g.fillRect(bxl, Math.round(bt.Y), bw, Math.max(2, Math.round(0.45 * K)));
@@ -2725,7 +2727,7 @@ export class PixelCourt {
     ctx.setTransform(this.R, 0, 0, this.R, 0, 0);
     const c = this.tl.clockAt(this.v);
     const W = 470, H = 34, x0 = (VW * S - W) / 2, y0 = 6;
-    const [hc] = teamColor(this.o.home.tid), [ac] = teamColor(this.o.away.tid);
+    const [hc] = this.tc('h'), [ac] = this.tc('a');
     ctx.fillStyle = '#0b0e16'; ctx.fillRect(x0 - 3, y0 - 3, W + 6, H + 6);
     ctx.fillStyle = '#2d6cdf'; ctx.fillRect(x0 - 3, y0 - 3, W + 6, 2);
     const seg = (x: number, w: number, bg: string, t: string, color = '#ffffff', align: CanvasTextAlign = 'center', size = 20) => {

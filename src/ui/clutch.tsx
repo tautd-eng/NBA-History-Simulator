@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { clutchStep, clutchAuto } from '../league/league';
 import { CourtCanvas, BoxPair, rosterMaps, fmtTxt, mmss, periodName } from './court';
-import { teamColor } from './pixel';
+import { colorsOf } from './art';
 
 const OFF_CALLS = [
   ['auto', 'Coach decides', 'AI picks the play'],
@@ -239,8 +239,8 @@ export function ClutchGame({ lg, cs, onFinish, close, openPlayer }: any) {
           </ol>
         </div>
         <BoxPair openPlayer={openPlayer} teams={[
-          { label: away.name, score: final ? final.away.pts : st.as, color: teamColor(away.tid)[0], rows: boxRows('a') },
-          { label: home.name, score: final ? final.home.pts : st.hs, color: teamColor(home.tid)[0], rows: boxRows('h') },
+          { label: away.name, score: final ? final.away.pts : st.as, color: colorsOf(away.tid, away.abbr)[0], rows: boxRows('a') },
+          { label: home.name, score: final ? final.home.pts : st.hs, color: colorsOf(home.tid, home.abbr)[0], rows: boxRows('h') },
         ]} />
 
         {confirmClose && (
