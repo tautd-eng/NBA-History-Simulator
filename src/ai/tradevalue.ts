@@ -12,6 +12,7 @@
 // price). Picks are expected prospects at the projected slot on cheap rookie
 // deals, with the upside of the best outcomes.
 import { H, bpmOf } from '../data';
+import { hiddenBoost } from '../hboost';
 import { League, Player, Team } from '../types';
 import { ageIn, bucket } from '../players';
 import { projectBpm, MIN_SAL, maxSalary, payroll, SAL_K, SAL_EXP } from './value';
@@ -58,7 +59,8 @@ export interface Parts { prod: number; cost: number; years: number[] }
 export function playerParts(lg: League, p: Player, strategy: Horizon): Parts {
   const S = lg.season;
   const age = ageIn(p, S);
-  const proj = projectBpm(p.z, age, 5);
+  const hb = hiddenBoost(p.id);
+  const proj = projectBpm(p.z, age, 5).map(v => v + hb);
   const w = HORIZON[strategy];
   // seasons left on his deal (this one included), an extension adds more
   const left = Math.max(1, p.contract.exp - S + 1);

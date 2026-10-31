@@ -8,6 +8,7 @@
 
 import { Rng, hash01 } from '../rng';
 import { K, rate, sigm, logit, bpmOf, perD, rimD } from '../data';
+import { hiddenBoost } from '../hboost';
 import { shownFromBpm } from '../data';
 import { emptyLine, StatLine, Player, Box } from '../types';
 import { fitTraits, FitTraits, fit0, edgeTraits, ctr0 } from '../archetypes';
@@ -35,7 +36,7 @@ export const C = {
   fbStl: 0.55, fbDrb: 0.15, fbMake: 0.45, fbThree: 0.6, lateClock: 0.2, // transition and shot-clock pressure
   star: 1.35, stay: 1.2, depth: 10, minAlpha: 1.0, maxMin: 40,
   mmDef: 0.5, mmHt: 0.01, mmUsg: 0.15, mmSize: 0.03, // matchups: own defender's weight, size edge inside, shot selection toward mismatches
-  pass: 0.15, pass0: 0.11, split: 1, rimHelp: 0.65, rim0: 1.3, // defence split into perimeter / rim protection (0 = the single rating)
+  pass: 0.15, pass0: 0.11, hb: 0.022, hbOn: 1, split: 1, rimHelp: 0.65, rim0: 1.3, // defence split into perimeter / rim protection (0 = the single rating)
    fitSp: 0.12, fitHd: 0.08, fitRim: 0, fitCk: 0.07, edge: 0.09, edgeMass: 0.3, // lineup fit: spacing (twos), a ball-handler (turnovers), rim protection (opponent twos), too many ball-dominant scorers
 };
 /** Debug: running sums of lineup-fit measures over plays (to centre FIT0). */
@@ -47,7 +48,7 @@ interface GP {
   q: number;            // coach quality score
   posNum: number;
   usg: number; tov: number; drw: number; tpr: number; p2: number; p3: number; pft: number;
-  ast: number; orb: number; drb: number; stl: number; blk: number; pf: number; def: number; per: number; rim: number; stlZ: number; astZ: number;
+  ast: number; orb: number; drb: number; stl: number; blk: number; pf: number; def: number; per: number; rim: number; hb: number; stlZ: number; astZ: number;
   endurMul: number;
   ft: FitTraits;        // lineup-fit traits (shooter, handler, rim protector, creator)
   ed: ReturnType<typeof edgeTraits>; // role matchups: what he attacks with and what he stops
@@ -100,7 +101,7 @@ export function prep(p: Player, season: number): GP {
     stl: rate(K.stl, z[K.stl], season),
     blk: rate(K.blk, z[K.blk], season),
     pf: rate(K.pf, z[K.pf], season),
-    def: z[K.def], per: perD(z, p.ht), rim: rimD(z, p.ht), stlZ: z[K.stl], astZ: z[K.ast],
+    def: z[K.def], hb: C.hbOn ? hiddenBoost(p.id) : 0, per: perD(z, p.ht), rim: rimD(z, p.ht), stlZ: z[K.stl], astZ: z[K.ast],
     endurMul: 1 - 0.12 * p.endur,
     ft: fitTraits(z, posNum(p.pos)),
     ed: edgeTraits(p.z, p.pos),
@@ -642,7 +643,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const ckx = Math.max(0, fCk - 1.3);
     // ball movement: good passers on the floor get everyone better looks
     let pa = 0; for (const g of on) pa += g.astZ; pa /= 5; fitStats.pa += pa;
-    const passQ = C.pass * (pa - C.pass0);
+    let hbO = 0, hbD = 0; for (const g of on) hbO += g.hb; for (const g of dOn) hbD += g.hb;
+    const passQ = C.pass * (pa - C.pass0) + C.hb * 0.5 * (hbO - hbD);
     fitStats.n++; fitStats.sh += fSh; fitStats.hd += fHd; fitStats.rp += fRp; fitStats.ck += ckx;
     const fit2 = C.fitSp * (fSh - F0.sh) - C.fitRim * (fRp - F0.rp);
     const fitAll = -C.fitCk * (ckx - F0.ck);

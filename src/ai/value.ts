@@ -3,6 +3,7 @@
 import { H, NK, bpmOf, agingIndex } from '../data';
 import { Player, Team, League } from '../types';
 import { ageIn } from '../players';
+import { hiddenBoost } from '../hboost';
 
 const REPL = -2.5; // replacement level, BPM
 
@@ -30,10 +31,10 @@ export function peakBpm(p: Player, season: number) {
  * rebuilding teams about the future.
  */
 export function playerValue(p: Player, season: number, strategy: Team['strategy'] = 'middle') {
-  return valueFromZ(p.z, ageIn(p, season), strategy);
+  return valueFromZ(p.z, ageIn(p, season), strategy, hiddenBoost(p.id));
 }
-export function valueFromZ(z: number[], age: number, strategy: Team['strategy'] = 'middle') {
-  const proj = projectBpm(z, age, 5);
+export function valueFromZ(z: number[], age: number, strategy: Team['strategy'] = 'middle', hb = 0) {
+  const proj = projectBpm(z, age, 5).map(v => v + hb);
   const w = strategy === 'contend' ? [1.6, 0.8, 0.45, 0.25, 0.15] : strategy === 'rebuild' ? [0.5, 0.8, 0.9, 0.85, 0.75] : [1.1, 0.85, 0.65, 0.45, 0.3];
   let v = 0;
   for (let i = 0; i < 5; i++) v += w[i] * Math.max(0, proj[i] - REPL);
@@ -68,7 +69,7 @@ export function vetMin(p: Player, season: number) {
 export function askingSalary(p: Player, season: number) {
   const age = ageIn(p, season);
   const proj = projectBpm(p.z, age, 2);
-  const b = Math.max(0, (proj[0] + proj[1]) / 2 - REPL);
+  const b = Math.max(0, (proj[0] + proj[1]) / 2 + hiddenBoost(p.id) - REPL);
   return Math.min(maxSalary(p, season), Math.max(vetMin(p, season), SAL_K * Math.pow(b, SAL_EXP)));
 }
 
