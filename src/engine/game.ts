@@ -26,16 +26,16 @@ export function getEraCal(season: number): EraCal {
 }
 
 export const C = {
-  tov: 0.006, p2: -0.014, p3: -0.008, ft: -0.012,
+  tov: -0.03, p2: -0.04, p3: -0.02, ft: -0.012,
   orb: 1.033, orbFt: 0.45, ast: 0.953, blk: 0.952, stlShare: 0.81,
   foulTrip: 0.976, andOne: 0.055, silentPf: 0.075,
-  home: 0.045, def: 0.25, stlDef: 0.06, usgEff: 0.35,
+  home: 0.045, def: 0.18, stlDef: 0.18, usgEff: 0.35, insAmp: 1.4, tovAmp: 1.45, drwAmp: 1, orbAmp: 1, // amps: how far a player's own finishing / ball security spreads from the era norm
   fatigue: 0.55, fatBase: 0.8, tpa: 0.104, drain: 0.00062, recover: 0.0011,
   possSec: 1.09, putback3: 0.45, zoneGap: 1.0, charge: 0.11,
   fbStl: 0.55, fbDrb: 0.15, fbMake: 0.45, fbThree: 0.6, lateClock: 0.2, // transition and shot-clock pressure
   star: 1.35, stay: 1.2, depth: 10, minAlpha: 1.0, maxMin: 40,
   mmDef: 0.5, mmHt: 0.01, mmUsg: 0.15, mmSize: 0.03, // matchups: own defender's weight, size edge inside, shot selection toward mismatches
-  fitSp: 0.05, fitHd: 0.08, fitRim: 0.06, fitCk: 0.07, edge: 0.09, edgeMass: 0.3, // lineup fit: spacing (twos), a ball-handler (turnovers), rim protection (opponent twos), too many ball-dominant scorers
+  fitSp: 0.05, fitHd: 0.08, fitRim: 0.02, fitCk: 0.07, edge: 0.09, edgeMass: 0.3, // lineup fit: spacing (twos), a ball-handler (turnovers), rim protection (opponent twos), too many ball-dominant scorers
 };
 /** Debug: running sums of lineup-fit measures over plays (to centre FIT0). */
 export const fitStats: Record<string, number> = { n: 0, sh: 0, hd: 0, rp: 0, ck: 0, cdrive: 0, cshoot: 0, cpost: 0, chandle: 0, e2: 0, e3: 0, et: 0 };
@@ -87,14 +87,14 @@ export function prep(p: Player, season: number): GP {
   return {
     p, bpm, q: Math.pow(Math.max(0.5, bpm + 6), C.star) * Math.max(0.6, 1 - FATIGUE.minutes * fat), posNum: posNum(p.pos),
     usg: rate(K.usg, z[K.usg], season),
-    tov: rate(K.tov, z[K.tov], season),
-    drw: rate(K.drw, z[K.drw], season),
+    tov: rate(K.tov, C.tovAmp * z[K.tov], season),
+    drw: rate(K.drw, C.drwAmp * z[K.drw], season),
     tpr: rate(K.tpr, z[K.tpr], season),
-    p2: rate(K.ins, z[K.ins], season),
+    p2: rate(K.ins, C.insAmp * z[K.ins], season),
     p3: rate(K.tp, z[K.tp], season),
     pft: rate(K.ft, z[K.ft], season),
     ast: rate(K.ast, z[K.ast], season),
-    orb: rate(K.orb, z[K.orb], season),
+    orb: rate(K.orb, C.orbAmp * z[K.orb], season),
     drb: rate(K.drb, z[K.drb], season),
     stl: rate(K.stl, z[K.stl], season),
     blk: rate(K.blk, z[K.blk], season),
