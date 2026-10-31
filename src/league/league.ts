@@ -75,7 +75,7 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
     pids.forEach((pid, i) => {
       const hp = H.players[pid];
       if (!hp) return;
-      const z = future ? (hp.s.length ? (realTarget(pid, LAST_SEASON)?.z ?? hp.s[hp.s.length - 1][7]) : prospectZ(pid, 2026, 0, rng)) : hp.s.find(r => r[0] === season)![7];
+      const z = future ? (hp.s.length ? recentZ(pid) : prospectZ(pid, 2026, 0, rng)) : hp.s.find(r => r[0] === season)![7];
       const p = newPlayer(pid, z, i < 15 ? tid : null, season);
       p.entered = season === 1980 ? (hp.f === 1980 ? 1980 : 1979) : hp.s.length ? Math.min(season, hp.s[0][0]) : season;
       withDraft(p);
@@ -92,7 +92,7 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
       const first = hp.s[0][0], last = hp.s[hp.s.length - 1][0];
       if (future) {
         // played last season but is on nobody's opening roster: a free agent
-        if (last === LAST_SEASON && !RETIRED_2027.includes(pid)) { const p = newPlayer(pid, hp.s[hp.s.length - 1][7], null, season); p.entered = first; withDraft(p); sign(p); lg.players[pid] = p; }
+        if (last === LAST_SEASON && !RETIRED_2027.includes(pid)) { const p = newPlayer(pid, recentZ(pid), null, season); p.entered = first; withDraft(p); sign(p); lg.players[pid] = p; }
         continue;
       }
       if (first < season && last > season) {
@@ -142,6 +142,21 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
   beginFirstSeason(lg, rng);
   lg.news.push({ s: season, t: `The ${label} season begins. Destiny slider: ${Math.round(destiny * 100)}%.` });
   return lg;
+}
+
+/**
+ * A player's level for a league that starts after the data: his last three seasons weighted by minutes
+ * (recent ones more), pulled toward a bench player's level when there are few minutes to go on –
+ * 150 good minutes or one hot backup season do not make a star.
+ */
+function recentZ(pid: string): number[] {
+  const hp = H.players[pid], prior = H.draftPrior[5].z, W: Record<number, number> = { [LAST_SEASON]: 1, [LAST_SEASON - 1]: 0.6, [LAST_SEASON - 2]: 0.35 };
+  const z = new Array(prior.length).fill(0);
+  let w = 0;
+  for (const r of hp.s) { const k = W[r[0]]; if (!k) continue; const ww = r[3] * k; w += ww; for (let i = 0; i < z.length; i++) z[i] += ww * r[7][i]; }
+  if (!w) return hp.s[hp.s.length - 1][7].slice();
+  const KM = 400;
+  return z.map((v, i) => (v + KM * prior[i]) / (w + KM));
 }
 
 /** The last real season goes into the league's history as it really happened (records and champion). */

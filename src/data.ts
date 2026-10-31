@@ -126,7 +126,9 @@ export function shownFromBpm(b: number): number {
   else { let i = 0; while (b > T[i + 1][0]) i++; v = T[i][1] + (T[i + 1][1] - T[i][1]) * (b - T[i][0]) / (T[i + 1][0] - T[i][0]); }
   return Math.max(40, Math.min(99, Math.round(v)));
 }
-export function shownOvr(z: number[]): number { return shownFromBpm(bpmOf(z)); }
+/** Displayed overall: impact per minute plus a nod to how much of the offence he carries (a 28-point scorer is not a role player). */
+export const OVR_VOLUME = 0.5;
+export function shownOvr(z: number[]): number { return shownFromBpm(bpmOf(z) + OVR_VOLUME * z[K.usg]); }
 /** Converts a stored (simulation-scale) overall to the displayed scale. */
 export function shownFromRaw(raw: number): number { return shownFromBpm((raw - 48) / 5.5); }
 /** 0–100 display rating for a single skill */
