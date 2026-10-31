@@ -7,7 +7,7 @@
 // The constants in C are global calibration knobs, tuned by test/calibrate.ts.
 
 import { Rng, hash01 } from '../rng';
-import { K, rate, sigm, logit, bpmOf } from '../data';
+import { K, rate, sigm, logit, bpmOf, perD, rimD } from '../data';
 import { shownFromBpm } from '../data';
 import { emptyLine, StatLine, Player, Box } from '../types';
 import { fitTraits, FitTraits, fit0, edgeTraits, ctr0 } from '../archetypes';
@@ -29,16 +29,17 @@ export const C = {
   tov: -0.03, p2: -0.025, p3: -0.01, ft: -0.012,
   orb: 1.033, orbFt: 0.45, ast: 0.953, blk: 0.952, stlShare: 0.81,
   foulTrip: 0.976, andOne: 0.055, silentPf: 0.075,
-  home: 0.045, def: 0.18, stlDef: 0.22, usgEff: 0.35, insAmp: 1.4, tovAmp: 1.45, drwAmp: 1, orbAmp: 1, // amps: how far a player's own finishing / ball security spreads from the era norm
+  home: 0.045, def: 0.22, stlDef: 0.22, usgEff: 0.35, insAmp: 1.4, tovAmp: 1.45, drwAmp: 1, orbAmp: 1, // amps: how far a player's own finishing / ball security spreads from the era norm
   fatigue: 0.55, fatBase: 0.8, tpa: 0.104, drain: 0.00062, recover: 0.0011,
   possSec: 1.09, putback3: 0.45, zoneGap: 1.0, charge: 0.11,
   fbStl: 0.55, fbDrb: 0.15, fbMake: 0.45, fbThree: 0.6, lateClock: 0.2, // transition and shot-clock pressure
   star: 1.35, stay: 1.2, depth: 10, minAlpha: 1.0, maxMin: 40,
   mmDef: 0.5, mmHt: 0.01, mmUsg: 0.15, mmSize: 0.03, // matchups: own defender's weight, size edge inside, shot selection toward mismatches
-  pass: 0.15, pass0: 0.11, fitSp: 0.12, fitHd: 0.08, fitRim: 0, fitCk: 0.07, edge: 0.09, edgeMass: 0.3, // lineup fit: spacing (twos), a ball-handler (turnovers), rim protection (opponent twos), too many ball-dominant scorers
+  pass: 0.15, pass0: 0.11, split: 1, rimHelp: 0.65, rim0: 1.3, // defence split into perimeter / rim protection (0 = the single rating)
+   fitSp: 0.12, fitHd: 0.08, fitRim: 0, fitCk: 0.07, edge: 0.09, edgeMass: 0.3, // lineup fit: spacing (twos), a ball-handler (turnovers), rim protection (opponent twos), too many ball-dominant scorers
 };
 /** Debug: running sums of lineup-fit measures over plays (to centre FIT0). */
-export const fitStats: Record<string, number> = { pa: 0, n: 0, sh: 0, hd: 0, rp: 0, ck: 0, cdrive: 0, cshoot: 0, cpost: 0, chandle: 0, e2: 0, e3: 0, et: 0 };
+export const fitStats: Record<string, number> = { rm: 0, nr: 0, pa: 0, n: 0, sh: 0, hd: 0, rp: 0, ck: 0, cdrive: 0, cshoot: 0, cpost: 0, chandle: 0, e2: 0, e3: 0, et: 0 };
 
 interface GP {
   p: Player;
@@ -46,7 +47,7 @@ interface GP {
   q: number;            // coach quality score
   posNum: number;
   usg: number; tov: number; drw: number; tpr: number; p2: number; p3: number; pft: number;
-  ast: number; orb: number; drb: number; stl: number; blk: number; pf: number; def: number; stlZ: number; astZ: number;
+  ast: number; orb: number; drb: number; stl: number; blk: number; pf: number; def: number; per: number; rim: number; stlZ: number; astZ: number;
   endurMul: number;
   ft: FitTraits;        // lineup-fit traits (shooter, handler, rim protector, creator)
   ed: ReturnType<typeof edgeTraits>; // role matchups: what he attacks with and what he stops
@@ -99,7 +100,7 @@ export function prep(p: Player, season: number): GP {
     stl: rate(K.stl, z[K.stl], season),
     blk: rate(K.blk, z[K.blk], season),
     pf: rate(K.pf, z[K.pf], season),
-    def: z[K.def], stlZ: z[K.stl], astZ: z[K.ast],
+    def: z[K.def], per: perD(z, p.ht), rim: rimD(z, p.ht), stlZ: z[K.stl], astZ: z[K.ast],
     endurMul: 1 - 0.12 * p.endur,
     ft: fitTraits(z, posNum(p.pos)),
     ed: edgeTraits(p.z, p.pos),
@@ -697,13 +698,24 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     if (dsc === 'zone' && !fb) tprAdj = sigm(logit(Math.min(0.97, Math.max(0.01, tprAdj))) + 0.25); // a zone dares you to shoot
     if (fb) tprAdj *= C.fbThree;
     const three = rng.chance(afterOrb ? tprAdj * C.putback3 : tprAdj);
-    // defence on the shot: his own defender matters most, help defence (team) the rest; size inside
-    const defOn = C.mmDef * md.def + (1 - C.mmDef) * defZ;
+    // defence on the shot: his own defender matters most, help defence (team) the rest; size inside.
+    // Jumpers meet perimeter defence; shots at the rim meet the best rim protector on the floor.
+    const zone = zoneOf(three, actor, fb, afterOrb);
+    let defOn = C.mmDef * md.def + (1 - C.mmDef) * defZ;
+    if (C.split) {
+      if (three || zone.k === 'mid') {
+        let pz = 0; for (const g of dOn) pz += g.per;
+        defOn = C.mmDef * md.per + (1 - C.mmDef) * pz / 5;
+      } else {
+        let rm = -9; for (const g of dOn) if (g.rim > rm) rm = g.rim;
+        fitStats.rm += rm; fitStats.nr++;
+        defOn = (1 - C.rimHelp) * md.rim + C.rimHelp * (rm - C.rim0);
+      }
+    }
     const size = three ? 0 : C.mmHt * Math.max(-8, Math.min(8, actor.p.ht - md.p.ht));
     const shift = passQ + homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + fitAll + (three ? e3 : fit2 + e2) + callShift + (defCall === 'pressure' ? 0.08 : 0) + (fb && !three ? C.fbMake : 0) - (lc ? C.lateClock : 0);
     inc(actor, 'fga');
     if (three) inc(actor, 'tpa');
-    const zone = zoneOf(three, actor, fb, afterOrb);
     let made: boolean;
     let blocker: GP | null = null;
     if (three) {

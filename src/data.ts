@@ -6,6 +6,13 @@ export const K = {
 } as const;
 export const NK = 14;
 
+/** Two faces of defence, derived from the defence rating, steals / blocks and height (z-like, sd ≈ 1). */
+const htZ = (ht?: number) => ((ht ?? 78.6) - 78.6) / 3.4;
+/** Perimeter defence: staying in front, contesting jumpers, hands. */
+export const perD = (z: number[], ht?: number) => (z[K.def] + 0.4 * z[K.stl] - 0.25 * htZ(ht)) / 1.05;
+/** Rim protection: blocks, size and the defence rating. */
+export const rimD = (z: number[], ht?: number) => (0.6 * z[K.def] + 0.7 * z[K.blk] + 0.35 * htZ(ht)) / 1.4;
+
 /** Lithuanian labels for the 0–100 rating display. `inv` = lower z is better. */
 export const RATING_LABELS: { k: number; short: string; name: string; inv?: boolean; tendency?: boolean }[] = [
   { k: K.ins, short: 'Ins', name: 'Two-point scoring' },

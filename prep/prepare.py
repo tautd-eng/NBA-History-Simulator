@@ -202,7 +202,23 @@ def _age(pid, season):
     except ValueError:
         a = num(comb.get((str(season), pid), {}).get('age'))
         return int(a) if a else 27
-dval = build_def(tot, teams_raw, z, career, _age, lam_u=float(os.environ.get('LAMU', '3')), lam_v=float(os.environ.get('LAMV', '40')))
+# expert recognition of defence: All-Defensive teams and Defensive Player of the Year voting
+REC_ON = os.environ.get('REC', '1') == '1'
+rec_raw = defaultdict(float)
+for r in rows('End of Season Teams'):
+    if r['lg'] == 'NBA' and r['type'] == 'All-Defense': rec_raw[(r['season'], r['player_id'])] += 1.0 if r['number_tm'] == '1st' else 0.6
+for r in rows('Player Award Shares'):
+    if r['award'] == 'nba dpoy': rec_raw[(r['season'], r['player_id'])] += num(r['share'], 0)
+# 2025-26 (not yet in the data set): nba.com, May 2026 – Wembanyama unanimous Defensive Player of the Year
+REC_2026 = [('wembavi01', 2.0), ('holmgch01', 1.0), ('thompau01', 1.0), ('goberru01', 1.0), ('whitede01', 1.0),
+            ('barnesc01', 0.6), ('wallaca01', 0.6), ('adebaba01', 0.6), ('anunoog01', 0.6), ('daniedy01', 0.6)]
+if not any(k[0] == '2026' for k in rec_raw):
+    for p_, v_ in REC_2026: rec_raw[('2026', p_)] += v_
+rec = {}
+for k in z:
+    s_, p_ = int(k[0]), k[1]
+    rec[k] = max(rec_raw.get(k, 0.0), 0.6 * rec_raw.get((str(s_ - 1), p_), 0.0), 0.6 * rec_raw.get((str(s_ + 1), p_), 0.0))
+dval = build_def(tot, teams_raw, z, career, _age, rec=rec if REC_ON else None, lam_u=float(os.environ.get('LAMU', '3')), lam_v=float(os.environ.get('LAMV', '40')))
 # box part: DBPM with its defensive-rebounding and steal shares taken out (the engine rates both on their own)
 _ks = list(z)
 _X = np.array([[z[k]['drb'], z[k]['stl']] for k in _ks]); _y = np.array([z[k]['def'] for k in _ks]); _w = np.array([info[k]['mp'] for k in _ks])
@@ -227,7 +243,7 @@ POSC = float(os.environ.get('POSC', '0.75'))
 gm = defaultdict(lambda: [0.0, 0.0])
 for k in z: a = gm[(k[0], info[k]['grp'])]; a[0] += zd[k] * info[k]['mp']; a[1] += info[k]['mp']
 zd = _norm({k: zd[k] - POSC * gm[(k[0], info[k]['grp'])][0] / gm[(k[0], info[k]['grp'])][1] for k in z})
-for k in z: z[k]['def'] = zd[k]
+for k in z: z[k]['def'] = zd[k] if zd[k] <= 3 else 3 + 0.5 * (zd[k] - 3)   # soften the very top (Wembanyama)
 print('def: drb/stl share removed from DBPM', b_drb, 'team weight', DEF_TEAM, file=sys.stderr)
 if os.environ.get('DEFDBG'):
     names = {r['player_id']: r['player'] for r in tot}
@@ -252,13 +268,34 @@ for k in z:
     if bpm is None or mp < 300: continue
     bpm_s = (bpm * mp + (-2.0) * 600) / (mp + 600)   # shrink toward replacement-ish
     X.append([1.0] + [z[k][s] for s in KEYS]); Y.append(bpm_s); Wt.append(mp)
-n = len(KEYS) + 1
+# team block: what actually wins. Each team-season's net rating (per player on the floor) against
+# its minutes-weighted ratings, so the overall also counts what box +/- misses (defence, offensive glass)
+TEAMW = float(os.environ.get('TEAMW', '3'))
+for x in X: x.append(0.0)
+if TEAMW > 0:
+    nrt = {(int(r['season']), r['abbreviation']): num(r['n_rtg']) for r in teams_raw if r['team'] != 'League Average'}
+    tm = defaultdict(list)
+    for r in tot:
+        t = r['team']
+        if t.endswith('TM') or t == 'TOT': continue
+        k = (r['season'], r['player_id'])
+        if k in z: tm[(int(r['season']), t)].append((k, num(r['mp'], 0)))
+    TX, TY = [], []
+    for key, lst in tm.items():
+        if nrt.get(key) is None: continue
+        M_ = sum(m for _, m in lst)
+        if M_ <= 0: continue
+        TX.append([0.0] + [sum(m * z[k][s_] for k, m in lst) / M_ for s_ in KEYS] + [1.0]); TY.append(nrt[key] / 5)
+    tw = TEAMW * sum(Wt) / len(TX)
+    X += TX; Y += TY; Wt += [tw] * len(TX)
+n = len(KEYS) + 2
 A = [[0.0] * n for _ in range(n)]; B = [0.0] * n
 for x, y, w in zip(X, Y, Wt):
     for i in range(n):
         B[i] += w * x[i] * y
         for j in range(n): A[i][j] += w * x[i] * x[j]
-for i in range(1, n): A[i][i] += 50.0   # light ridge
+for i in range(1, n - 1): A[i][i] += 50.0   # light ridge
+A[n - 1][n - 1] += 1e-6
 # gaussian elimination
 M = [row[:] + [b] for row, b in zip(A, B)]
 for c in range(n):
@@ -272,7 +309,13 @@ pred = [sum(b * xi for b, xi in zip(beta, x)) for x in X]
 my = sum(w * y for y, w in zip(Y, Wt)) / sum(Wt)
 ss_t = sum(w * (y - my) ** 2 for y, w in zip(Y, Wt))
 ss_r = sum(w * (y - p) ** 2 for y, p, w in zip(Y, pred, Wt))
-print('BPM regression R2 =', round(1 - ss_r / ss_t, 3), file=sys.stderr)
+_ni = sum(1 for x in X if x[-1] == 0.0)
+pi, Yi, Wi = pred[:_ni], Y[:_ni], Wt[:_ni]
+my = sum(w * y for y, w in zip(Yi, Wi)) / sum(Wi)
+print('BPM regression R2 =', round(1 - sum(w * (y - p) ** 2 for y, p, w in zip(Yi, pi, Wi)) / sum(w * (y - my) ** 2 for y, w in zip(Yi, Wi)), 3), file=sys.stderr)
+if len(X) > _ni:
+    pt, Yt = pred[_ni:], Y[_ni:]; mt = sum(Yt) / len(Yt)
+    print('team net-rating R2 =', round(1 - sum((y - p) ** 2 for y, p in zip(Yt, pt)) / sum((y - mt) ** 2 for y in Yt), 3), file=sys.stderr)
 ovr_w = {'_': round(beta[0], 4), **{s: round(b, 4) for s, b in zip(KEYS, beta[1:])}}
 
 # ------------------------------------------------ aging curves (minutes-weighted dz by age)

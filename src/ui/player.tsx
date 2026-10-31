@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fatigueAt, nextCal, fatigueLabel } from '../league/fatigue';
 import { injName } from '../league/injuries';
 import { todayIndex } from '../league/league';
-import { RATING_LABELS, ratingOf, shownOvr as ovrOf, shownFromRaw, shownFromBpm } from '../data';
+import { RATING_LABELS, ratingOf, shownOvr as ovrOf, shownFromRaw, shownFromBpm, perD, rimD } from '../data';
 import { ageIn } from '../players';
 import { SortTable, f1, f0, pctf, div } from './sorttable';
 import { traits, TRAIT_LABELS, reasons, extensionNeed } from '../league/prefs';
@@ -273,6 +273,16 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
             return (
               <div key={r.name} className="rating">
                 <span className="rl">{r.name}{r.tendency ? ' *' : ''}</span>
+                <span className="bar"><span style={{ width: `${val}%` }}></span></span>
+                <span className="rv">{val}</span>
+              </div>
+            );
+          })}
+          {[['Perimeter defense', perD(p.z, p.ht)], ['Rim protection', rimD(p.z, p.ht)]].map(([n, z]: any) => {
+            const val = ratingOf(z);
+            return (
+              <div key={n} className="rating">
+                <span className="rl">{n}</span>
                 <span className="bar"><span style={{ width: `${val}%` }}></span></span>
                 <span className="rv">{val}</span>
               </div>

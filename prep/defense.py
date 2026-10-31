@@ -21,7 +21,7 @@ def num(x, d=None):
         return d
 
 
-def build_def(tot, teams_raw, z, career, age_of, lam_u=3.0, lam_v=12.0, lam_b=0.5):
+def build_def(tot, teams_raw, z, career, age_of, lam_u=3.0, lam_v=12.0, lam_b=0.5, rec=None):
     """Returns {(season, pid): defensive points per 100 possessions (team units, + = better)}."""
     # league defensive rating per season, team ratings
     import os
@@ -46,7 +46,9 @@ def build_def(tot, teams_raw, z, career, age_of, lam_u=3.0, lam_v=12.0, lam_b=0.
         h = num(career.get(p, {}).get('ht_in_in'))
         hz = (h - hmu) / hsd if h else 0.0
         a = age_of(p, int(k[0])) - 27
-        return [1.0, zz['stl'], zz['blk'], zz['pf'], hz, a / 5.0, (a / 5.0) ** 2]
+        f = [1.0, zz['stl'], zz['blk'], zz['pf'], hz, a / 5.0, (a / 5.0) ** 2]
+        if rec is not None: f.append(rec.get(k, 0.0))
+        return f
     F = np.array([feats(k) for k in keys])
     nb, nu, nv = F.shape[1], len(pids), len(keys)
 

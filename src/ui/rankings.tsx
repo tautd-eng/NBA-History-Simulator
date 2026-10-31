@@ -3,7 +3,7 @@
 // and power rankings of the teams (roster strength plus how they actually play).
 import { TLogo, PFace } from './art';
 import { useMemo, useState } from 'react';
-import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, bpmOf, RATING_LABELS, ratingOf } from '../data';
+import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, bpmOf, RATING_LABELS, ratingOf, perD, rimD } from '../data';
 import { ageIn } from '../players';
 import { teamStrength, payroll } from '../ai/value';
 import { isFreeAgent } from '../ai/trades';
@@ -13,7 +13,7 @@ import { potOf, moneyOf } from './offseason';
 
 const R = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
 const OFF = [0, 1, 2, 3, 4, 5, 6];   // shooting, creation, ball security, offensive boards
-const DEF = [7, 8, 9, 10, 11];       // defensive boards, steals, blocks, defence, discipline
+const DEF = [8, 10, 11];             // steals, defence, discipline (+ perimeter defence and rim protection below)
 const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
 /** Attribute average (50 = league-average player) shown on the same 0–100 scale as OVR: average ~70, the best in the 90s. */
 const toScale = (raw: number) => {
@@ -21,7 +21,7 @@ const toScale = (raw: number) => {
   return Math.max(30, Math.min(99, Math.round(lin <= 88 ? lin : 88 + 0.6 * (lin - 88))));
 };
 export const offRating = (p: any) => toScale(avg(OFF.map(i => R(p, i))));
-export const defRating = (p: any) => toScale(avg(DEF.map(i => R(p, i))));
+export const defRating = (p: any) => toScale(avg([...DEF.map(i => R(p, i)), ratingOf(perD(p.z, p.ht)), ratingOf(rimD(p.z, p.ht)), 0.5 * R(p, 7) + 0.5 * R(p, 9)]));
 function Ovr({ v }: any) {
   const tier = v >= 90 ? 'star' : v >= 80 ? 'good' : v >= 70 ? 'mid' : 'low';
   return <span className={`ovr ${tier} sm`}>{v}</span>;
