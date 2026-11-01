@@ -262,7 +262,7 @@ export function threshold(lg: League, tid: string, user = false) {
   // during the season GMs deal too, most of all in the days before the trade deadline
   const dl = deadlineDay(lg);
   const season = lg.phase === 'regular' && !user ? (lg.day >= dl - 12 ? 0.45 : 0.6) : 1;
-  const eager = t.mode === 'allin' ? 0.6 : t.mode === 'tank' ? 0.85 : t.mode === 'capclear' ? 0.5 : t.mode === 'retool' ? 0.72 : 1;
+  const eager = t.mode === 'allin' ? 0.5 : t.mode === 'tank' ? 0.7 : t.mode === 'capclear' ? 0.5 : t.mode === 'retool' ? 0.72 : 1;
   // a sellers' market: the more teams are all in, the more sellers can ask
   let market = 1;
   if (t.mode === 'tank' || t.strategy === 'rebuild') {
@@ -349,7 +349,7 @@ export function aiTradeRound(lg: League, rng: Rng, intensity = 1): TradeRec[] {
   const busy = new Set<string>();
   for (const A of teams) {
     if (busy.has(A.tid)) continue;
-    const urge = A.mode === 'allin' ? 2 : A.mode === 'tank' ? 1.6 : A.mode === 'capclear' ? 2 : A.mode === 'retool' ? 1.9 : 1;
+    const urge = A.mode === 'allin' ? 2.6 : A.mode === 'tank' ? 2.4 : A.mode === 'capclear' ? 2 : A.mode === 'retool' ? 1.9 : 1;
     if (!rng.chance(Math.min(0.95, (0.1 + 0.2 * A.gm.risk) * intensity * urge))) continue;
     const others = teams.filter(t => t !== A && !busy.has(t.tid));
     // at the deadline every losing team is a seller
@@ -410,14 +410,17 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
       if (hA === 'rising' && ageIn(p, S) > 28) continue;
       // a team keeps its franchise player unless it is rebuilding or tanking
       const bestB = Math.max(...B.roster.map(id => playerValue(lg.players[id], S, hB)));
-      if (vb >= bestB && hB !== 'rebuild' && hB !== 'tank') continue;
+      // ... though an all-in team sometimes pries the star loose from a team going nowhere
+      if (vb >= bestB && hB !== 'rebuild' && hB !== 'tank' && !(hA === 'allin' && (hB === 'middle' || B.mode === 'retool') && rng.chance(0.3))) continue;
       // rebuilding and tanking teams keep their young players and prime-age stars
       if ((hB === 'tank' || hB === 'rebuild' || hB === 'rising') && (ageIn(p, S) <= 24 || (ageIn(p, S) <= 27 && vb >= bestB))) continue;
       // contenders look for the piece that improves the roster most (fit), others for value
       // contenders and retooling teams look for the piece that improves the roster most (fit), others for value
       if (A.mode === 'retool' && ageIn(p, S) > 31) continue;
       const gain = hA === 'allin' || hA === 'contend' || A.mode === 'retool' ? fit(p) : va;
-      targets.push({ p, B, edge: gain - vb + rng.normal() * 1.5 + (hB === 'tank' ? 1 : 0) });
+      // all-in teams hunt stars first, not just any value gap
+      const star = hA === 'allin' ? 0.6 * Math.max(0, bpmOf(p.z) - 2) : 0;
+      targets.push({ p, B, edge: gain - vb + star + rng.normal() * 1.5 + (hB === 'tank' ? 1 : 0) });
     }
   }
   targets.sort((x, y) => y.edge - x.edge);
@@ -477,7 +480,9 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
 function findSale(lg: League, A: Team, others: Team[], rng: Rng) {
   const S = lg.season;
   fresh(lg);
-  const vets = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && ageIn(p, S) >= 28 && bpmOf(p.z) > 0).sort((x, y) => bpmOf(y.z) - bpmOf(x.z)).slice(0, 4);
+  // a tanking team sells anyone who helps now and will not be part of the next good team (26+)
+  const minAge = A.mode === 'tank' ? 26 : 28;
+  const vets = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && ageIn(p, S) >= minAge && bpmOf(p.z) > 0).sort((x, y) => bpmOf(y.z) - bpmOf(x.z)).slice(0, 5);
   for (const p of rng.shuffle([...vets])) {
     const buyers = others.filter(B => B.mode === 'allin' || B.strategy === 'contend' || B.strategy === 'middle')
       .map(B => ({ B, v: pv(lg, p, horizonOf(B), B.tid) })).sort((x, y) => y.v - x.v).slice(0, 4);

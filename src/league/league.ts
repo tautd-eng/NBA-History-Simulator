@@ -272,7 +272,7 @@ export function updateModes(lg: League, announce = true) {
     // a hot start convinces any front office that this is the year – whatever the plan was in the summer
     const hot = inSeason && !losing && i < Math.max(6, Math.round(n * 0.25)) && ((g >= 10 && wp >= 0.64) || (g >= 20 && wp >= 0.6) || (t.mode === 'allin' && g >= 10 && wp >= 0.55));
     if ((t.strategy === 'contend' && !losing && (i < 3 || (i < 6 && coreAge >= 29) || (inSeason && g >= 20 && wp >= 0.62))) || hot) mode = 'allin';
-    else if (i >= n - Math.max(2, Math.round(n * 0.17)) && (young <= 1 || coreAge >= 27) && !winning) mode = 'tank';
+    else if (i >= n - Math.max(2, Math.round(n * 0.2)) && (young <= 1 || coreAge >= 27) && !winning) mode = 'tank';
     else if (pay > hc - 0.02) mode = 'capclear';
     else if (young >= 2 && coreAge <= 25.5 && i >= 3) mode = 'rising';
     // stuck in the middle: not good enough to contend, too good to tank – the GM keeps making side moves
@@ -301,11 +301,12 @@ function availablePlayers(lg: League, tid: string, rng: Rng) {
   const cal = nextCal(lg, todayIndex(lg));
   refreshInjuries(lg, cal, lg.teams[tid].roster.map(pid => lg.players[pid]));
   let ps = lg.teams[tid].roster.map(pid => lg.players[pid]).filter(p => p.injury <= 0);
-  // tanking after the deadline: veterans "rest" in some games
+  // tanking: from about the 30th game (and more after the deadline) veterans "rest" in some games
   const t = lg.teams[tid];
-  if (t.mode === 'tank' && lg.phase === 'regular' && pastDeadline(lg)) {
-    const vets = [...ps].sort((a, b) => bpmOf(b.z) - bpmOf(a.z)).slice(0, 6).filter(p => ageIn(p, lg.season) >= 28);
-    for (const v of vets) if (ps.length > 9 && rng.chance(0.4)) ps = ps.filter(p => p !== v);
+  if (t.mode === 'tank' && lg.phase === 'regular' && (pastDeadline(lg) || t.w + t.l >= 30)) {
+    const restP = pastDeadline(lg) ? 0.45 : 0.25;
+    const vets = [...ps].sort((a, b) => bpmOf(b.z) - bpmOf(a.z)).slice(0, 6).filter(p => ageIn(p, lg.season) >= 27);
+    for (const v of vets) if (ps.length > 9 && rng.chance(restP)) ps = ps.filter(p => p !== v);
   }
   for (const p of ps) {
     p.fatNow = fatigueAt(lg, p, cal);

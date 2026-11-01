@@ -790,11 +790,15 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
       const fitD = teamFitGain(lg, t.tid, p);
       const v = playerValue(p, N, t.strategy) * (1 + fitD);
       if (fitD > 0 && room >= askT) sal = Math.min(max, room, sal * (1 + 0.5 * fitD));
+      // an all-in team pays up for the missing piece
+      if (t.mode === 'allin' && room >= askT) sal = Math.min(max, room, sal * 1.15);
       // only if he would be one of the team's twelve most valuable players
       const vals = t.roster.map(pid => playerValue(lg.players[pid], N, t.strategy)).sort((a, b) => b - a);
       const twelfth = vals[Math.min(vals.length, 12) - 1] ?? 0;
       if (t.roster.length >= ROSTER_MIN && v <= twelfth && !(underFloor && t.roster.length < ROSTER_MAX)) continue;
       if (t.strategy === 'rebuild' && ageIn(p, N) > 30 && sal > MIN_SAL * 2.5) continue;
+      // a tanking team does not pay veterans – it keeps the cap and the minutes for youth
+      if (t.mode === 'tank' && ageIn(p, N) > 27 && sal > MIN_SAL * 2.5) continue;
       // the player picks the offer he likes best: money against his ask, plus the team's appeal to him
       const score = offerUtility(lg, p, t.tid, sal, ask, yrsOffer) + 0.06 * rng.normal();
       offers.push({ t, sal, score, mle });
