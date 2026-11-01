@@ -269,6 +269,7 @@ if os.environ.get('DEFDBG'):
 # ------------------------------------------------ overall rating: regress BPM on z
 # Two non-linear terms, both clearly there in real box +/-:
 #  - volume x efficiency: a high-usage scorer who also scores efficiently is worth more than the two apart
+#  - creator: high usage and high assist rate together (Magic, Nash, Jokić, Dončić)
 #  - compensation: a player with big strengths is hurt less by his weak spots
 KI = {k_: i_ for i_, k_ in enumerate(KEYS)}
 def eff_of(zz):   # scoring efficiency composite (same formula as src/data.ts)
@@ -276,9 +277,10 @@ def eff_of(zz):   # scoring efficiency composite (same formula as src/data.ts)
             + 0.3 * zz[KI['drw']] - 0.3 * zz[KI['tov']])
 def extras(zz, cw):
     vx = max(0.0, zz[KI['usg']]) * eff_of(zz)
-    if cw is None: return [vx, 0.0]
+    cr = max(0.0, zz[KI['usg']]) * max(0.0, zz[KI['ast']])   # creator: scores a lot and sets others up
+    if cw is None: return [vx, cr, 0.0]
     c = [w_ * v_ for w_, v_ in zip(cw, zz)]
-    return [vx, sum(v_ for v_ in c if v_ < 0) * sum(v_ for v_ in c if v_ > 0)]
+    return [vx, cr, sum(v_ for v_ in c if v_ < 0) * sum(v_ for v_ in c if v_ > 0)]
 def solve(X, Y, Wt, ridge_idx):
     n = len(X[0]); A = [[0.0] * n for _ in range(n)]; B = [0.0] * n
     for x, y, w in zip(X, Y, Wt):
@@ -348,7 +350,7 @@ if len(X) > _ni:
     pt, Yt = pred[_ni:], Y[_ni:]; mt = sum(Yt) / len(Yt)
     print('team net-rating R2 =', round(1 - sum((y - p) ** 2 for y, p in zip(Yt, pt)) / sum((y - mt) ** 2 for y in Yt), 3), file=sys.stderr)
 ovr_w = {'_': round(beta[0], 4), **{s: round(b, 4) for s, b in zip(KEYS, beta[1:])}}
-if NONLIN: ovr_w.update(volEff=round(beta[len(KEYS) + 1], 4), comp=round(beta[len(KEYS) + 2], 4), cw=[round(c, 4) for c in CW])
+if NONLIN: ovr_w.update(volEff=round(beta[len(KEYS) + 1], 4), creator=round(beta[len(KEYS) + 2], 4), comp=round(beta[len(KEYS) + 3], 4), cw=[round(c, 4) for c in CW])
 
 # ------------------------------------------------ aging curves (minutes-weighted dz by age)
 def age_of(pid, season):
