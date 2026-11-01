@@ -260,56 +260,80 @@ if os.environ.get('DEFDBG'):
         vs = [v for v, n, gg in cur if gg == g]; print('2026 mean', g, round(sum(vs) / len(vs), 2), file=sys.stderr)
 
 # ------------------------------------------------ overall rating: regress BPM on z
-import itertools
-X, Y, Wt = [], [], []
+# Two non-linear terms, both clearly there in real box +/-:
+#  - volume x efficiency: a high-usage scorer who also scores efficiently is worth more than the two apart
+#  - compensation: a player with big strengths is hurt less by his weak spots
+KI = {k_: i_ for i_, k_ in enumerate(KEYS)}
+def eff_of(zz):   # scoring efficiency composite (same formula as src/data.ts)
+    return (0.6 * zz[KI['ins']] + 0.3 * zz[KI['tp']] * (1 + 0.5 * min(2.0, max(-1.0, zz[KI['tpr']]))) + 0.2 * zz[KI['ft']]
+            + 0.3 * zz[KI['drw']] - 0.3 * zz[KI['tov']])
+def extras(zz, cw):
+    vx = max(0.0, zz[KI['usg']]) * eff_of(zz)
+    if cw is None: return [vx, 0.0]
+    c = [w_ * v_ for w_, v_ in zip(cw, zz)]
+    return [vx, sum(v_ for v_ in c if v_ < 0) * sum(v_ for v_ in c if v_ > 0)]
+def solve(X, Y, Wt, ridge_idx):
+    n = len(X[0]); A = [[0.0] * n for _ in range(n)]; B = [0.0] * n
+    for x, y, w in zip(X, Y, Wt):
+        for i in range(n):
+            if x[i] == 0.0: continue
+            B[i] += w * x[i] * y
+            for j in range(n): A[i][j] += w * x[i] * x[j]
+    for i in range(n): A[i][i] += 50.0 if i in ridge_idx else 1e-6
+    M = [row[:] + [b] for row, b in zip(A, B)]
+    for c in range(n):
+        p = max(range(c, n), key=lambda r: abs(M[r][c])); M[c], M[p] = M[p], M[c]
+        for r in range(n):
+            if r != c:
+                f = M[r][c] / M[c][c]
+                M[r] = [a - f * b for a, b in zip(M[r], M[c])]
+    return [M[i][n] / M[i][i] for i in range(n)]
+TEAMW = float(os.environ.get('TEAMW', '3'))
+NONLIN = os.environ.get('NONLIN', '1') == '1'
+ind = []
 for k in z:
     a, mp = info[k]['a'], info[k]['mp']
     bpm = num(a.get('bpm'))
     if bpm is None or mp < 300: continue
-    bpm_s = (bpm * mp + (-2.0) * 600) / (mp + 600)   # shrink toward replacement-ish
-    X.append([1.0] + [z[k][s] for s in KEYS]); Y.append(bpm_s); Wt.append(mp)
-# team block: what actually wins. Each team-season's net rating (per player on the floor) against
-# its minutes-weighted ratings, so the overall also counts what box +/- misses (defence, offensive glass)
-TEAMW = float(os.environ.get('TEAMW', '3'))
-for x in X: x.append(0.0)
-if TEAMW > 0:
-    nrt = {(int(r['season']), r['abbreviation']): num(r['n_rtg']) for r in teams_raw if r['team'] != 'League Average'}
-    tm = defaultdict(list)
-    for r in tot:
-        t = r['team']
-        if t.endswith('TM') or t == 'TOT': continue
-        k = (r['season'], r['player_id'])
-        if k in z: tm[(int(r['season']), t)].append((k, num(r['mp'], 0)))
-    TX, TY = [], []
-    for key, lst in tm.items():
-        if nrt.get(key) is None: continue
-        M_ = sum(m for _, m in lst)
-        if M_ <= 0: continue
-        TX.append([0.0] + [sum(m * z[k][s_] for k, m in lst) / M_ for s_ in KEYS] + [1.0]); TY.append(nrt[key] / 5)
-    tw = TEAMW * sum(Wt) / len(TX)
-    X += TX; Y += TY; Wt += [tw] * len(TX)
-n = len(KEYS) + 2
-A = [[0.0] * n for _ in range(n)]; B = [0.0] * n
-for x, y, w in zip(X, Y, Wt):
-    for i in range(n):
-        B[i] += w * x[i] * y
-        for j in range(n): A[i][j] += w * x[i] * x[j]
-for i in range(1, n - 1): A[i][i] += 50.0   # light ridge
-A[n - 1][n - 1] += 1e-6
-# gaussian elimination
-M = [row[:] + [b] for row, b in zip(A, B)]
-for c in range(n):
-    p = max(range(c, n), key=lambda r: abs(M[r][c])); M[c], M[p] = M[p], M[c]
-    for r in range(n):
-        if r != c:
-            f = M[r][c] / M[c][c]
-            M[r] = [a - f * b for a, b in zip(M[r], M[c])]
-beta = [M[i][n] / M[i][i] for i in range(n)]
+    ind.append((k, (bpm * mp + (-2.0) * 600) / (mp + 600), mp))   # shrink toward replacement-ish
+nrt = {(int(r['season']), r['abbreviation']): num(r['n_rtg']) for r in teams_raw if r['team'] != 'League Average'}
+tm = defaultdict(list)
+for r in tot:
+    t = r['team']
+    if t.endswith('TM') or t == 'TOT': continue
+    k = (r['season'], r['player_id'])
+    if k in z: tm[(int(r['season']), t)].append((k, num(r['mp'], 0)))
+def build(cw):
+    # columns: 1, ratings, [volume x efficiency, compensation], team intercept
+    X, Y, Wt = [], [], []
+    for k, y, mp in ind:
+        zz = [z[k][s_] for s_ in KEYS]
+        X.append([1.0] + zz + (extras(zz, cw) if NONLIN else []) + [0.0]); Y.append(y); Wt.append(mp)
+    ni = len(X)
+    if TEAMW > 0:
+        TX, TY = [], []
+        for key, lst in tm.items():
+            if nrt.get(key) is None: continue
+            M_ = sum(m for _, m in lst)
+            if M_ <= 0: continue
+            row = [0.0] * (len(X[0]))
+            for k, m in lst:
+                zz = [z[k][s_] for s_ in KEYS]
+                f = zz + (extras(zz, cw) if NONLIN else [])
+                for i_, v_ in enumerate(f): row[1 + i_] += m * v_ / M_
+            row[-1] = 1.0
+            TX.append(row); TY.append(nrt[key] / 5)
+        tw = TEAMW * sum(Wt) / len(TX)
+        X += TX; Y += TY; Wt += [tw] * len(TX)
+    return X, Y, Wt, ni
+NR = set(range(1, len(KEYS) + 1))
+X, Y, Wt, _ni = build(None)
+beta = solve(X, Y, Wt, NR)
+CW = beta[1:len(KEYS) + 1]            # contributions for the compensation term, from the first pass
+if NONLIN:
+    X, Y, Wt, _ni = build(CW)
+    beta = solve(X, Y, Wt, NR)
 pred = [sum(b * xi for b, xi in zip(beta, x)) for x in X]
-my = sum(w * y for y, w in zip(Y, Wt)) / sum(Wt)
-ss_t = sum(w * (y - my) ** 2 for y, w in zip(Y, Wt))
-ss_r = sum(w * (y - p) ** 2 for y, p, w in zip(Y, pred, Wt))
-_ni = sum(1 for x in X if x[-1] == 0.0)
 pi, Yi, Wi = pred[:_ni], Y[:_ni], Wt[:_ni]
 my = sum(w * y for y, w in zip(Yi, Wi)) / sum(Wi)
 print('BPM regression R2 =', round(1 - sum(w * (y - p) ** 2 for y, p, w in zip(Yi, pi, Wi)) / sum(w * (y - my) ** 2 for y, w in zip(Yi, Wi)), 3), file=sys.stderr)
@@ -317,6 +341,7 @@ if len(X) > _ni:
     pt, Yt = pred[_ni:], Y[_ni:]; mt = sum(Yt) / len(Yt)
     print('team net-rating R2 =', round(1 - sum((y - p) ** 2 for y, p in zip(Yt, pt)) / sum((y - mt) ** 2 for y in Yt), 3), file=sys.stderr)
 ovr_w = {'_': round(beta[0], 4), **{s: round(b, 4) for s, b in zip(KEYS, beta[1:])}}
+if NONLIN: ovr_w.update(volEff=round(beta[len(KEYS) + 1], 4), comp=round(beta[len(KEYS) + 2], 4), cw=[round(c, 4) for c in CW])
 
 # ------------------------------------------------ aging curves (minutes-weighted dz by age)
 def age_of(pid, season):

@@ -52,7 +52,7 @@ export interface History {
   keys: string[];
   transforms: Record<string, 'logit' | 'log' | 'lin'>;
   era: Record<string, Record<string, [number, number]>>;
-  ovr: Record<string, number>;
+  ovr: Record<string, number> & { volEff?: number; comp?: number; cw?: number[] };
   ages: number[];
   aging: Record<string, { mean: number[]; sd: number[] }>;
   seasons: Record<string, SeasonInfo>;
@@ -68,6 +68,7 @@ export interface History {
 export let H: History;
 let eraArr: Record<number, { mu: number[]; sd: number[] }> = {};
 let ovrW: number[] = [];
+let ovrX = { volEff: 0, comp: 0, cw: [] as number[] };
 let tfs: number[] = []; // 0 logit, 1 log, 2 lin
 export let FIRST_SEASON = 1980;
 export let LAST_SEASON = 2026;
@@ -79,6 +80,7 @@ export function loadHistory(h: History) {
     eraArr[+s] = { mu: h.keys.map(k => e[k][0]), sd: h.keys.map(k => e[k][1]) };
   }
   ovrW = h.keys.map(k => h.ovr[k]);
+  ovrX = { volEff: h.ovr.volEff ?? 0, comp: h.ovr.comp ?? 0, cw: h.ovr.cw ?? [] };
   tfs = h.keys.map(k => (h.transforms[k] === 'logit' ? 0 : h.transforms[k] === 'log' ? 1 : 2));
   const ss = Object.keys(h.seasons).map(Number);
   FIRST_SEASON = Math.min(...ss);
@@ -113,7 +115,19 @@ export function trate(k: number, z: number, season: number): number {
 export function bpmOf(z: number[]): number {
   let s = H.ovr._;
   for (let i = 0; i < NK; i++) s += ovrW[i] * z[i];
+  // volume x efficiency: a high-usage scorer who also scores efficiently is worth more than the two apart
+  if (ovrX.volEff) s += ovrX.volEff * Math.max(0, z[K.usg]) * effOf(z);
+  // compensation: big strengths soften the weak spots
+  if (ovrX.comp) {
+    let pos = 0, neg = 0;
+    for (let i = 0; i < NK; i++) { const c = ovrX.cw[i] * z[i]; if (c > 0) pos += c; else neg += c; }
+    s += ovrX.comp * neg * pos;
+  }
   return s;
+}
+/** Scoring efficiency composite (same formula as prep/prepare.py). */
+export function effOf(z: number[]): number {
+  return 0.6 * z[K.ins] + 0.3 * z[K.tp] * (1 + 0.5 * Math.min(2, Math.max(-1, z[K.tpr]))) + 0.2 * z[K.ft] + 0.3 * z[K.drw] - 0.3 * z[K.tov];
 }
 export function ovrOf(z: number[]): number {
   return Math.max(25, Math.min(99, Math.round(48 + 5.5 * bpmOf(z))));
