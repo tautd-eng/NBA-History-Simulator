@@ -166,7 +166,7 @@ function recentZ(pid: string): number[] {
   let w = 0;
   for (const r of hp.s) { const k = W[r[0]]; if (!k) continue; const ww = r[3] * k; w += ww; for (let i = 0; i < z.length; i++) z[i] += ww * r[7][i]; }
   if (!w) return hp.s[hp.s.length - 1][7].slice();
-  const KM = 400;
+  const KM = 100;   // backtested: lighter shrinkage predicts next season better (and keeps the real spread between teams)
   const out = z.map((v, i) => (v + KM * prior[i]) / (w + KM));
   if (young || age >= 31) { const ai = agingIndex(age); for (let i = 0; i < out.length; i++) out[i] += H.aging[H.keys[i]].mean[ai]; }
   return out;

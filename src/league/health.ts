@@ -53,7 +53,7 @@ const OBS: Obs[] = [
   { k: K.ft, log: false, num: l => l.ftm, den: l => l.fta, prior: 90 },
   { k: K.drw, log: true, num: l => l.fta, den: l => l.fga, prior: 250 },
   { k: K.tpr, log: false, num: l => l.tpa, den: l => l.fga, prior: 150 },
-  { k: K.tov, log: false, num: l => l.tov, den: l => l.fga + 0.44 * l.fta + l.tov, prior: 400 },
+  { k: K.tov, log: false, num: l => l.tov, den: l => l.fga + 0.44 * l.fta + l.ast + l.tov, prior: 400 }, // per action, assists counted (as in the data)
   { k: K.usg, log: true, num: l => l.fga + 0.44 * l.fta + l.tov, den: l => l.min, prior: 500 },
   { k: K.ast, log: true, num: l => l.ast, den: l => l.min, prior: 450 },
   { k: K.orb, log: true, num: l => l.orb, den: l => l.min, prior: 450 },
