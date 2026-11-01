@@ -111,6 +111,8 @@ function slotPath(slot: number) {
     hype: HYPE[i] + (HYPE[i + 1] - HYPE[i]) * t,
   };
 }
+/** Typical best season (box +/-) over the first five years of a pick at this slot. */
+export function slotPeak(slot: number) { return Math.max(...slotPath(slot).mean); }
 const PCACHE: Record<string, number> = {};
 
 /**

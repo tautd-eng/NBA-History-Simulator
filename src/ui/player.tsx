@@ -245,7 +245,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
 
   const [editFace, setEditFace] = useState(false);
   const [, bump] = useState(0);
-  const status = p.retired ? `Retired in ${p.retired}` : p.tid ? lg.teams[p.tid].name : (p as any).stash ? `Overseas – rights: ${lg.teams[(p as any).rights]?.abbr ?? '–'}` : 'Free agent';
+  const status = p.retired ? `Retired in ${p.retired}` : p.tid ? lg.teams[p.tid].name : p.prospect ? `Draft prospect – ${p.draft?.year} class` : (p as any).stash ? `Overseas – rights: ${lg.teams[(p as any).rights]?.abbr ?? '–'}` : 'Free agent';
   const [recallMsg, setRecallMsg] = useState('');
   return (
     <div className="overlay" onClick={close}>

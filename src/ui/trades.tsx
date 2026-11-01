@@ -4,7 +4,7 @@ import { TL } from './nav';
 import { useMemo, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, seasonInfo } from '../data';
 import { ageIn } from '../players';
-import { aiResponse, executeTrade, fillRoster, ensurePicks, deadlineDay, pastDeadline, describeAssets, tradeableValue, pickTradeValue } from '../ai/trades';
+import { aiResponse, executeTrade, fillRoster, ensurePicks, deadlineDay, pastDeadline, describeAssets, tradeableValue, pickTradeValue, pickUsed } from '../ai/trades';
 import { payroll, hardCap } from '../ai/value';
 
 const money = (frac: number, s: number) => {
@@ -63,7 +63,7 @@ export function Trades({ lg, openPlayer, onDone }: any) {
   const Side = ({ tid, sel, setSel, label }: any) => {
     const t = lg.teams[tid];
     const players = t.roster.map((pid: string) => lg.players[pid]).sort((x: any, y: any) => ovrOf(y.z) - ovrOf(x.z));
-    const picks = (lg.picks ?? []).filter((p: any) => p.owner === tid).sort((x: any, y: any) => x.season - y.season || x.round - y.round);
+    const picks = (lg.picks ?? []).filter((p: any) => p.owner === tid && !pickUsed(lg, p)).sort((x: any, y: any) => x.season - y.season || x.round - y.round);
     return (
       <div className="trade-side">
         <h3>{label}</h3>
@@ -103,7 +103,7 @@ export function Trades({ lg, openPlayer, onDone }: any) {
     <div className="col">
       <div className="panel">
         <h2>Trade proposal</h2>
-        <p className="note">{closed ? (lg.phase === 'playoffs' ? 'Trading is closed during the playoffs.' : 'This season\'s trade deadline has passed. Trading reopens after the draft.') : lg.phase === 'regular' ? `Trade deadline: day ${deadlineDay(lg) + 1} of the season (today is day ${lg.day + 1}).` : 'Offseason: trading is open.'} AI teams trade among themselves; with your team they only trade when you propose.</p>
+        <p className="note">{closed ? (lg.phase === 'playoffs' ? 'Trading is closed during the playoffs.' : 'This season\'s trade deadline has passed. Trading reopens on draft day.') : lg.phase === 'regular' ? `Trade deadline: day ${deadlineDay(lg) + 1} of the season (today is day ${lg.day + 1}).` : lg.phase === 'draft' ? 'Draft day: picks can be traded until they are used – move up or down the board.' : 'Offseason: trading is open.'} AI teams trade among themselves; with your team they only trade when you propose.</p>
         <div className="trade-pick">
           <label htmlFor="trade-a">Your side
             <select id="trade-a" value={a} onChange={e => { setA(e.target.value); setSelA(new Set()); if (e.target.value === b) setB(teams.find((t: any) => t.tid !== e.target.value).tid); }}>

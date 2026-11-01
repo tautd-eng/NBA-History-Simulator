@@ -2,7 +2,7 @@ import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, K, OVR_VOLUME, agingIndex } f
 import { trackGame, playoffFinish } from './records';
 import { Rng } from '../rng';
 import { simGame, gameGen, PbpEv, GameState, Decision } from '../engine/game';
-import { aiTradeRound, ensurePicks, pastDeadline, deadlineDay, complyHardCap } from '../ai/trades';
+import { aiTradeRound, ensurePicks, pastDeadline, deadlineDay, complyHardCap, isFreeAgent } from '../ai/trades';
 import {
   Settings, League, Team, Player, Game, Series, PlayInGame, GameResult, StatLine, emptyLine, addLine, SeasonSummary, CareerSeason,
 } from '../types';
@@ -13,7 +13,7 @@ import { rookieContract } from './contracts';
 import { nextCal, fatigueAt, addLoad, fatigueExcess, calDay } from './fatigue';
 import { rollGameInjury, injure, refreshInjuries, offDayInjuries } from './injuries';
 import { aiExtensions } from './extensions';
-import { aiRecallStash } from './offseason';
+import { aiRecallStash, announceClass } from './offseason';
 import { makeSchedule } from './schedule';
 import { recordHealth } from './health';
 import { computeAwards, applyAwardChips, finalsMvp } from './awards';
@@ -212,6 +212,7 @@ export function beginFirstSeason(lg: League, rng = rngOf(lg)) {
   ensurePicks(lg);
   recordHealth(lg);
   lg.phase = 'regular';
+  announceClass(lg);
   lg.day = 0;
   lg.schedule = makeSchedule(activeTeams(lg), seasonGames(lg, lg.season), rng, lg.nextGameId);
   lg.nextGameId += lg.schedule.length;
@@ -245,10 +246,33 @@ export function updateStrategies(lg: League) {
  * team without a young core to build around tanks: it sells what helps now for
  * picks and youth, and the worse it finishes the better its lottery odds.
  */
+/**
+ * Strength a front office expects in free agency: its roster, its own free agents it holds the rights to
+ * (most get re-signed), and part of the best free agent it can afford with its cap room.
+ */
+function faProjected(lg: League, t: Team) {
+  const W8 = [36, 34, 32, 30, 28, 24, 20, 16];
+  const str = (zs: number[][]) => zs.map(bpmOf).sort((a, b) => b - a).slice(0, 8).reduce((a, x, i) => a + x * W8[i], 0) / 240 * 5;
+  const fas = Object.values(lg.players).filter(p => isFreeAgent(lg, p));
+  const own = Object.values(lg.players).filter(p => !p.tid && !p.retired && (p as any).bird === t.tid && bpmOf(p.z) > -1);
+  const base = [...t.roster.map(pid => lg.players[pid].z), ...own.map(p => p.z)];
+  const s0 = str(base);
+  const room = 1.0 - payroll(lg, t.tid);
+  const N = lg.season;
+  let bestGain = 0;
+  for (const p of fas) {
+    if ((p as any).bird === t.tid || askingSalary(p, N) > room + 0.02) continue;
+    const g = str([...base, p.z]) - s0;
+    if (g > bestGain) bestGain = g;
+  }
+  return s0 + 0.6 * bestGain;
+}
+
 export function updateModes(lg: League, announce = true) {
   const teams = activeTeams(lg);
   const inSeason = lg.phase === 'regular';
-  const strength = teams.map(t => ({ t, s: teamStrength(lg, t.tid) })).sort((a, b) => b.s - a.s);
+  const fa = lg.phase === 'freeagency';
+  const strength = teams.map(t => ({ t, s: fa ? faProjected(lg, t) : teamStrength(lg, t.tid) })).sort((a, b) => b.s - a.s);
   const score = new Map(strength.map(({ t }, i) => {
     const sRank = 1 - i / Math.max(1, teams.length - 1);
     const g = t.w + t.l;
@@ -278,13 +302,17 @@ export function updateModes(lg: League, announce = true) {
     // stuck in the middle: not good enough to contend, too good to tank – the GM keeps making side moves
     else if (t.mode === 'retool' && inSeason ? (i >= Math.round(n * 0.15) && i < n - 2 && (!inSeason || g < 15 || (wp >= 0.33 && wp <= 0.67)))
       : (i >= Math.round(n * 0.25) && i < n - Math.max(2, Math.round(n * 0.2)) && (!inSeason || g < 15 || (wp >= 0.38 && wp <= 0.62)) && (t.gm.risk >= 0.35 || (inSeason && g >= 25 && Math.abs(wp - 0.5) < 0.07)))) mode = 'retool';
+    // in the summer market a front office does not flip its plan between waves without a real reason
+    if (fa && t.mode === 'tank' && mode !== 'tank' && i >= n * 0.65) mode = 'tank';
+    if (fa && t.mode === 'allin' && mode !== 'allin' && i < n * 0.4) mode = 'allin';
     if (t.tid === lg.userTid) mode = undefined; // the user decides for his own team
     if (announce && mode !== t.mode && mode) {
       const txt = { allin: 'goes all-in – hunting the missing pieces for a title, at the cost of the future', tank: 'starts tanking – will sell veterans for picks and young players', retool: 'is stuck in the middle – shopping for side moves to break out', rising: 'is rising with a young core – adding to it without selling the future', capclear: 'is close to the hard cap – will look to shed salary' }[mode];
       lg.news.push({ s: lg.season, t: `${t.name} ${txt}.` });
     }
-    if (announce && t.mode === 'tank' && mode !== 'tank') lg.news.push({ s: lg.season, t: `${t.name} are playing too well to tank – the sell-off is off.` });
+    if (announce && t.mode === 'tank' && mode !== 'tank') lg.news.push({ s: lg.season, t: inSeason ? `${t.name} are playing too well to tank – the sell-off is off.` : `${t.name} change course after the summer moves – no tank this year.` });
     if (announce && t.mode === 'allin' && mode !== 'allin' && losing) lg.news.push({ s: lg.season, t: `${t.name} are losing – the all-in push is off.` });
+    else if (announce && fa && t.mode === 'allin' && mode !== 'allin') lg.news.push({ s: lg.season, t: `${t.name} step back from the all-in push after the summer market.` });
     t.mode = mode;
     if (mode === 'tank') t.strategy = 'rebuild';
     if (mode === 'allin' && t.tid !== lg.userTid) t.strategy = 'contend';

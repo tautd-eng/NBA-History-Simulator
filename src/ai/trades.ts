@@ -4,11 +4,11 @@
 // pays attention to money, and only agrees when the deal helps its own team.
 import { tradeLocked, lockLabel } from '../league/contracts';
 import { H, seasonInfo, LAST_SEASON, ovrOf, bpmOf } from '../data';
-import { Rng } from '../rng';
+import { Rng, hash01 } from '../rng';
 import { League, Player, Team, Pick, TradeAsset, TradeRec } from '../types';
 import { rosterFit, GMFIT } from '../archetypes';
-import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap, askingSalary } from './value';
-import { playerParts, moneyWeight, prospectValue, tradeValue, horizonOf, Horizon } from './tradevalue';
+import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap, askingSalary, peakBpm, projectBpm } from './value';
+import { playerParts, moneyWeight, prospectValue, tradeValue, horizonOf, Horizon, slotPeak } from './tradevalue';
 import { posNum } from '../engine/game';
 import { bucket, tagOf, ageIn } from '../players';
 import { shownOvr } from '../data';
@@ -31,7 +31,8 @@ const DEPTH_W = [1, 1, 1, 1, 0.95, 0.85, 0.75, 0.6, 0.45, 0.32, 0.2, 0.12, 0.08,
 export function ensurePicks(lg: League) {
   if (!lg.picks) lg.picks = [];
   const first = lg.phase === 'regular' || lg.phase === 'playoffs' || lg.phase === 'draft' || lg.phase === 'freeagency' ? lg.season : lg.season + 1;
-  for (let y = first; y <= Math.min(first + 2, LAST_SEASON - 1); y++) {
+  // drafts go on past the real data (future classes), so there are always three years of picks
+  for (let y = first; y <= first + 2; y++) {
     for (const t of Object.values(lg.teams)) {
       if (!t.active) continue;
       for (const round of [1, 2]) {
@@ -42,6 +43,15 @@ export function ensurePicks(lg: League) {
     }
   }
   lg.picks = lg.picks.filter(p => p.season >= first);
+}
+
+/** A pick of the draft under way that has already been made (or any of a finished draft). */
+export function pickUsed(lg: League, pk: { season: number; round: number; orig: string }) {
+  const d = lg.draftDay;
+  if (!d || d.year !== pk.season) return false;
+  if (d.done) return true;
+  const i = d.order.findIndex(o => o.round === pk.round && o.orig === pk.orig);
+  return i >= 0 && i < d.idx;
 }
 
 export function pickOwner(lg: League, season: number, round: number, orig: string) {
@@ -82,6 +92,12 @@ function slotValue(slot: number, strategy: Team['strategy']) {
 
 /** Expected slot of a pick from the original team's current strength. */
 function expectedSlot(lg: League, p: { season: number; round: number; orig: string }) {
+  // during the draft the slot is known
+  const d = lg.draftDay;
+  if (d && !d.done && d.year === p.season && d.order.length) {
+    const i = d.order.findIndex(o => o.round === p.round && o.orig === p.orig);
+    if (i >= 0) return i + 1;
+  }
   fresh(lg);
   const ranked = rankCache ??= Object.values(lg.teams).filter(t => t.active).map(t => ({ t: t.tid, s: teamStrength(lg, t.tid) })).sort((a, b) => a.s - b.s);
   const n = ranked.length;
@@ -99,11 +115,36 @@ export function neutralValue(lg: League, xs: TradeAsset[]) {
   for (const x of xs) v += x.pid ? Math.max(0, pv(lg, lg.players[x.pid], 'middle')) : pickValue(lg, x.pick!, 'middle', 0.45);
   return v;
 }
-export function pickValue(lg: League, p: { season: number; round: number; orig: string }, strategy: Horizon, moneyW = 0.45) {
+export function pickValue(lg: League, p: { season: number; round: number; orig: string }, strategy: Horizon, moneyW = 0.45, t?: Team) {
+  if (t) { const w = draftPickWorth(lg, p, t, strategy, moneyW); if (w !== null) return w; }
   const years = Math.max(0, p.season - lg.season);
   const slot = Math.max(1, Math.round(expectedSlot(lg, p)));
   // future picks: further away, less certain, and not helping now
-  return prospectValue(slot, strategy, moneyW) * Math.pow(0.9, years);
+  const base = prospectValue(slot, strategy, moneyW) * Math.pow(0.9, years);
+  return Math.max(0.05, base + classAdj(lg, p.season, slot, base));
+}
+
+const classCache = new Map<string, number[]>();
+/**
+ * This season's draft class is public: a deep class makes this year's picks worth more, a thin one less.
+ * The prospect the consensus would take around that slot against what such a slot usually brings.
+ */
+function classAdj(lg: League, season: number, slot: number, base: number) {
+  const c = lg.draftClass;
+  if (!c || c.year !== season) return 0;
+  const key = c.year + '|' + c.pool.length + '|' + lg.season;
+  let peaks = classCache.get(key);
+  if (!peaks) {
+    peaks = c.pool.map(id => lg.players[id]).filter(p => p?.prospect).sort((a, b) => a.draft!.realPick - b.draft!.realPick)
+      .map(p => Math.max(...projectBpm(p.z, ageIn(p, c.year + 1), 5)));
+    classCache.clear(); classCache.set(key, peaks);
+  }
+  if (!peaks.length) return 0;
+  // the exact slot is not known yet: average a few around it
+  let d = 0, n = 0;
+  for (let s = Math.max(1, slot - 2); s <= slot + 2; s++) { const k = Math.min(peaks.length - 1, s - 1); d += peaks[k] - slotPeak(s); n++; }
+  const adj = 0.8 * d / n;
+  return Math.max(-0.5 * base, Math.min(0.5 * base, adj));
 }
 
 // ------------------------------------------------------------------ valuation
@@ -138,7 +179,7 @@ function teamValue(lg: League, t: Team, side: Side, moneyW: number) {
   v -= missing * needW * fifth;
   // roles that fit together (shooters around a creator, a rim protector, answers on defence) beat a pile of the same pieces
   if (GMFIT.on) v += needW * 1.2 * fifth * rosterFit(ps.map(x => x.p).sort((a, b) => bpmOf(b.z) - bpmOf(a.z)));
-  for (const pk of side.picks) v += pickValue(lg, pk, h, moneyW);
+  for (const pk of side.picks) v += pickValue(lg, pk, h, moneyW, t);
   // tanking: a weaker roster this season moves the own pick up the lottery
   if (t.mode === 'tank') {
     const own = side.picks.find(pk => pk.orig === t.tid && pk.round === 1 && pk.season === lg.season && (lg.phase === 'regular' || lg.phase === 'freeagency'));
@@ -155,7 +196,7 @@ function teamValue(lg: League, t: Team, side: Side, moneyW: number) {
 function sideOf(lg: League, tid: string): Side {
   return {
     players: lg.teams[tid].roster.map(pid => lg.players[pid]),
-    picks: (lg.picks ?? []).filter(p => p.owner === tid),
+    picks: (lg.picks ?? []).filter(p => p.owner === tid && !pickUsed(lg, p)),
   };
 }
 
@@ -197,7 +238,8 @@ export function tradeRules(lg: League, a: string, b: string, aGets: TradeAsset[]
     }
   }
   if (lg.phase === 'playoffs') return 'No trades during the playoffs.';
-  if (lg.phase === 'draft') return 'No trades during the draft – trading reopens in free agency.';
+  for (const x of [...aGets, ...bGets]) if (x.pick && pickUsed(lg, x.pick)) return 'That pick has already been used.';
+  if (lg.phase === 'draft' && lg.draftDay && lg.draftDay.year === lg.season && (lg.draftDay.stage ?? 'draft') !== 'draft' && !lg.draftDay.done) return 'Trades open once the lottery and expansion draft are done.';
   if (lg.phase === 'regular' && pastDeadline(lg)) return 'The trade deadline has passed.';
   return null;
 }
@@ -389,7 +431,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
   const hA = horizonOf(A);
   const playerValue = (p: Player, _s: number, st: Horizon) => pv(lg, p, st, st === hA ? A.tid : undefined);
   const myPlayers = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p));
-  const myPicks = (lg.picks ?? []).filter(p => p.owner === A.tid);
+  const myPicks = (lg.picks ?? []).filter(p => p.owner === A.tid && !pickUsed(lg, p));
   const myCore = new Set([...myPlayers].sort((x, y) => playerValue(y, S, hA) - playerValue(x, S, hA)).slice(0, hA === 'rebuild' || hA === 'tank' ? 1 : 2).map(p => p.id));
   // what adding a player does for A's roster as a whole (fills a hole, or just more of the same)
   const wA = moneyWeight(lg, A.tid);
@@ -444,7 +486,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
       if (pid === tgt.p.id || bCore.has(pid) || tradeLocked(lg, p)) continue;
       cands.push({ a: { pid }, edge: playerValue(p, S, hA) - playerValue(p, S, hB) - 0.5, sal: p.contract.sal, back: true });
     }
-    for (const pk of (lg.picks ?? []).filter(p => p.owner === B.tid && p.round === 2)) {
+    for (const pk of (lg.picks ?? []).filter(p => p.owner === B.tid && p.round === 2 && !pickUsed(lg, p))) {
       cands.push({ a: { pick: { season: pk.season, round: pk.round, orig: pk.orig } }, edge: pickValue(lg, pk, hA, wA) - pickValue(lg, pk, hB, moneyWeight(lg, B.tid)) - 0.5, sal: 0, back: true });
     }
     cands.sort((x, y) => y.edge - x.edge);
@@ -490,7 +532,7 @@ function findSale(lg: League, A: Team, others: Team[], rng: Rng) {
       const bGets: TradeAsset[] = [{ pid: p.id }];
       // B pays with picks and young players first, salary filler if needed
       const cands: TradeAsset[] = [
-        ...(lg.picks ?? []).filter(pk => pk.owner === B.tid).sort((x, y) => x.round - y.round).map(pk => ({ pick: { season: pk.season, round: pk.round, orig: pk.orig } })),
+        ...(lg.picks ?? []).filter(pk => pk.owner === B.tid && !pickUsed(lg, pk)).sort((x, y) => x.round - y.round).map(pk => ({ pick: { season: pk.season, round: pk.round, orig: pk.orig } })),
         ...B.roster.map(pid => lg.players[pid]).filter(q => ageIn(q, S) <= 24).sort((x, y) => pv(lg, y, 'tank', A.tid) - pv(lg, x, 'tank', A.tid)).map(q => ({ pid: q.id })),
         ...B.roster.map(pid => lg.players[pid]).filter(q => ageIn(q, S) > 24).sort((x, y) => y.contract.sal - x.contract.sal).map(q => ({ pid: q.id })),
       ];
@@ -526,7 +568,7 @@ function findDump(lg: League, A: Team, others: Team[], force = false) {
   if (over <= 0 && !force) return null;
   const mine = A.roster.map(pid => lg.players[pid]).filter(p => p.contract.sal >= Math.min(0.04, Math.max(0.015, over)))
     .sort((x, y) => (pv(lg, x, hA, A.tid) / x.contract.sal) - (pv(lg, y, hA, A.tid) / y.contract.sal)).slice(0, 5);
-  const picks = (lg.picks ?? []).filter(pk => pk.owner === A.tid).sort((x, y) => y.round - x.round || y.season - x.season)
+  const picks = (lg.picks ?? []).filter(pk => pk.owner === A.tid && !pickUsed(lg, pk)).sort((x, y) => y.round - x.round || y.season - x.season)
     .map(pk => ({ pick: { season: pk.season, round: pk.round, orig: pk.orig } }));
   for (const p of mine) {
     const takers = others.filter(B => B.roster.length < ROSTER_MAX && payroll(lg, B.tid) + p.contract.sal <= Math.min(hc - 0.05, 1.05))
@@ -597,6 +639,102 @@ export function tradeableValue(lg: League, p: Player, tid: string) {
 }
 /** What a pick is worth to a team (for the trade screen). */
 export function pickTradeValue(lg: League, pk: { season: number; round: number; orig: string }, tid: string) {
-  return pickValue(lg, pk, horizonOf(lg.teams[tid]), moneyWeight(lg, tid));
+  return pickValue(lg, pk, horizonOf(lg.teams[tid]), moneyWeight(lg, tid), lg.teams[tid]);
 }
 export { ovrOf, bpmOf, seasonInfo };
+
+// ------------------------------------------------------------------ draft-day trades
+const peakCache = new Map<string, number>();
+const posGroup = (pos: string) => { const n = posNum(pos); return n <= 2 ? 0 : n >= 4 ? 2 : 1; };
+/** How much a team needs a player of this position group: few good ones in its rotation = a hole. */
+function draftNeed(lg: League, t: Team, p: Player) {
+  const g = posGroup(p.pos);
+  const rot = t.roster.map(pid => lg.players[pid]).filter(q => q && !q.retired).sort((a, b) => bpmOf(b.z) - bpmOf(a.z)).slice(0, 9);
+  const have = rot.filter(q => posGroup(q.pos) === g && bpmOf(q.z) > -1).length;
+  return have <= 1 ? 1 : have === 2 ? 0.5 : have === 3 ? 0.15 : -0.15;
+}
+/**
+ * A team's own (hidden) board: consensus, its scouts' projection – noisier the worse its scouting – and its
+ * needs. Contenders lean toward a player who fills a hole now, rebuilding teams take the best talent.
+ */
+export function boardScore(lg: League, p: Player, t: Team, Y: number) {
+  const consensus = 6 - 3.0 * Math.log(Math.max(1, p.draft!.realPick));
+  const key = p.id + '|' + Y;
+  let proj = peakCache.get(key);
+  if (proj === undefined) { proj = peakBpm(p, Y + 1); peakCache.set(key, proj); if (peakCache.size > 5000) peakCache.clear(); }
+  const h = hash01(t.tid + '|' + p.id) * 2 - 1;
+  const noise = (1.1 - t.gm.scouting) * ((p as any).scout * 1.5 + h * 1.2);
+  const hz = horizonOf(t);
+  const needW = hz === 'allin' || hz === 'contend' ? 0.8 : hz === 'tank' || hz === 'rebuild' ? 0.25 : 0.5;
+  return 0.5 * consensus + 0.5 * proj + noise + needW * draftNeed(lg, t, p);
+}
+
+/**
+ * During the draft a pick is worth the player the team plans to take with it: the others are assumed to
+ * pick by consensus until then, and of those left the team takes the best on its own board. A team whose
+ * favourite will still be there two picks later gains little by moving up.
+ */
+function draftPickWorth(lg: League, pk: { season: number; round: number; orig: string }, t: Team, h: Horizon, moneyW: number): number | null {
+  const d = lg.draftDay;
+  if (!d || d.done || d.year !== pk.season || (d.stage ?? 'draft') !== 'draft') return null;
+  const j = d.order.findIndex(o => o.round === pk.round && o.orig === pk.orig);
+  if (j < d.idx) return null;
+  const cons = d.pool.map(id => lg.players[id]).sort((a, b) => a.draft!.realPick - b.draft!.realPick);
+  const left = cons.slice(Math.min(j - d.idx, Math.max(0, cons.length - 1)));
+  if (!left.length) return prospectValue(j + 1, h, moneyW);
+  let best = -1e9;
+  for (const p of left.slice(0, 25)) best = Math.max(best, boardScore(lg, p, t, d.year));
+  const typical = boardScore(lg, left[0], t, d.year);
+  return Math.max(0.05, prospectValue(j + 1, h, moneyW) + 0.9 * (best - typical));
+}
+
+/**
+ * Trade up / trade down while a pick is on the clock. Every team values the picks by the player it plans
+ * to take with them (its own board), so a deal happens when another team wants the player available now
+ * more than the team on the clock does – paid with its later pick plus a sweetener of other picks.
+ */
+export function aiDraftTrade(lg: League, rng: Rng): TradeRec | null {
+  const d = lg.draftDay;
+  if (!d || d.done || (d.stage ?? 'draft') !== 'draft' || d.idx >= d.order.length || d.pool.length < 3) return null;
+  const i = d.idx, Y = d.year, cur = d.order[i];
+  const xid = pickOwner(lg, Y, cur.round, cur.orig);
+  const X = lg.teams[xid];
+  if (!X || xid === lg.userTid) return null;
+  if (!rng.chance(cur.round === 1 ? 0.3 : 0.12)) return null;
+  const curPk = { season: Y, round: cur.round, orig: cur.orig };
+  const hX = horizonOf(X), wX = moneyWeight(lg, X.tid);
+  const xCur = pickValue(lg, curPk, hX, wX, X);
+  let best: { Yt: Team; j: number; aGets: TradeAsset[]; surplus: number } | null = null;
+  const seen = new Set<string>();
+  for (let j = i + 1; j < Math.min(d.order.length, i + 16); j++) {
+    const o = d.order[j];
+    const yid = pickOwner(lg, Y, o.round, o.orig);
+    if (yid === xid || yid === lg.userTid || seen.has(yid) || !lg.teams[yid]?.active) continue;
+    seen.add(yid);
+    const Yt = lg.teams[yid], hY = horizonOf(Yt), wY = moneyWeight(lg, yid);
+    const laterPk = { season: Y, round: o.round, orig: o.orig };
+    const gainY = pickValue(lg, curPk, hY, wY, Yt) - pickValue(lg, laterPk, hY, wY, Yt);
+    // moving down always costs the buyer something (at least about a future second-rounder)
+    const needX = Math.max(0.2, xCur * 1.03 - pickValue(lg, laterPk, hX, wX, X));
+    if (gainY <= 0.2) continue;
+    const aGets: TradeAsset[] = [{ pick: laterPk }];
+    let paidX = 0, costY = 0;
+    const sweet = (lg.picks ?? []).filter(pk => pk.owner === yid && !pickUsed(lg, pk) && !(pk.season === Y && pk.round === o.round && pk.orig === o.orig) && !(pk.season === Y && d.order.findIndex(q => q.round === pk.round && q.orig === pk.orig) <= i))
+      .map(pk => ({ pk, vx: pickValue(lg, pk, hX, wX, X), vy: pickValue(lg, pk, hY, wY, Yt) })).sort((a, b) => a.vx - b.vx);
+    while (paidX < needX && sweet.length && aGets.length < 4) {
+      const k = sweet.findIndex(s => paidX + s.vx >= needX);
+      const s = sweet.splice(k >= 0 ? k : sweet.length - 1, 1)[0];
+      aGets.push({ pick: { season: s.pk.season, round: s.pk.round, orig: s.pk.orig } });
+      paidX += s.vx; costY += s.vy;
+    }
+    if (paidX < needX) continue;
+    const surplus = gainY - costY;
+    if (surplus <= 0.05) continue;
+    if (!best || surplus > best.surplus) best = { Yt, j, aGets, surplus };
+  }
+  if (!best) return null;
+  if (tradeRules(lg, X.tid, best.Yt.tid, best.aGets, [{ pick: curPk }])) return null;
+  const rec = executeTrade(lg, X.tid, best.Yt.tid, best.aGets, [{ pick: curPk }]);
+  lg.news.push({ s: Y, t: `Draft-day trade: ${best.Yt.name} move up to No. ${i + 1}; ${X.name} move down to No. ${best.j + 1}${best.aGets.length > 1 ? ` and add ${describeAssets(lg, best.aGets.slice(1))}` : ''}.` });
+  return rec;
+}

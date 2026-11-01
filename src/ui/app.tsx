@@ -13,7 +13,7 @@ import { createRoot } from 'react-dom/client';
 import { loadHistory, H, RATING_LABELS, shownOvr as ovrOf, shownFromRaw, shownFromBpm, ratingOf, seasonInfo, bpmOf, LAST_SEASON } from '../data';
 import { setEraCal } from '../engine/game';
 import { newLeague, standings, playoffFormat, realChampion, simDayWatching, watchableToday, playedToday, seasonGames, applySettings, startClutch, finishClutch, todayIndex } from '../league/league';
-import { ensurePicks, deadlineDay } from '../ai/trades';
+import { ensurePicks, deadlineDay, boardScore } from '../ai/trades';
 import { LiveGame } from './live';
 import { SortTable, f1 } from './sorttable';
 import { ClutchGame } from './clutch';
@@ -989,10 +989,36 @@ function FantasyResults({ lg, openPlayer }: any) {
   );
 }
 
+/** Next summer's class, public from the start of the season: consensus order and (with a team) your scouts' board. */
+function UpcomingClass({ lg, openPlayer }: any) {
+  const c = lg.draftClass;
+  if (!c) return null;
+  const ps = c.pool.map((id: string) => lg.players[id]).filter((p: any) => p?.prospect);
+  const cons = [...ps].sort((a: any, b: any) => a.draft.realPick - b.draft.realPick);
+  const you = lg.userTid ? lg.teams[lg.userTid] : null;
+  const yours = you ? new Map([...ps].map((p: any) => [p.id, boardScore(lg, p, you, c.year)]).sort((a: any, b: any) => b[1] - a[1]).map((x: any, i: number) => [x[0], i + 1])) : null;
+  const rows = cons.map((p: any, i: number) => ({ key: p.id, p, cons: i + 1, mine: yours?.get(p.id) }));
+  const cols = [
+    { key: 'cons', label: 'Rank', title: 'Consensus rank of the scouts', asc: true, get: (r: any) => r.cons },
+    ...(yours ? [{ key: 'mine', label: 'Your board', title: 'Where your own scouts rank him (talent, their projection and your needs) – other teams do not see this', asc: true, get: (r: any) => r.mine }] : []),
+    { key: 'name', label: 'Prospect', left: true, asc: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button> },
+    { key: 'pos', label: 'Pos', left: true, get: (r: any) => r.p.pos },
+    { key: 'age', label: 'Age', get: (r: any) => Math.floor(c.year + 1 - r.p.born) },
+    { key: 'ht', label: 'Height', get: (r: any) => r.p.ht, fmt: (v: any) => `${(v * 0.0254).toFixed(2)} m` },
+  ];
+  return (
+    <div className="panel">
+      <h2>{c.year} draft class</h2>
+      <p className="dim">Announced at the start of the season – every front office scouts it all year and values this season's picks by how deep it is.{you ? ' Your board is your scouts\' view and your needs; other teams have their own, which you do not see.' : ''}</p>
+      <SortTable cols={cols} rows={rows.slice(0, 60)} initial="cons" initialAsc={true} />
+    </div>
+  );
+}
+
 function Drafts({ lg, openPlayer, openTeam }: any) {
   const years = lg.history.filter((s: any) => s.draft?.length).map((s: any) => s.season);
   const [y, setY] = useState(years[years.length - 1] ?? null);
-  if (!years.length) return <div className="panel empty"><h2>Draft classes</h2><p>The first draft takes place after the {(lg.start ?? 1980) - 1}–{String(lg.start ?? 1980).slice(2)} season. Sim the season to the end.</p></div>;
+  if (!years.length) return <><UpcomingClass lg={lg} openPlayer={openPlayer} /><div className="panel empty"><h2>Draft classes</h2><p>The first draft takes place after the {(lg.start ?? 1980) - 1}–{String(lg.start ?? 1980).slice(2)} season. Sim the season to the end.</p></div></>;
   const s = lg.history.find((h: any) => h.season === y) ?? lg.history[lg.history.length - 1];
   const rows = s.draft.map((d: any) => {
     const p = lg.players[d.pid];
@@ -1023,6 +1049,8 @@ function Drafts({ lg, openPlayer, openTeam }: any) {
     { key: 'ti', label: 'Titles', get: (r: any) => r.titles },
   ];
   return (
+    <>
+    <UpcomingClass lg={lg} openPlayer={openPlayer} />
     <div className="panel">
       <div className="team-head">
         <select aria-label="Draft year" value={s.season} onChange={e => setY(+e.target.value)}>
@@ -1032,6 +1060,7 @@ function Drafts({ lg, openPlayer, openTeam }: any) {
       </div>
       <SortTable cols={cols} rows={rows} initial="pick" initialAsc={true} rowClass={(r: any) => (r.d.tid === lg.userTid ? 'mine' : '')} />
     </div>
+    </>
   );
 }
 

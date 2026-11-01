@@ -5,7 +5,7 @@ import { rosterFit, GMFIT } from '../archetypes';
 import { Rng } from '../rng';
 import { League, Player, Team, emptyLine, ExpansionDraft, Lottery, FreeAgency } from '../types';
 import { newPlayer, prospectZ, realTarget, lastRealSeason, ageIn, firstRealSeason, snapRatings, tagOf, addTx } from '../players';
-import { activeTeams, makeTeam, rngOf, standings, updateStrategies, playoffFormat, seasonGames } from './league';
+import { activeTeams, makeTeam, rngOf, standings, updateStrategies, updateModes, playoffFormat, seasonGames } from './league';
 import { makeSchedule } from './schedule';
 import { develop, normalizeLeague, youngFloor } from './health';
 import { classFor, shiftFor, cloneBase } from './classes';
@@ -13,7 +13,7 @@ import { resetFatigue } from './fatigue';
 import { carryInjuries } from './injuries';
 import { rookieContract, vetContract, rfaEligible, qoAmount, worthKeeping, optsOut, lockTrade } from './contracts';
 import { discount, offerUtility } from './prefs';
-import { pickOwner, ensurePicks, aiTradeRound, isFreeAgent, complyHardCap } from '../ai/trades';
+import { pickOwner, ensurePicks, aiTradeRound, isFreeAgent, complyHardCap, aiDraftTrade, boardScore } from '../ai/trades';
 import {
   askingSalary, contractYears, payroll, playerValue, peakBpm, MIN_SAL, zClamp, projectBpm, maxSalary, hardCap, vetMin,
 } from '../ai/value';
@@ -41,6 +41,22 @@ export function initDraft(lg: League) {
     }
   }
   ensurePicks(lg);
+  // the class was announced at the start of the season (scouted all year); otherwise make it now
+  const pool: string[] = lg.draftClass?.year === Y ? lg.draftClass.pool.filter(pid => lg.players[pid]?.prospect) : makeClass(lg, Y, rng);
+  delete lg.draftClass;
+  lg.draftDay = {
+    year: Y, order: [], idx: 0, pool, picks: [], newTeams, done: false,
+    stage: newTeams.length ? 'expansion' : 'lottery',
+    exp: newTeams.length ? setupExpansion(lg, newTeams, rng) : undefined,
+    lotto: setupLottery(lg, newTeams),
+  };
+  lg.draftDay.lottery = lg.draftDay.lotto!.text;
+  if (newTeams.length) lg.news.push({ s: Y, t: `The league expands: ${newTeams.map(t => lg.teams[t].name).join(', ')}. An expansion draft comes before the draft.` });
+  save(lg, rng);
+}
+
+/** The prospects of the draft held after season Y. */
+function makeClass(lg: League, Y: number, rng: Rng): string[] {
   const classIds = classFor(lg, Y).filter(pid => !lg.players[pid]);
   const pool: string[] = [];
   for (const pid of classIds) {
@@ -58,15 +74,21 @@ export function initDraft(lg: League) {
     lg.players[pid] = p;
     pool.push(pid);
   }
-  lg.draftDay = {
-    year: Y, order: [], idx: 0, pool, picks: [], newTeams, done: false,
-    stage: newTeams.length ? 'expansion' : 'lottery',
-    exp: newTeams.length ? setupExpansion(lg, newTeams, rng) : undefined,
-    lotto: setupLottery(lg, newTeams),
-  };
-  lg.draftDay.lottery = lg.draftDay.lotto!.text;
-  if (newTeams.length) lg.news.push({ s: Y, t: `The league expands: ${newTeams.map(t => lg.teams[t].name).join(', ')}. An expansion draft comes before the draft.` });
-  save(lg, rng);
+  return pool;
+}
+
+/**
+ * Announce next summer's draft class at the start of the season, so teams (and the user) know all year
+ * how strong it is and value this season's picks accordingly.
+ */
+export function announceClass(lg: League) {
+  const Y = lg.season;
+  if (lg.draftClass?.year === Y || lg.draftDay?.year === Y) return;
+  const rng = rngOf(lg);
+  const pool = makeClass(lg, Y, rng);
+  lg.draftClass = { year: Y, pool };
+  const top = pool.map(pid => lg.players[pid]).sort((a, b) => a.draft!.realPick - b.draft!.realPick).slice(0, 3);
+  if (top.length) lg.news.push({ s: Y, t: `The ${Y} draft class is out – scouts rank ${top.map(p => p.name).join(', ')} at the top.` });
 }
 
 // ---- expansion draft
@@ -271,7 +293,7 @@ export function draftOnClock(lg: League) {
 export function draftSuggest(lg: League, tid: string) {
   const d = lg.draftDay!;
   const rng = rngOf(lg);
-  const best = pickBest(d.pool.map(pid => lg.players[pid]), lg.teams[tid], d.year, rng);
+  const best = pickBest(lg, d.pool.map(pid => lg.players[pid]), lg.teams[tid], d.year, rng);
   return best?.id;
 }
 
@@ -283,7 +305,7 @@ export function draftPick(lg: League, pid?: string) {
   const rng = rngOf(lg);
   const Y = d.year;
   const team = lg.teams[on.tid];
-  const best = pid && d.pool.includes(pid) ? lg.players[pid] : pickBest(d.pool.map(x => lg.players[x]), team, Y, rng);
+  const best = pid && d.pool.includes(pid) ? lg.players[pid] : pickBest(lg, d.pool.map(x => lg.players[x]), team, Y, rng);
   d.pool = d.pool.filter(x => x !== best.id);
   delete best.prospect;
   best.draft!.pick = on.pick; best.draft!.round = on.round; best.draft!.tid = on.tid;
@@ -316,6 +338,11 @@ export function draftAdvance(lg: League, mode: 'one' | 'user' | 'all') {
     const on = draftOnClock(lg);
     if (!on) break;
     if (mode !== 'all' && on.tid === lg.userTid && lg.userTid) break;
+    // a pick on the clock may change hands first (trade up / trade down)
+    if (on.tid !== lg.userTid && aiDraftTrade(lg, rngOf(lg))) {
+      const now = draftOnClock(lg);
+      if (now && mode !== 'all' && now.tid === lg.userTid && lg.userTid) break;
+    }
     draftPick(lg);
     n++;
     if (mode === 'one') break;
@@ -353,13 +380,11 @@ export function runDraftPhase(lg: League) {
 
 
 /** Draft board: blend of consensus (the real draft slot) and the team's own projection. */
-function pickBest(pool: Player[], team: Team, Y: number, rng: Rng) {
+function pickBest(lg: League, pool: Player[], team: Team, Y: number, rng: Rng) {
+  // the team's own board (talent, scouting, needs) – a little room for a last-minute change of heart
   let best = pool[0], bestV = -1e9;
   for (const p of pool) {
-    const consensus = 6 - 3.0 * Math.log(Math.max(1, p.draft!.realPick));
-    const proj = peakBpm(p, Y + 1);
-    const noise = (1.1 - team.gm.scouting) * (p.scout * 1.5 + rng.normal() * 0.9);
-    const v = 0.5 * consensus + 0.5 * proj + noise;
+    const v = boardScore(lg, p, team, Y) + 0.25 * rng.normal();
     if (v > bestV) { bestV = v; best = p; }
   }
   return best;
@@ -674,6 +699,9 @@ export function faStage(lg: League) {
   const st = fa.stage;
   if (st === 0) { applyDecisions(lg); fa.stage = 1; save(lg, rng); return; }
   if (st === 1) { resolvePending(lg, rng); aiRecallStash(lg, rng); }
+  // each wave of the market: front offices look at who is out there, who they can afford and who they lost,
+  // and decide again whether this is a year to go all in, to tank, or something in between
+  updateModes(lg, true);
   aiSignings(lg, rng, st);
   if (st === 3) reachFloor(lg, rng);
   resolveSheets(lg);
@@ -908,6 +936,7 @@ export function startSeason(lg: League) {
     t.st = emptyLine(); t.opp = emptyLine(); t.gp = 0; t.stPo = emptyLine(); t.oppPo = emptyLine(); t.gpPo = 0;
   }
   lg.phase = 'regular';
+  announceClass(lg);
   lg.day = 0;
   lg.series = []; lg.playIn = [];
   lg.schedule = makeSchedule(activeTeams(lg), seasonGames(lg, N), rng, lg.nextGameId);

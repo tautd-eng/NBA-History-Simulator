@@ -200,6 +200,7 @@ export interface League {
   articles?: { key: string; title: string; text: string; by: 'claude' | 'auto' }[];
   seasonAwards?: any; // regular-season awards, between the end of the regular season and the finals
   draftDay?: DraftDay;
+  draftClass?: { year: number; pool: string[] }; // next draft's prospects, public from the start of the season
   fa?: FreeAgency;
   dead?: { tid: string; sal: number; exp: number; pid: string }[]; // salaries of released players still on the books
   start?: number;                     // first season of this league
