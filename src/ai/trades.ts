@@ -68,6 +68,17 @@ function stepien(lg: League, a: string, b: string, aGets: TradeAsset[], bGets: T
 }
 
 const owner = (lg: League, season: number, round: number, orig: string) => (lg.picks ?? []).find(p => p.season === season && p.round === round && p.orig === orig)?.owner;
+/**
+ * A player a team has just traded for is not shopped again right away: AI GMs leave him alone for about
+ * a month in the season, and for the rest of the same summer.
+ */
+export function justTraded(lg: League, p: Player) {
+  const a = (p as any).acq as { s: number; ph: string; day: number } | undefined;
+  if (!a) return false;
+  if (lg.phase === 'regular' && a.ph === 'regular' && a.s === lg.season) return lg.day - a.day < 30;
+  if ((lg.phase === 'freeagency' || lg.phase === 'draft') && (a.ph === 'freeagency' || a.ph === 'draft') && a.s === lg.season) return true;
+  return false;
+}
 /** Is a pick tied up in an outstanding swap / less-favourable right? */
 export function pickTied(lg: League, pk: { season: number; round: number; orig: string }) {
   return (lg.pickRights ?? []).some(r => r.season === pk.season && r.round === pk.round && (r.a === pk.orig || r.b === pk.orig));
@@ -443,6 +454,7 @@ export function executeTrade(lg: League, a: string, b: string, aGets: TradeAsset
     for (const x of xs) {
       if (x.pid) {
         const p = lg.players[x.pid];
+        (p as any).acq = { s: lg.season, ph: lg.phase, day: lg.day };
         lg.teams[from].roster = lg.teams[from].roster.filter(id => id !== p.id);
         lg.teams[to].roster.push(p.id);
         p.tid = to;
@@ -550,7 +562,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
   fresh(lg);
   const hA = horizonOf(A);
   const playerValue = (p: Player, _s: number, st: Horizon) => pv(lg, p, st, st === hA ? A.tid : undefined);
-  const myPlayers = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p));
+  const myPlayers = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && !justTraded(lg, p));
   const myPicks = (lg.picks ?? []).filter(p => p.owner === A.tid && !pickUsed(lg, p));
   const myCore = new Set([...myPlayers].sort((x, y) => playerValue(y, S, hA) - playerValue(x, S, hA)).slice(0, hA === 'rebuild' || hA === 'tank' ? 1 : 2).map(p => p.id));
   // what adding a player does for A's roster as a whole (fills a hole, or just more of the same)
@@ -563,7 +575,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
   for (const B of others) {
     for (const pid of B.roster) {
       const p = lg.players[pid];
-      if (tradeLocked(lg, p)) continue;
+      if (tradeLocked(lg, p) || justTraded(lg, p)) continue;
       const hB = horizonOf(B);
       const va = playerValue(p, S, hA), vb = playerValue(p, S, hB);
       if (va < 2.5) continue;
@@ -575,7 +587,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
       // ... though an all-in team sometimes pries the star loose from a team going nowhere
       if (vb >= bestB && hB !== 'rebuild' && hB !== 'tank' && !(hA === 'allin' && (hB === 'middle' || B.mode === 'retool') && rng.chance(0.3))) continue;
       // rebuilding and tanking teams keep their young players and prime-age stars
-      if ((hB === 'tank' || hB === 'rebuild' || hB === 'rising') && (ageIn(p, S) <= 24 || (ageIn(p, S) <= 27 && vb >= bestB))) continue;
+      if ((hB === 'tank' || hB === 'rebuild' || hB === 'rising') && (ageIn(p, S) <= 25 || (ageIn(p, S) <= 27 && (vb >= bestB || shownOvr(p.z) >= 86)))) continue;
       // contenders look for the piece that improves the roster most (fit), others for value
       // contenders and retooling teams look for the piece that improves the roster most (fit), others for value
       if (A.mode === 'retool' && ageIn(p, S) > 31) continue;
@@ -608,7 +620,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
     const bCore = new Set(B.roster.map(pid => lg.players[pid]).sort((x, y) => playerValue(y, S, hB) - playerValue(x, S, hB)).slice(0, 3).map(p => p.id));
     for (const pid of B.roster) {
       const p = lg.players[pid];
-      if (pid === tgt.p.id || bCore.has(pid) || tradeLocked(lg, p)) continue;
+      if (pid === tgt.p.id || bCore.has(pid) || tradeLocked(lg, p) || justTraded(lg, p)) continue;
       cands.push({ a: { pid }, edge: playerValue(p, S, hA) - playerValue(p, S, hB) - 0.5, sal: p.contract.sal, back: true });
     }
     for (const pk of (lg.picks ?? []).filter(p => p.owner === B.tid && p.round === 2 && !pickUsed(lg, p))) {
@@ -649,7 +661,10 @@ function findSale(lg: League, A: Team, others: Team[], rng: Rng) {
   fresh(lg);
   // a tanking team sells anyone who helps now and will not be part of the next good team (26+)
   const minAge = A.mode === 'tank' ? 26 : 28;
-  const vets = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && ageIn(p, S) >= minAge && bpmOf(p.z) > 0).sort((x, y) => bpmOf(y.z) - bpmOf(x.z)).slice(0, 5);
+  // ... but never the young cornerstone: a star under 30 (or the team's best player under 28) is who the rebuild is built around
+  const S2 = S, best = Math.max(...A.roster.map(pid => bpmOf(lg.players[pid].z)));
+  const cornerstone = (p: Player) => (shownOvr(p.z) >= 86 && ageIn(p, S2) < 30) || (bpmOf(p.z) >= best && ageIn(p, S2) < 28);
+  const vets = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && !justTraded(lg, p) && !cornerstone(p) && ageIn(p, S) >= minAge && bpmOf(p.z) > 0).sort((x, y) => bpmOf(y.z) - bpmOf(x.z)).slice(0, 5);
   for (const p of rng.shuffle([...vets])) {
     const buyers = others.filter(B => B.mode === 'allin' || B.strategy === 'contend' || B.strategy === 'middle')
       .map(B => ({ B, v: pv(lg, p, horizonOf(B), B.tid) })).sort((x, y) => y.v - x.v).slice(0, 4);
@@ -869,6 +884,8 @@ export function aiDraftTrade(lg: League, rng: Rng): TradeRec | null {
   }
   if (!best) return null;
   if (tradeRules(lg, X.tid, best.Yt.tid, best.aGets, [{ pick: curPk }])) return null;
+  // a board can be wrong: no deal the market would call a giveaway
+  if (!looksFair(lg, best.aGets, [{ pick: curPk }], true)) return null;
   const rec = executeTrade(lg, X.tid, best.Yt.tid, best.aGets, [{ pick: curPk }]);
   lg.news.push({ s: Y, t: `Draft-day trade: ${best.Yt.name} move up to No. ${i + 1}; ${X.name} move down to No. ${best.j + 1}${best.aGets.length > 1 ? ` and add ${describeAssets(lg, best.aGets.slice(1))}` : ''}.` });
   return rec;
