@@ -1,4 +1,4 @@
-import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, K, OVR_VOLUME } from '../data';
+import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, K, OVR_VOLUME, agingIndex } from '../data';
 import { trackGame, playoffFinish } from './records';
 import { Rng } from '../rng';
 import { simGame, gameGen, PbpEv, GameState, Decision } from '../engine/game';
@@ -150,14 +150,26 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
  * (recent ones more), pulled toward a bench player's level when there are few minutes to go on –
  * 150 good minutes or one hot backup season do not make a star.
  */
+/**
+ * Starting level for 2026–27 from the last seasons. Backtested on 1980–2026: players under 25 are best predicted
+ * mostly from their latest season plus a year of normal development; from 25 the three-season blend holds,
+ * and from 31 the usual decline is added.
+ */
+export const YOUNG_AGE = 25;
 function recentZ(pid: string): number[] {
-  const hp = H.players[pid], prior = H.draftPrior[5].z, W: Record<number, number> = { [LAST_SEASON]: 1, [LAST_SEASON - 1]: 0.6, [LAST_SEASON - 2]: 0.35 };
+  const hp = H.players[pid], prior = H.draftPrior[5].z;
+  const bd = (hp as any).b as string | undefined;
+  const age = bd ? LAST_SEASON - +bd.slice(0, 4) - (+bd.slice(5, 7) > 2 ? 1 : 0) : 27;
+  const young = age < YOUNG_AGE;
+  const W: Record<number, number> = young ? { [LAST_SEASON]: 1, [LAST_SEASON - 1]: 0.3 } : { [LAST_SEASON]: 1, [LAST_SEASON - 1]: 0.6, [LAST_SEASON - 2]: 0.35 };
   const z = new Array(prior.length).fill(0);
   let w = 0;
   for (const r of hp.s) { const k = W[r[0]]; if (!k) continue; const ww = r[3] * k; w += ww; for (let i = 0; i < z.length; i++) z[i] += ww * r[7][i]; }
   if (!w) return hp.s[hp.s.length - 1][7].slice();
   const KM = 400;
-  return z.map((v, i) => (v + KM * prior[i]) / (w + KM));
+  const out = z.map((v, i) => (v + KM * prior[i]) / (w + KM));
+  if (young || age >= 31) { const ai = agingIndex(age); for (let i = 0; i < out.length; i++) out[i] += H.aging[H.keys[i]].mean[ai]; }
+  return out;
 }
 
 /**
