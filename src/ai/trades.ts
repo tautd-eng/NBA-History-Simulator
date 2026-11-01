@@ -45,6 +45,28 @@ export function ensurePicks(lg: League) {
   lg.picks = lg.picks.filter(p => p.season >= first);
 }
 
+/**
+ * The Stepien rule (1980, after Cleveland owner Ted Stepien traded away first-rounder after first-rounder):
+ * a team may not be left without a first-round pick in two consecutive future drafts.
+ */
+function stepien(lg: League, a: string, b: string, aGets: TradeAsset[], bGets: TradeAsset[]): string | null {
+  const d = lg.draftDay;
+  // the draft under way (or just held) is not a future draft
+  const firstFuture = d && d.year === lg.season ? lg.season + 1 : lg.season;
+  const firsts = (lg.picks ?? []).filter(pk => pk.round === 1 && pk.season >= firstFuture);
+  const years = [...new Set(firsts.map(pk => pk.season))].sort((x, y) => x - y);
+  for (const [tid, gets, gives] of [[a, aGets, bGets], [b, bGets, aGets]] as const) {
+    if (!gives.some(x => x.pick?.round === 1 && x.pick.season >= firstFuture)) continue;   // only a team giving firsts away can break it
+    const key = (pk: { season: number; round: number; orig: string }) => `${pk.season}-${pk.round}-${pk.orig}`;
+    const out = new Set(gives.filter(x => x.pick).map(x => key(x.pick!)));
+    const owns = (y: number) => firsts.some(pk => pk.season === y && pk.owner === tid && !out.has(key(pk))) || gets.some(x => x.pick?.round === 1 && x.pick.season === y);
+    for (let i = 0; i + 1 < years.length; i++) {
+      if (!owns(years[i]) && !owns(years[i + 1])) return `${lg.teams[tid].name} would have no first-round pick in both ${years[i]} and ${years[i + 1]} (Stepien rule: never two consecutive future drafts without a first).`;
+    }
+  }
+  return null;
+}
+
 /** A pick of the draft under way that has already been made (or any of a finished draft). */
 export function pickUsed(lg: League, pk: { season: number; round: number; orig: string }) {
   const d = lg.draftDay;
@@ -239,6 +261,7 @@ export function tradeRules(lg: League, a: string, b: string, aGets: TradeAsset[]
   }
   if (lg.phase === 'playoffs') return 'No trades during the playoffs.';
   for (const x of [...aGets, ...bGets]) if (x.pick && pickUsed(lg, x.pick)) return 'That pick has already been used.';
+  { const st = stepien(lg, a, b, aGets, bGets); if (st) return st; }
   if (lg.phase === 'draft' && lg.draftDay && lg.draftDay.year === lg.season && (lg.draftDay.stage ?? 'draft') !== 'draft' && !lg.draftDay.done) return 'Trades open once the lottery and expansion draft are done.';
   if (lg.phase === 'regular' && pastDeadline(lg)) return 'The trade deadline has passed.';
   return null;
