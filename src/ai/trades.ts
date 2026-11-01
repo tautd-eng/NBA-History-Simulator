@@ -5,7 +5,7 @@
 import { tradeLocked, lockLabel } from '../league/contracts';
 import { H, seasonInfo, LAST_SEASON, ovrOf, bpmOf } from '../data';
 import { Rng, hash01 } from '../rng';
-import { League, Player, Team, Pick, TradeAsset, TradeRec } from '../types';
+import { League, Player, Team, Pick, TradeAsset, TradeRec, PickRight } from '../types';
 import { rosterFit, GMFIT } from '../archetypes';
 import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap, askingSalary, peakBpm, projectBpm } from './value';
 import { playerParts, moneyWeight, prospectValue, tradeValue, horizonOf, Horizon, slotPeak } from './tradevalue';
@@ -65,6 +65,70 @@ function stepien(lg: League, a: string, b: string, aGets: TradeAsset[], bGets: T
     }
   }
   return null;
+}
+
+const owner = (lg: League, season: number, round: number, orig: string) => (lg.picks ?? []).find(p => p.season === season && p.round === round && p.orig === orig)?.owner;
+/** Is a pick tied up in an outstanding swap / less-favourable right? */
+export function pickTied(lg: League, pk: { season: number; round: number; orig: string }) {
+  return (lg.pickRights ?? []).some(r => r.season === pk.season && r.round === pk.round && (r.a === pk.orig || r.b === pk.orig));
+}
+function rightRules(lg: League, a: string, b: string, aGets: TradeAsset[], bGets: TradeAsset[]): string | null {
+  const refs = [...aGets, ...bGets].filter(x => x.right).flatMap(x => [x.right!.season + '-' + x.right!.round + '-' + x.right!.a, x.right!.season + '-' + x.right!.round + '-' + x.right!.b]);
+  if (new Set(refs).size < refs.length) return 'Two rights in one trade cannot involve the same pick.';
+  for (const x of [...aGets, ...bGets]) if (x.pick && pickTied(lg, x.pick)) return `The ${x.pick.season} ${x.pick.round === 1 ? '1st' : '2nd'}-round pick (${lg.teams[x.pick.orig]?.abbr ?? x.pick.orig}) is tied up in a swap right until that draft.`;
+  for (const [recv, giver, gets] of [[a, b, aGets], [b, a, bGets]] as const) {
+    for (const x of gets) {
+      const r = x.right; if (!r) continue;
+      if (pickUsed(lg, { season: r.season, round: r.round, orig: r.a }) || (lg.draftDay?.year === r.season && (lg.draftDay.stage ?? 'draft') === 'draft')) return 'Pick rights can only be traded for drafts whose order is not set yet.';
+      if (pickTied(lg, { season: r.season, round: r.round, orig: r.a }) || pickTied(lg, { season: r.season, round: r.round, orig: r.b })) return 'One of those picks is already tied up in a swap right.';
+      if (r.kind === 'swap' && (owner(lg, r.season, r.round, r.a) !== recv || owner(lg, r.season, r.round, r.b) !== giver)) return 'A swap right needs each team to own one of the two picks.';
+      if (r.kind === 'worse' && (owner(lg, r.season, r.round, r.a) !== giver || owner(lg, r.season, r.round, r.b) !== giver || r.a === r.b)) return 'The less favourable of two picks: the giving team must own both.';
+      // the picks involved cannot move in the same trade
+      if ([...aGets, ...bGets].some(y => y.pick && y.pick.season === r.season && y.pick.round === r.round && (y.pick.orig === r.a || y.pick.orig === r.b))) return 'A pick cannot be traded together with a right on it.';
+    }
+  }
+  return null;
+}
+
+/** Pick rights the giver could offer the receiver: swaps of their firsts, or the less favourable of two firsts the giver holds. */
+export function rightOptions(lg: League, giver: string, receiver: string): PickRight[] {
+  const d = lg.draftDay;
+  const firstFuture = d && d.year === lg.season ? lg.season + 1 : lg.season;
+  const free = (lg.picks ?? []).filter(p => p.round === 1 && p.season >= firstFuture && !pickUsed(lg, p) && !pickTied(lg, p));
+  const out: PickRight[] = [];
+  for (const s of [...new Set(free.map(p => p.season))].sort()) {
+    const mine = free.filter(p => p.season === s && p.owner === giver).sort((x, y) => (x.orig === giver ? -1 : 0) - (y.orig === giver ? -1 : 0));
+    const theirs = free.filter(p => p.season === s && p.owner === receiver).sort((x, y) => (x.orig === receiver ? -1 : 0) - (y.orig === receiver ? -1 : 0));
+    if (mine.length && theirs.length) out.push({ kind: 'swap', season: s, round: 1, a: theirs[0].orig, b: mine[0].orig });
+    if (mine.length >= 2) out.push({ kind: 'worse', season: s, round: 1, a: mine[0].orig, b: mine[1].orig });
+  }
+  return out;
+}
+
+/** After the lottery the order is set: swap rights and less-favourable conveyances are settled. */
+export function settlePickRights(lg: League, Y: number) {
+  const d = lg.draftDay;
+  if (!d || d.year !== Y || !lg.pickRights?.length) return;
+  const slot = (round: number, orig: string) => d.order.findIndex(o => o.round === round && o.orig === orig);
+  const keep: NonNullable<League['pickRights']> = [];
+  for (const r of lg.pickRights) {
+    if (r.season !== Y) { keep.push(r); continue; }
+    const pa = (lg.picks ?? []).find(p => p.season === Y && p.round === r.round && p.orig === r.a);
+    const pb = (lg.picks ?? []).find(p => p.season === Y && p.round === r.round && p.orig === r.b);
+    const sa = slot(r.round, r.a), sb = slot(r.round, r.b);
+    if (!pa || !pb || sa < 0 || sb < 0) continue;
+    const H = lg.teams[r.holder], F = lg.teams[r.from];
+    if (r.kind === 'swap') {
+      if (pa.owner === r.holder && pb.owner === r.from && sb < sa) {
+        pa.owner = r.from; pb.owner = r.holder;
+        lg.news.push({ s: Y, t: `${H.name} exercise their swap right: they pick No. ${sb + 1} instead of No. ${sa + 1}; ${F.name} drop to No. ${sa + 1}.` });
+      } else lg.news.push({ s: Y, t: `${H.name} keep their own pick – the swap right with ${F.name} is not worth exercising.` });
+    } else {
+      const worse = sa > sb ? pa : pb;
+      if (worse.owner === r.from) { worse.owner = r.holder; lg.news.push({ s: Y, t: `${H.name} receive the less favourable of the ${F.name}' two first-rounders: No. ${Math.max(sa, sb) + 1}.` }); }
+    }
+  }
+  lg.pickRights = keep;
 }
 
 /** A pick of the draft under way that has already been made (or any of a finished draft). */
@@ -134,9 +198,30 @@ function expectedSlot(lg: League, p: { season: number; round: number; orig: stri
 /** Value of a package to a neutral, middle-of-the-pack GM (the "market" view used to sanity-check deals). */
 export function neutralValue(lg: League, xs: TradeAsset[]) {
   let v = 0;
-  for (const x of xs) v += x.pid ? Math.max(0, pv(lg, lg.players[x.pid], 'middle')) : pickValue(lg, x.pick!, 'middle', 0.45);
+  for (const x of xs) v += x.pid ? Math.max(0, pv(lg, lg.players[x.pid], 'middle')) : x.right ? rightValue(lg, x.right, 'middle', 0.45) : pickValue(lg, x.pick!, 'middle', 0.45);
   return v;
 }
+/**
+ * Value of a pick right. Both picks are uncertain (more so further out), so a swap is an option:
+ * E[max(0, B - A)]; the less favourable of two is E[min(A, B)].
+ */
+export function rightValue(lg: League, r: PickRight, h: Horizon, moneyW: number) {
+  const pa = pickValue(lg, { season: r.season, round: r.round, orig: r.a }, h, moneyW);
+  const pb = pickValue(lg, { season: r.season, round: r.round, orig: r.b }, h, moneyW);
+  const years = Math.max(0, r.season - lg.season);
+  const unc = Math.max(0.05, (0.25 + 0.12 * years) * (pa + pb) / 2);
+  const d = pb - pa, z = d / unc;
+  const phi = Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI), Phi = 0.5 * (1 + erf(z / Math.SQRT2));
+  const eMaxPos = unc * phi + d * Phi;                    // E[max(0, B - A)]
+  if (r.kind === 'swap') return eMaxPos;
+  return pb - eMaxPos;                                    // E[min(A, B)] = B - E[max(0, B - A)]
+}
+function erf(x: number) {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return x >= 0 ? y : -y;
+}
+
 export function pickValue(lg: League, p: { season: number; round: number; orig: string }, strategy: Horizon, moneyW = 0.45, t?: Team) {
   if (t) { const w = draftPickWorth(lg, p, t, strategy, moneyW); if (w !== null) return w; }
   const years = Math.max(0, p.season - lg.season);
@@ -170,7 +255,7 @@ function classAdj(lg: League, season: number, slot: number, base: number) {
 }
 
 // ------------------------------------------------------------------ valuation
-interface Side { players: Player[]; picks: Pick[] }
+interface Side { players: Player[]; picks: Pick[]; rights?: (PickRight & { role: 'holder' | 'giver' })[] }
 
 /**
  * A roster's value to its team: production of its players in rotation order
@@ -202,6 +287,7 @@ function teamValue(lg: League, t: Team, side: Side, moneyW: number) {
   // roles that fit together (shooters around a creator, a rim protector, answers on defence) beat a pile of the same pieces
   if (GMFIT.on) v += needW * 1.2 * fifth * rosterFit(ps.map(x => x.p).sort((a, b) => bpmOf(b.z) - bpmOf(a.z)));
   for (const pk of side.picks) v += pickValue(lg, pk, h, moneyW, t);
+  for (const r of side.rights ?? []) v += (r.role === 'holder' ? 1 : -1) * rightValue(lg, r, h, moneyW);
   // tanking: a weaker roster this season moves the own pick up the lottery
   if (t.mode === 'tank') {
     const own = side.picks.find(pk => pk.orig === t.tid && pk.round === 1 && pk.season === lg.season && (lg.phase === 'regular' || lg.phase === 'freeagency'));
@@ -219,6 +305,7 @@ function sideOf(lg: League, tid: string): Side {
   return {
     players: lg.teams[tid].roster.map(pid => lg.players[pid]),
     picks: (lg.picks ?? []).filter(p => p.owner === tid && !pickUsed(lg, p)),
+    rights: (lg.pickRights ?? []).filter(r => r.holder === tid || r.from === tid).map(r => ({ ...r, role: r.holder === tid ? 'holder' as const : 'giver' as const })),
   };
 }
 
@@ -262,6 +349,7 @@ export function tradeRules(lg: League, a: string, b: string, aGets: TradeAsset[]
   if (lg.phase === 'playoffs') return 'No trades during the playoffs.';
   for (const x of [...aGets, ...bGets]) if (x.pick && pickUsed(lg, x.pick)) return 'That pick has already been used.';
   { const st = stepien(lg, a, b, aGets, bGets); if (st) return st; }
+  { const rr = rightRules(lg, a, b, aGets, bGets); if (rr) return rr; }
   if (lg.phase === 'draft' && lg.draftDay && lg.draftDay.year === lg.season && (lg.draftDay.stage ?? 'draft') !== 'draft' && !lg.draftDay.done) return 'Trades open once the lottery and expansion draft are done.';
   if (lg.phase === 'regular' && pastDeadline(lg)) return 'The trade deadline has passed.';
   return null;
@@ -284,7 +372,10 @@ function applySide(lg: League, tid: string, base: Side, gets: TradeAsset[], give
   const picks = base.picks.filter(p => !giveKeys.has(pkKey(p))).concat(
     gets.filter(x => x.pick).map(x => ({ ...x.pick!, owner: tid })),
   );
-  return { players, picks };
+  const rights = [...(base.rights ?? []),
+    ...gets.filter(x => x.right).map(x => ({ ...x.right!, role: 'holder' as const })),
+    ...gives.filter(x => x.right).map(x => ({ ...x.right!, role: 'giver' as const }))];
+  return { players, picks, rights };
 }
 const pkKey = (p: { season: number; round: number; orig: string }) => `${p.season}-${p.round}-${p.orig}`;
 
@@ -338,9 +429,13 @@ export function threshold(lg: League, tid: string, user = false) {
 }
 
 // ------------------------------------------------------------------ execution
+export function describeRight(lg: League, r: PickRight) {
+  const ab = (t: string) => lg.teams[t]?.abbr ?? t, rd = r.round === 1 ? '1st' : '2nd';
+  return r.kind === 'swap' ? `right to swap ${r.season} ${rd}-rounders (${ab(r.a)} ↔ ${ab(r.b)})` : `less favourable of the ${r.season} ${rd}-rounders (${ab(r.a)}, ${ab(r.b)})`;
+}
 export function describeAssets(lg: League, xs: TradeAsset[]) {
   if (!xs.length) return 'nothing';
-  return xs.map(x => x.pid ? tagOf(lg.players[x.pid], lg.season) : `${x.pick!.season} ${x.pick!.round === 1 ? '1st' : '2nd'}-round pick${x.pick!.orig !== '' ? ` (${lg.teams[x.pick!.orig]?.abbr ?? x.pick!.orig})` : ''}`).join(', ');
+  return xs.map(x => x.pid ? tagOf(lg.players[x.pid], lg.season) : x.right ? describeRight(lg, x.right) : `${x.pick!.season} ${x.pick!.round === 1 ? '1st' : '2nd'}-round pick${x.pick!.orig !== '' ? ` (${lg.teams[x.pick!.orig]?.abbr ?? x.pick!.orig})` : ''}`).join(', ');
 }
 
 export function executeTrade(lg: League, a: string, b: string, aGets: TradeAsset[], bGets: TradeAsset[], user = false): TradeRec {
@@ -354,6 +449,8 @@ export function executeTrade(lg: League, a: string, b: string, aGets: TradeAsset
       } else if (x.pick) {
         const pk = lg.picks!.find(p => pkKey(p) === pkKey(x.pick!));
         if (pk) pk.owner = to;
+      } else if (x.right) {
+        (lg.pickRights ??= []).push({ ...x.right, holder: to, from });
       }
     }
   };
@@ -499,7 +596,12 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
       cands.push({ a: { pid: p.id }, edge: playerValue(p, S, horizonOf(B)) - playerValue(p, S, hA), sal: p.contract.sal });
     }
     for (const pk of myPicks) {
+      if (pickTied(lg, pk)) continue;
       cands.push({ a: { pick: { season: pk.season, round: pk.round, orig: pk.orig } }, edge: pickValue(lg, pk, horizonOf(B), moneyWeight(lg, B.tid)) - pickValue(lg, pk, hA, wA), sal: 0 });
+    }
+    // softer currency than a whole pick: a swap right, or the less favourable of two firsts
+    for (const r of rightOptions(lg, A.tid, B.tid)) {
+      cands.push({ a: { right: r }, edge: rightValue(lg, r, horizonOf(B), moneyWeight(lg, B.tid)) - rightValue(lg, r, hA, wA), sal: 0 });
     }
     // B can balance too: a lesser player or a pick coming back to A
     const hB = horizonOf(B);
@@ -660,6 +762,10 @@ export function tradeableValue(lg: League, p: Player, tid: string) {
   fresh(lg);
   return pv(lg, p, horizonOf(lg.teams[tid]), tid);
 }
+/** What a pick right is worth to a team (for the trade screen). */
+export function rightTradeValue(lg: League, r: PickRight, tid: string) {
+  return rightValue(lg, r, horizonOf(lg.teams[tid]), moneyWeight(lg, tid));
+}
 /** What a pick is worth to a team (for the trade screen). */
 export function pickTradeValue(lg: League, pk: { season: number; round: number; orig: string }, tid: string) {
   return pickValue(lg, pk, horizonOf(lg.teams[tid]), moneyWeight(lg, tid), lg.teams[tid]);
@@ -743,11 +849,17 @@ export function aiDraftTrade(lg: League, rng: Rng): TradeRec | null {
     const aGets: TradeAsset[] = [{ pick: laterPk }];
     let paidX = 0, costY = 0;
     const sweet = (lg.picks ?? []).filter(pk => pk.owner === yid && !pickUsed(lg, pk) && !(pk.season === Y && pk.round === o.round && pk.orig === o.orig) && !(pk.season === Y && d.order.findIndex(q => q.round === pk.round && q.orig === pk.orig) <= i))
-      .map(pk => ({ pk, vx: pickValue(lg, pk, hX, wX, X), vy: pickValue(lg, pk, hY, wY, Yt) })).sort((a, b) => a.vx - b.vx);
+      .filter(pk => !pickTied(lg, pk))
+      .map(pk => ({ asset: { pick: { season: pk.season, round: pk.round, orig: pk.orig } } as TradeAsset, vx: pickValue(lg, pk, hX, wX, X), vy: pickValue(lg, pk, hY, wY, Yt) }))
+      .concat(rightOptions(lg, yid, xid).map(r => ({ asset: { right: r } as TradeAsset, vx: rightValue(lg, r, hX, wX), vy: rightValue(lg, r, hY, wY) })))
+      .sort((a, b) => a.vx - b.vx);
     while (paidX < needX && sweet.length && aGets.length < 4) {
       const k = sweet.findIndex(s => paidX + s.vx >= needX);
       const s = sweet.splice(k >= 0 ? k : sweet.length - 1, 1)[0];
-      aGets.push({ pick: { season: s.pk.season, round: s.pk.round, orig: s.pk.orig } });
+      // a right on a pick already in the package would clash: skip it
+      if (s.asset.right && aGets.some(g => g.pick && g.pick.season === s.asset.right!.season && (g.pick.orig === s.asset.right!.a || g.pick.orig === s.asset.right!.b))) continue;
+      if (s.asset.pick && aGets.some(g => g.right && g.right.season === s.asset.pick!.season && (g.right.a === s.asset.pick!.orig || g.right.b === s.asset.pick!.orig))) continue;
+      aGets.push(s.asset);
       paidX += s.vx; costY += s.vy;
     }
     if (paidX < needX) continue;

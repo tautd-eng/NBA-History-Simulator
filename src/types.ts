@@ -120,7 +120,10 @@ export interface SeasonSummary {
 }
 
 export interface Pick { season: number; round: number; orig: string; owner: string }
-export interface TradeAsset { pid?: string; pick?: { season: number; round: number; orig: string } }
+/** A pick right: 'swap' – the receiver may swap its pick (orig a) for the giver's (orig b) if that one lands higher;
+ *  'worse' – the receiver gets the less favourable of the giver's two picks (orig a, orig b). Settled after the lottery. */
+export interface PickRight { kind: 'swap' | 'worse'; season: number; round: number; a: string; b: string }
+export interface TradeAsset { pid?: string; pick?: { season: number; round: number; orig: string }; right?: PickRight }
 export interface TradeRec { s: number; day: number; phase: string; a: string; b: string; aGets: TradeAsset[]; bGets: TradeAsset[]; user?: boolean; desc: string; info?: Record<string, [number, number]> }
 
 /** games: regular-season games per team (null = as in that real season); series: playoff series length (null = as in that era). */
@@ -200,7 +203,8 @@ export interface League {
   articles?: { key: string; title: string; text: string; by: 'claude' | 'auto' }[];
   seasonAwards?: any; // regular-season awards, between the end of the regular season and the finals
   draftDay?: DraftDay;
-  draftClass?: { year: number; pool: string[] }; // next draft's prospects, public from the start of the season
+  draftClass?: { year: number; pool: string[] };
+  pickRights?: (PickRight & { holder: string; from: string })[]; // outstanding swap / less-favourable rights // next draft's prospects, public from the start of the season
   fa?: FreeAgency;
   dead?: { tid: string; sal: number; exp: number; pid: string }[]; // salaries of released players still on the books
   start?: number;                     // first season of this league

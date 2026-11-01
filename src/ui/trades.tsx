@@ -4,7 +4,7 @@ import { TL } from './nav';
 import { useMemo, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, seasonInfo } from '../data';
 import { ageIn } from '../players';
-import { aiResponse, executeTrade, fillRoster, ensurePicks, deadlineDay, pastDeadline, describeAssets, tradeableValue, pickTradeValue, pickUsed } from '../ai/trades';
+import { aiResponse, executeTrade, fillRoster, ensurePicks, deadlineDay, pastDeadline, describeAssets, tradeableValue, pickTradeValue, pickUsed, rightOptions, describeRight, rightTradeValue, pickTied } from '../ai/trades';
 import { payroll, hardCap } from '../ai/value';
 
 const money = (frac: number, s: number) => {
@@ -23,7 +23,7 @@ function Assets({ lg, xs, openPlayer, info }: any) {
   };
   return <>{xs.map((x: any, i: number) => <span key={i}>{i ? ', ' : ''}{x.pid
     ? <><button type="button" className="link" onClick={() => openPlayer(x.pid)}>{lg.players[x.pid]?.name ?? x.pid}</button>{meta(x.pid)}</>
-    : `${x.pick.season} ${x.pick.round === 1 ? '1st' : '2nd'}-round pick (${lg.teams[x.pick.orig]?.abbr ?? x.pick.orig})`}</span>)}</>;
+    : x.right ? describeRight(lg, x.right) : `${x.pick.season} ${x.pick.round === 1 ? '1st' : '2nd'}-round pick (${lg.teams[x.pick.orig]?.abbr ?? x.pick.orig})`}</span>)}</>;
 }
 
 export function Trades({ lg, openPlayer, onDone }: any) {
@@ -39,6 +39,7 @@ export function Trades({ lg, openPlayer, onDone }: any) {
     const out: any[] = [];
     for (const k of sel) {
       if (k.startsWith('p:')) { const pid = k.slice(2); if (lg.players[pid]?.tid === tid) out.push({ pid }); }
+      else if (k.startsWith('r:')) { const [kind, season, a, b2] = k.slice(2).split('|'); out.push({ right: { kind, season: +season, round: 1, a, b: b2 } }); }
       else { const pk = (lg.picks ?? []).find((p: any) => 'k:' + pkKey(p) === k && p.owner === tid); if (pk) out.push({ pick: { season: pk.season, round: pk.round, orig: pk.orig } }); }
     }
     return out;
@@ -64,6 +65,8 @@ export function Trades({ lg, openPlayer, onDone }: any) {
     const t = lg.teams[tid];
     const players = t.roster.map((pid: string) => lg.players[pid]).sort((x: any, y: any) => ovrOf(y.z) - ovrOf(x.z));
     const picks = (lg.picks ?? []).filter((p: any) => p.owner === tid && !pickUsed(lg, p)).sort((x: any, y: any) => x.season - y.season || x.round - y.round);
+    const other = tid === a ? b : a;
+    const rights = other && lg.teams[other] ? rightOptions(lg, tid, other) : [];
     return (
       <div className="trade-side">
         <h3>{label}</h3>
@@ -88,7 +91,19 @@ export function Trades({ lg, openPlayer, onDone }: any) {
                 <label className={`pick ${sel.has(k) ? 'on' : ''}`}>
                   <input type="checkbox" id={`tr-${tid}-${pkKey(p)}`} checked={sel.has(k)} onChange={() => toggle(sel, setSel, k)} />
                   <span className="tp-name">{p.season} {p.round === 1 ? '1st' : '2nd'}-round pick</span>
-                  <span className="tp-meta">{p.orig === tid ? 'own' : `from ${lg.teams[p.orig]?.abbr ?? p.orig}`}{b && lg.teams[b] ? <> · <span className="tv" title={`How much the ${lg.teams[b].name} value this pick`}>value {pickTradeValue(lg, p, b).toFixed(1)}</span></> : null}</span>
+                  <span className="tp-meta">{p.orig === tid ? 'own' : `from ${lg.teams[p.orig]?.abbr ?? p.orig}`}{pickTied(lg, p) ? ' · tied up in a swap right' : ''}{b && lg.teams[b] ? <> · <span className="tv" title={`How much the ${lg.teams[b].name} value this pick`}>value {pickTradeValue(lg, p, b).toFixed(1)}</span></> : null}</span>
+                </label>
+              </li>
+            );
+          })}
+          {rights.map((r: any) => {
+            const k = `r:${r.kind}|${r.season}|${r.a}|${r.b}`;
+            return (
+              <li key={k}>
+                <label className={`pick ${sel.has(k) ? 'on' : ''}`}>
+                  <input type="checkbox" id={`tr-${tid}-${k}`} checked={sel.has(k)} onChange={() => toggle(sel, setSel, k)} />
+                  <span className="tp-name">{r.kind === 'swap' ? `${r.season} swap right` : `${r.season} less favourable 1st`}</span>
+                  <span className="tp-meta">{r.kind === 'swap' ? `${lg.teams[other]?.abbr} may swap their ${lg.teams[r.a]?.abbr} 1st for this team's ${lg.teams[r.b]?.abbr} 1st if it lands higher` : `the worse of this team's ${lg.teams[r.a]?.abbr} and ${lg.teams[r.b]?.abbr} 1sts`}{b && lg.teams[b] ? <> · <span className="tv" title={`How much the ${lg.teams[b].name} value this right`}>value {rightTradeValue(lg, r, b).toFixed(1)}</span></> : null}</span>
                 </label>
               </li>
             );

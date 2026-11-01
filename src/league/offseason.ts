@@ -13,7 +13,7 @@ import { resetFatigue } from './fatigue';
 import { carryInjuries } from './injuries';
 import { rookieContract, vetContract, rfaEligible, qoAmount, worthKeeping, optsOut, lockTrade } from './contracts';
 import { discount, offerUtility } from './prefs';
-import { pickOwner, ensurePicks, aiTradeRound, isFreeAgent, complyHardCap, aiDraftTrade, boardScore } from '../ai/trades';
+import { pickOwner, ensurePicks, aiTradeRound, isFreeAgent, complyHardCap, aiDraftTrade, boardScore, settlePickRights } from '../ai/trades';
 import {
   askingSalary, contractYears, payroll, playerValue, peakBpm, MIN_SAL, zClamp, projectBpm, maxSalary, hardCap, vetMin,
 } from '../ai/value';
@@ -276,6 +276,8 @@ export function lotteryDraw(lg: League) {
   d.lottery = sum.lottery;
   if (res[0]) sum.notes.push(`First pick: ${lg.teams[res[0]].name} (${ord(lottery.indexOf(res[0]) + 1)}-worst team).`);
   lg.news.push({ s: d.year, t: `${d.year} draft lottery. ${sum.lottery}` });
+  // the order is set: swap rights and less-favourable conveyances are settled now
+  settlePickRights(lg, d.year);
   d.stage = 'draft';
   save(lg, rng);
   if (!d.order.length) finishDraft(lg);
