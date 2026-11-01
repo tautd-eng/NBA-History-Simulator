@@ -10,6 +10,10 @@ export const NK = 14;
 const htZ = (ht?: number) => ((ht ?? 78.6) - 78.6) / 3.4;
 /** Perimeter defence: staying in front, contesting jumpers, hands. */
 export const perD = (z: number[], ht?: number) => (z[K.def] + 0.4 * z[K.stl] - 0.25 * htZ(ht)) / 1.05;
+/** Post defence: mostly size, some defence and shot blocking (a small guard is a target down low). */
+export const postD = (z: number[], ht?: number) => (0.45 * z[K.def] + 0.85 * htZ(ht) + 0.2 * z[K.blk] - 0.041) / 1.285;
+/** Typical post defence of the defender at a position slot (to keep normal matchups neutral). */
+export const postSlot = (posNum: number) => 0.639 * posNum - 1.885;
 /** Rim protection: blocks, size and the defence rating. */
 export const rimD = (z: number[], ht?: number) => (0.6 * z[K.def] + 0.7 * z[K.blk] + 0.35 * htZ(ht)) / 1.4;
 
