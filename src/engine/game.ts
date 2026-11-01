@@ -27,7 +27,7 @@ export function getEraCal(season: number): EraCal {
 }
 
 export const C = {
-  tov: -0.03, p2: -0.025, p3: -0.01, ft: -0.012,
+  tov: -0.06, p2: -0.025, p3: -0.01, ft: -0.012,
   orb: 1.033, orbFt: 0.45, ast: 0.953, blk: 0.952, stlShare: 0.81,
   foulTrip: 0.976, andOne: 0.055, silentPf: 0.075,
   home: 0.045, def: 0.22, stlDef: 0.22, usgEff: 0.35, insAmp: 1.4, tovAmp: 1.45, drwAmp: 1, orbAmp: 1, // amps: how far a player's own finishing / ball security spreads from the era norm
@@ -89,7 +89,8 @@ export function prep(p: Player, season: number): GP {
   return {
     p, bpm, q: Math.pow(Math.max(0.5, bpm + 6), C.star) * Math.max(0.6, 1 - FATIGUE.minutes * fat), posNum: posNum(p.pos),
     usg: rate(K.usg, z[K.usg], season),
-    tov: rate(K.tov, C.tovAmp * z[K.tov], season),
+    // the rating is turnovers per action with the ball (assists included); as the man with the ball he loses it at that rate times (1 + his passes per own possession)
+    tov: Math.min(0.5, rate(K.tov, C.tovAmp * z[K.tov], season) * (1 + 0.35 * rate(K.ast, z[K.ast], season) / Math.max(0.08, rate(K.usg, z[K.usg], season)))),
     drw: rate(K.drw, C.drwAmp * z[K.drw], season),
     tpr: rate(K.tpr, z[K.tpr], season),
     p2: rate(K.ins, C.insAmp * z[K.ins], season),

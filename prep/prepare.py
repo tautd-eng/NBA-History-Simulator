@@ -105,6 +105,13 @@ def g_rate(numf, denf):
         return (n / d, d) if d > 0 else (0.0, 0.0)
     return f
 
+def g_tov(t, a):
+    # turnovers per action with the ball: shots, trips to the line, assists and turnovers.
+    # Plain TOV% leaves the passes out, so a pass-first guard looked careless.
+    tv, fga, fta, ast = num(t.get('tov'), 0), num(t.get('fga'), 0), num(t.get('fta'), 0), num(t.get('ast'), 0)
+    d = fga + 0.44 * fta + ast + tv
+    return (tv / d, d) if d > 0 else (0.0, 0.0)
+
 STATS = {
     # skill                          transform  getter                        k
     'ins': ('logit', g_pct('x2p', 'x2pa'),            180),  # 2P%
@@ -113,7 +120,7 @@ STATS = {
     'drw': ('log',   g_rate('fta', 'fga'),            200),  # FT attempts per FGA
     'tpr': ('logit', g_rate('x3pa', 'fga'),           120),  # 3PA share of FGA (tendency)
     'usg': ('log',   g_adv('usg_percent'),            300),  # usage (tendency)
-    'tov': ('logit', g_adv('tov_percent'),            500),  # turnover% (lower is better)
+    'tov': ('logit', g_tov,                          500),  # turnovers per action, assists counted (lower is better)
     'ast': ('logit', g_adv('ast_percent'),            350),
     'orb': ('logit', g_adv('orb_percent'),            350),
     'drb': ('logit', g_adv('drb_percent'),            350),
