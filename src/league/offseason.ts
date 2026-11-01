@@ -975,7 +975,11 @@ function retirements(lg: League, rng: Rng, notes: string[]) {
     if (p.retired || (p as any).stash) continue;
     const age = ageIn(p, Y + 1);
     const ovr = ovrOf(p.z);
-    const base = 1 / (1 + Math.exp(-((age - 35.5) * 0.9 + (46 - ovr) * 0.09)));
+    // walking away while still employable: fitted to real rotation players (500+ minutes, 1980–2018) –
+    // quality matters far more than age, so a good 36-year-old usually plays on; past 39 age takes over
+    const b = bpmOf(p.z);
+    const base = age < 28 ? 1 / (1 + Math.exp(-((age - 35.5) * 0.9 + (46 - ovr) * 0.09)))
+      : 1 / (1 + Math.exp(-(0.22 * (age - 45.3) - 0.47 * b + (age > 39 ? 0.6 * (age - 39) : 0))));
     let pr = base, hist = 0, uns = 0;
     const lr = lastRealSeason(p.id);
     const last = lr !== undefined ? lr + (p.shift ?? 0) : undefined;
