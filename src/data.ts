@@ -56,7 +56,7 @@ export interface History {
   keys: string[];
   transforms: Record<string, 'logit' | 'log' | 'lin'>;
   era: Record<string, Record<string, [number, number]>>;
-  ovr: Record<string, number> & { volEff?: number; creator?: number; comp?: number; cw?: number[] };
+  ovr: Record<string, number> & { volEff?: number; creator?: number; shooter?: number; comp?: number; cw?: number[] };
   ages: number[];
   aging: Record<string, { mean: number[]; sd: number[] }>;
   seasons: Record<string, SeasonInfo>;
@@ -72,7 +72,7 @@ export interface History {
 export let H: History;
 let eraArr: Record<number, { mu: number[]; sd: number[] }> = {};
 let ovrW: number[] = [];
-let ovrX = { volEff: 0, creator: 0, comp: 0, cw: [] as number[] };
+let ovrX = { volEff: 0, creator: 0, shooter: 0, comp: 0, cw: [] as number[] };
 let tfs: number[] = []; // 0 logit, 1 log, 2 lin
 export let FIRST_SEASON = 1980;
 export let LAST_SEASON = 2026;
@@ -84,7 +84,7 @@ export function loadHistory(h: History) {
     eraArr[+s] = { mu: h.keys.map(k => e[k][0]), sd: h.keys.map(k => e[k][1]) };
   }
   ovrW = h.keys.map(k => h.ovr[k]);
-  ovrX = { volEff: h.ovr.volEff ?? 0, creator: h.ovr.creator ?? 0, comp: h.ovr.comp ?? 0, cw: h.ovr.cw ?? [] };
+  ovrX = { volEff: h.ovr.volEff ?? 0, creator: h.ovr.creator ?? 0, shooter: h.ovr.shooter ?? 0, comp: h.ovr.comp ?? 0, cw: h.ovr.cw ?? [] };
   tfs = h.keys.map(k => (h.transforms[k] === 'logit' ? 0 : h.transforms[k] === 'log' ? 1 : 2));
   const ss = Object.keys(h.seasons).map(Number);
   FIRST_SEASON = Math.min(...ss);
@@ -123,6 +123,8 @@ export function bpmOf(z: number[]): number {
   if (ovrX.volEff) s += ovrX.volEff * Math.max(0, z[K.usg]) * effOf(z);
   // creator: scores a lot and sets others up
   if (ovrX.creator) s += ovrX.creator * Math.max(0, z[K.usg]) * Math.max(0, z[K.ast]);
+  // shooter: takes many threes and makes them (both signs: a high-volume poor shooter loses)
+  if (ovrX.shooter) s += ovrX.shooter * z[K.tpr] * z[K.tp];
   // compensation: big strengths soften the weak spots
   if (ovrX.comp) {
     let pos = 0, neg = 0;
