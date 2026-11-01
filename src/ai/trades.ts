@@ -284,8 +284,7 @@ function teamValue(lg: League, t: Team, side: Side, moneyW: number) {
   // above the hard cap the team must shed salary: every share of the cap over it weighs heavily
   const hc = hardCap(lg);
   if (hc < Infinity) {
-    const dead = (lg.dead ?? []).reduce((a, d) => a + (d.tid === t.tid && d.exp >= lg.season ? d.sal : 0), 0);
-    const pay = side.players.reduce((a, p) => a + p.contract.sal, 0) + dead;
+    const pay = side.players.reduce((a, p) => a + p.contract.sal, 0);
     v -= 60 * Math.max(0, pay - hc) + 8 * Math.max(0, pay - (hc - 0.03));
   }
   // a rotation needs ball handlers and big men: a missing piece costs (matters most to teams trying to win now)
@@ -353,8 +352,6 @@ export function tradeRules(lg: League, a: string, b: string, aGets: TradeAsset[]
     if (payAfter > hc + 1e-9 && sal(lg, inc) > sal(lg, out) + 1e-9) return `${t.name} would exceed the hard cap (${Math.round(hc * 100)}% of the cap): payroll after the trade would be ${Math.round(payAfter * 100)}%.`;
     if (lg.season < 1985) {
       if (payAfter > 1.35 && sal(lg, inc) > sal(lg, out)) return `${t.name} would exceed its salary budget.`;
-    } else if (payAfter > 1.0 && sal(lg, inc) > sal(lg, out) * 1.25 + 0.01) {
-      return `${t.name} is over the cap: incoming salary (${pct(sal(lg, inc))}) can't exceed outgoing (${pct(sal(lg, out))}) by more than 25%.`;
     }
   }
   if (lg.phase === 'playoffs') return 'No trades during the playoffs.';
@@ -414,8 +411,8 @@ export function evaluateTrade(lg: League, a: string, b: string, aGets: TradeAsse
   const inA = aGets.filter(x => x.pid).map(x => lg.players[x.pid!]);
   const inB = bGets.filter(x => x.pid).map(x => lg.players[x.pid!]);
   // money weight from the payroll after the trade (taking on salary over the cap hurts more)
-  const wA = Math.max(moneyWeight(lg, a), afterPay(lg, a, inA, inB) > 1.0 ? 0.6 : 0);
-  const wB = Math.max(moneyWeight(lg, b), afterPay(lg, b, inB, inA) > 1.0 ? 0.6 : 0);
+  const wA = Math.max(moneyWeight(lg, a), afterPay(lg, a, inA, inB) > hardCap(lg) - 0.15 ? 0.6 : 0);
+  const wB = Math.max(moneyWeight(lg, b), afterPay(lg, b, inB, inA) > hardCap(lg) - 0.15 ? 0.6 : 0);
   const gainA = teamValue(lg, A, afterA, wA) - teamValue(lg, A, baseA, wA) - coreReluctance(lg, a, inB);
   const gainB = teamValue(lg, B, afterB, wB) - teamValue(lg, B, baseB, wB) - coreReluctance(lg, b, inA);
   return { ok: !rule, gainA, gainB, reason: rule ?? undefined };
@@ -484,10 +481,10 @@ export function fillRoster(lg: League, tid: string) {
   faCache = null;
   while (t.roster.length > ROSTER_MAX && tid !== lg.userTid) {
     const cut = t.roster.map(pid => lg.players[pid])
+      // the least valuable player for his salary goes (his salary leaves with him)
       .sort((x, y) => (playerValue(x, lg.season, t.strategy) - x.contract.sal * 20) - (playerValue(y, lg.season, t.strategy) - y.contract.sal * 20))[0];
     t.roster = t.roster.filter(pid => pid !== cut.id);
     cut.tid = null;
-    if (cut.contract.exp >= lg.season && cut.contract.sal > MIN_SAL + 1e-9) (lg.dead ??= []).push({ tid, sal: cut.contract.sal, exp: cut.contract.exp, pid: cut.id });
     cut.contract = { sal: MIN_SAL, exp: lg.season };
     lg.news.push({ s: lg.season, t: `The ${t.name} waived ${cut.name} to make room on the roster.` });
   }
@@ -739,7 +736,7 @@ export function complyHardCap(lg: League, rng: Rng, buyouts = false) {
       executeTrade(lg, A.tid, deal.b, deal.aGets, deal.bGets);
       fillRoster(lg, A.tid); fillRoster(lg, deal.b);
     }
-    // buyout: the worst contract is bought out at half price
+    // last resort: the worst contract for the money is released
     while (buyouts && payroll(lg, A.tid) > hc + 1e-9) {
       const h = horizonOf(A);
       const p = A.roster.map(pid => lg.players[pid]).filter(x => x.contract.sal > MIN_SAL * 1.5)
@@ -747,8 +744,7 @@ export function complyHardCap(lg: League, rng: Rng, buyouts = false) {
       if (!p) break;
       A.roster = A.roster.filter(x => x !== p.id);
       p.tid = null;
-      (lg.dead ??= []).push({ tid: A.tid, sal: p.contract.sal * 0.5, exp: p.contract.exp, pid: p.id });
-      lg.news.push({ s: lg.season, t: `${A.name} buy out ${tagOf(p, lg.season)} to get under the hard cap (half his salary stays on the books).` });
+      lg.news.push({ s: lg.season, t: `${A.name} release ${tagOf(p, lg.season)} to get under the hard cap.` });
       p.contract = { sal: MIN_SAL, exp: lg.season };
     }
   }
@@ -765,7 +761,7 @@ export function aiResponse(lg: League, a: string, b: string, aGets: TradeAsset[]
   const inB = bGets.filter(x => x.pid).map(x => lg.players[x.pid!]), outB = aGets.filter(x => x.pid).map(x => lg.players[x.pid!]);
   const why: string[] = [];
   if (coreReluctance(lg, b, outB) > 0.5) why.push('won\'t give up one of their leaders');
-  if (afterPay(lg, b, inB, outB) > 1.0 && sal(lg, inB) > sal(lg, outB) + 0.02) why.push('don\'t want to take on more salary');
+  if (afterPay(lg, b, inB, outB) > hardCap(lg) - 0.15 && sal(lg, inB) > sal(lg, outB) + 0.02) why.push('don\'t want to take on more salary');
   if (afterPay(lg, b, inB, outB) > hardCap(lg) - 0.03 && sal(lg, inB) > sal(lg, outB)) why.push('getting close to the hard cap');
   if (inB.length >= 2 && outB.length === 1) why.push('several average players don\'t replace one good one');
   const strat = t.mode === 'capclear' ? 'They are near the hard cap – every dollar saved matters.' : t.mode === 'retool' ? 'They are stuck in the middle and open to side moves – a better fit matters more to them than raw value.' : t.mode === 'rising' ? 'A young rising team – they won\'t part with youth and want players who fit a few years out.' : t.mode === 'allin' ? 'They are all-in – only what helps them win now matters.' : t.mode === 'tank' ? 'They are tanking – wins don\'t matter this season, picks and youth do.' : t.strategy === 'rebuild' ? 'They are rebuilding, so they value young players and picks more.' : t.strategy === 'contend' ? 'They are contending and don\'t want to weaken the current roster.' : '';

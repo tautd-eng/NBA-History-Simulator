@@ -9,7 +9,7 @@ import { playerValue, maxSalary, MIN_SAL, contractYears, hardCap } from '../ai/v
 import { extensionNeed } from './prefs';
 import { shownOvr } from '../data';
 
-/** Next season's payroll: contracts that run on, signed extensions, dead money. */
+/** Next season's payroll: contracts that run on and signed extensions. */
 export function nextPayroll(lg: League, tid: string) {
   const S = lg.season;
   let v = 0;
@@ -18,7 +18,6 @@ export function nextPayroll(lg: League, tid: string) {
     if (p.ext) v += p.ext.sal;
     else if (p.contract.exp > S) v += p.contract.sal;
   }
-  for (const d of lg.dead ?? []) if (d.tid === tid && d.exp > S) v += d.sal;
   return v;
 }
 

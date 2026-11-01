@@ -45,7 +45,7 @@ const marketSal = (b: number) => Math.max(MIN_SAL, SAL_K * Math.pow(Math.max(0, 
 export function moneyWeight(lg: League, tid: string) {
   const t = lg.teams[tid];
   const pay = payroll(lg, tid);
-  let w = pay > 1.15 ? 0.75 : pay > 1.0 ? 0.6 : pay < 0.75 ? 0.35 : 0.45;
+  let w = pay > 1.25 ? 0.75 : pay > 1.1 ? 0.6 : pay < 0.75 ? 0.35 : 0.45;
   if (t.strategy === 'rebuild') w += 0.1;
   if (t.strategy === 'contend') w -= 0.08;
   if (t.mode === 'allin') w -= 0.15;   // will take on salary to win now

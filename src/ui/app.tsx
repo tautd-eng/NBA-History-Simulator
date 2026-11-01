@@ -432,7 +432,7 @@ function SeasonFields({ form, setForm, idp = '' }: any) {
         <option value="1.5">150% of the cap</option>
         <option value="none">None</option>
       </select>
-      <small>No team may carry a higher payroll: signings, extensions and trades that would exceed it are not allowed. Teams near the limit look for ways to shed salary themselves (moving contracts to teams with room, attaching picks), and before the season the last resort is a buyout (half the salary stays on the books).</small>
+      <small>No team may carry a higher payroll: signings, extensions and trades that would exceed it are not allowed. Teams near the limit look for ways to shed salary themselves (moving contracts to teams with room, attaching picks), and before the season the last resort is releasing a player (his salary comes off the books).</small>
     </label>
     <label className="field" htmlFor={idp + 'rfa'}>
       <span>Restricted free agency</span>

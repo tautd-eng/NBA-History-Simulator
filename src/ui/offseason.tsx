@@ -216,7 +216,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
           </div>
           <p className="note">{fa.stage <= 3 ? STAGE_TXT[fa.stage] : 'Free agency is over. When the season starts, teams with fewer than 13 players will sign minimum deals, and teams with more than 15 will release their weakest.'}</p>
           {u && <div className="kv">
-            <div><span className="dim">{u.name}</span> {u.roster.length} players · payroll {moneyOf(pay, N)} ({Math.round(pay * 100)}% of the cap) · cap space {Math.max(0, Math.round((capLim - pay) * 100))}%{hardCap(lg) < Infinity ? <> · left under the hard cap ({Math.round(hardCap(lg) * 100)}%): <b className={pay > hardCap(lg) ? 'neg' : ''}>{Math.round((hardCap(lg) - pay) * 100)}%</b></> : null}{N >= 1995 ? ` · mid-level exception ${fa.mle.includes(u.tid) ? 'used' : 'available'}` : ''}</div>
+            <div><span className="dim">{u.name}</span> {u.roster.length} players · payroll {moneyOf(pay, N)} ({Math.round(pay * 100)}% of the cap) {hardCap(lg) < Infinity ? <> · room under the cap ({Math.round(hardCap(lg) * 100)}%): <b className={pay > hardCap(lg) ? 'neg' : ''}>{Math.round((hardCap(lg) - pay) * 100)}%</b></> : <> · cap space {Math.max(0, Math.round((capLim - pay) * 100))}%{N >= 1995 ? ` · mid-level exception ${fa.mle.includes(u.tid) ? 'used' : 'available'}` : ''}</>}</div>
           </div>}
           <div className="def-row">
             {fa.stage <= 3
@@ -377,7 +377,7 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
       {u && (
         <section className="panel">
           <h2>{u.name}</h2>
-          <p className="note">{u.roster.length} players (13–15 allowed) · payroll {moneyOf(pay, N)} ({Math.round(pay * 100)}% of the cap). A released player's salary stays on the books until his contract ends.</p>
+          <p className="note">{u.roster.length} players (13–15 allowed) · payroll {moneyOf(pay, N)} ({Math.round(pay * 100)}% of the cap). A released player's salary comes off the books.</p>
           <div className="tbl-wrap"><table className="tbl">
             <thead><tr><th className="l">Player</th><th>OVR</th><th className="l">Contract</th><th></th></tr></thead>
             <tbody>{mine.map((p: any) => <tr key={p.id}>

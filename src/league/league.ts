@@ -257,7 +257,7 @@ function faProjected(lg: League, t: Team) {
   const own = Object.values(lg.players).filter(p => !p.tid && !p.retired && (p as any).bird === t.tid && bpmOf(p.z) > -1);
   const base = [...t.roster.map(pid => lg.players[pid].z), ...own.map(p => p.z)];
   const s0 = str(base);
-  const room = 1.0 - payroll(lg, t.tid);
+  const room = Math.min(hardCap(lg), 1.6) - payroll(lg, t.tid);
   const N = lg.season;
   let bestGain = 0;
   for (const p of fas) {

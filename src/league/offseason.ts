@@ -398,6 +398,8 @@ const STAGE_MULT = [1, 1, 0.85, 0.7, 0.7];
 const STAGE_SIGN = [0, 0.4, 0.7, 1, 1];      // chance a player with an offer signs in this stage's wave
 const STAGE_TRADE = [0, 2.4, 2.0, 1.6, 1.0];  // AI trade-talk intensity
 const capLimit = (N: number) => (N < 1985 ? 1.3 : 1.0);
+/** The one limit that matters: every team may spend up to the hard cap (the old soft cap only without one). */
+const ceiling = (lg: League, N: number) => (hardCap(lg) < Infinity ? hardCap(lg) : capLimit(N));
 /** Mid-level exception (from 1995): what a team over the cap may pay one free agent per summer. */
 const MLE = 0.1;
 /** Salary floor: teams below it spend more freely in free agency and fill the gap with one-year deals. */
@@ -438,7 +440,7 @@ export function enterFreeAgency(lg: League) {
     if (team.name !== t.name) lg.news.push({ s: N, t: `The ${team.name} are now the ${t.name}.` });
     team.name = t.name; team.abbr = t.abbr; team.conf = t.conf;
   }
-  lg.dead = (lg.dead ?? []).filter(d => d.exp >= N);
+  lg.dead = [];
   lg.phase = 'freeagency';
   archiveFa(lg, N - 1);
   lg.fa = { stage: 0, pending, mle: [], log: optLog, decisions, sheets: [] };
@@ -488,7 +490,7 @@ function capCheck(lg: League, tid: string, p: Player, sal: number): { err: strin
   const t = lg.teams[tid];
   if (t.roster.length >= ROSTER_MAX) return { err: `Roster is full (${ROSTER_MAX}) – release a player first.` };
   const pay = payroll(lg, tid);
-  const room = capLimit(N) - pay;
+  const room = ceiling(lg, N) - pay;
   const hc = hardCap(lg);
   if (pay + sal > hc + 1e-9 && !(sal <= MIN_SAL * 1.0001 && t.roster.length < ROSTER_MIN)) {
     return { err: `You would exceed the hard cap (${Math.round(hc * 100)}% of the cap): payroll would be ${Math.round((pay + sal) * 100)}%. Shed salary first (trades, releases).` };
@@ -562,7 +564,7 @@ export function faRenounce(lg: League, pid: string) {
   if (p) { delete p.bird; lg.fa.log.push({ st: lg.fa.stage, kind: 'leave', pid, tid: lg.userTid ?? undefined, user: true }); }
 }
 
-/** Release a player: his salary stays on the books until the contract ends. */
+/** Release a player: his salary comes off the books. */
 export function faRelease(lg: League, pid: string): { ok: boolean; msg: string } {
   const tid = lg.userTid;
   const p = lg.players[pid];
@@ -572,11 +574,10 @@ export function faRelease(lg: League, pid: string): { ok: boolean; msg: string }
   if (lg.phase === 'regular' && t.roster.length <= ROSTER_MIN - 1) return { ok: false, msg: `During the season you must keep at least ${ROSTER_MIN - 1} players.` };
   t.roster = t.roster.filter(x => x !== pid);
   p.tid = null;
-  if (p.contract.exp >= lg.season) (lg.dead ??= []).push({ tid, sal: p.contract.sal, exp: p.contract.exp, pid });
   p.contract = { sal: MIN_SAL, exp: lg.season };
   lg.fa?.log.push({ st: lg.fa.stage, kind: 'release', pid, tid, user: true });
   lg.news.push({ s: lg.season, t: `The ${t.name} released ${tagOf(p, lg.season)}.` });
-  return { ok: true, msg: `${p.name} released. His salary stays on the books until the contract ends.` };
+  return { ok: true, msg: `${p.name} released. His salary comes off the books.` };
 }
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}% of the cap`;
@@ -758,13 +759,12 @@ function reachFloor(lg: League, rng: Rng) {
       const p = Object.values(lg.players).filter(x => isFreeAgent(lg, x) && !x.rfa).sort((a, b) => playerValue(b, N, t.strategy) - playerValue(a, N, t.strategy))[0];
       if (!p) break;
       if (t.roster.length >= ROSTER_MAX) {
-        // full roster of cheap players: cut the weakest minimum deal to make room (his salary stays on the books)
+        // full roster of cheap players: cut the weakest minimum deal to make room
         const cut = t.roster.map(pid => lg.players[pid]).filter(x => x.contract.sal <= vetMin(x, N) + 0.006 && !x.contract.rookie)
           .sort((a, b) => playerValue(a, N, t.strategy) - playerValue(b, N, t.strategy))[0];
         if (!cut || playerValue(cut, N, t.strategy) >= playerValue(p, N, t.strategy)) break;
         t.roster = t.roster.filter(x => x !== cut.id); cut.tid = null;
-        if (cut.contract.exp >= N) (lg.dead ??= []).push({ tid: t.tid, sal: cut.contract.sal, exp: cut.contract.exp, pid: cut.id });
-        pay = payroll(lg, t.tid); // dead money still counts
+        pay = payroll(lg, t.tid);
         cut.contract = { sal: MIN_SAL, exp: N };
         fa.log.push({ st: 3, kind: 'release', pid: cut.id, tid: t.tid });
       }
@@ -806,14 +806,19 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
     for (const t of teams) {
       if (t.roster.length >= ROSTER_MAX) continue;
       const pay = payroll(lg, t.tid);
-      const room = capLimit(N) - pay;
+      const room = ceiling(lg, N) - pay;
       let sal = 0, mle = false;
       // a team pays what he asks of it: less where he wants to play, more where he does not
       const askT = Math.min(max, ask * (1 - discount(lg, p, t.tid)));
       const underFloor = pay < FLOOR;
       if (room >= askT) sal = Math.min(room, max, askT * (1 + (underFloor ? 0.3 : 0.15) * rng.next()));
+      // his own team holds his Bird rights: it may go over the cap to keep him
+      else if (p.bird === t.tid && pay + askT <= Math.min(hardCap(lg), pre ? 1.6 : 1.45)) sal = askT;
       else if (ask <= MIN_SAL * 2.5) sal = Math.max(MIN_SAL, ask);
-      else if (!pre && N >= 1995 && !fa.mle.includes(t.tid) && askT <= MLE * 1.35 && pay + MLE <= hardCap(lg)) { sal = Math.min(MLE, askT); mle = true; }
+      // later in the summer a good player left without a big offer takes what a team can still pay: most of its
+      // remaining room, or the mid-level exception
+      else if (stage >= 2 && room >= Math.max(MLE, 0.45 * askT)) sal = room;
+      else if (!pre && N >= 1995 && !fa.mle.includes(t.tid) && (askT <= MLE * 1.35 || stage >= 2) && pay + MLE <= hardCap(lg)) { sal = Math.min(MLE, askT); mle = true; }
       else continue;
       if (pay + sal > hardCap(lg) + 1e-9 && !(t.roster.length < ROSTER_MIN && sal <= MIN_SAL * 1.0001)) continue;
       // a player who fills a hole in the rotation (shooting, a ball-handler, rim protection) is worth more to this team
@@ -828,7 +833,8 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
       if (t.roster.length >= ROSTER_MIN && v <= twelfth && !(underFloor && t.roster.length < ROSTER_MAX)) continue;
       if (t.strategy === 'rebuild' && ageIn(p, N) > 30 && sal > MIN_SAL * 2.5) continue;
       // a tanking team does not pay veterans – it keeps the cap and the minutes for youth
-      if (t.mode === 'tank' && ageIn(p, N) > 27 && sal > MIN_SAL * 2.5) continue;
+      // (a star still in his prime is not a veteran to avoid – he is the kind of player a rebuild is for)
+      if (t.mode === 'tank' && ageIn(p, N) > 27 && sal > MIN_SAL * 2.5 && !(shownOvr(p.z) >= 85 && ageIn(p, N) <= 30)) continue;
       // the player picks the offer he likes best: money against his ask, plus the team's appeal to him
       const score = offerUtility(lg, p, t.tid, sal, ask, yrsOffer) + 0.06 * rng.normal();
       offers.push({ t, sal, score, mle });
@@ -871,12 +877,19 @@ export function startSeason(lg: League) {
   const rng = rngOf(lg);
   const N = lg.season;
   if (lg.fa && lg.fa.stage <= 3) { while (lg.fa.stage <= 3) faStage(lg); }
-  // everyone under the hard cap before the season: dumps, then buyouts (the user's team too)
-  complyHardCap(lg, rng, true);
   // unsigned restricted free agents play next season on their qualifying offer
   for (const p of Object.values(lg.players)) {
     if (!p.rfa || p.tid || p.retired) continue;
     const t = lg.teams[p.rfa];
+    // a full roster does not cost an AI team its restricted free agent: the least valuable player is waived instead
+    if (t?.active && t.tid !== lg.userTid && t.roster.length >= ROSTER_MAX) {
+      const worst = t.roster.map(pid => lg.players[pid]).sort((a, b) => playerValue(a, N, t.strategy) - playerValue(b, N, t.strategy))[0];
+      if (worst && playerValue(worst, N, t.strategy) < playerValue(p, N, t.strategy)) {
+        t.roster = t.roster.filter(pid => pid !== worst.id); worst.tid = null;
+        worst.contract = { sal: MIN_SAL, exp: N };
+        lg.fa?.log.push({ st: 3, kind: 'release', pid: worst.id, tid: t.tid });
+      }
+    }
     if (t?.active && t.roster.length < ROSTER_MAX) {
       // nobody sent an offer sheet: an AI team that wants him signs him to a market deal (he has nowhere else to go);
       // only if it won't pay that does he play the year on the qualifying offer
@@ -895,6 +908,8 @@ export function startSeason(lg: League) {
       if (t.tid === lg.userTid) lg.news.push({ s: N, t: `${tagOf(p, N)} accepted the ${t.abbr} qualifying offer (1 yr).` });
     }
   }
+  // everyone under the hard cap before the season (after the qualifying offers): dumps, then buyouts
+  complyHardCap(lg, rng, true);
   const aiFill: string[] = [];
   for (const t of activeTeams(lg)) {
     const filled: string[] = [];
@@ -923,13 +938,6 @@ export function startSeason(lg: League) {
     }
   }
   for (let i = 0; i < aiFill.length; i += 10) lg.news.push({ s: N, t: `Late signings to fill rosters: ${aiFill.slice(i, i + 10).join(', ')}.` });
-  // salary floor: a team still below it pays the shortfall to its players (counts on the books this season)
-  for (const t of activeTeams(lg)) {
-    const short = FLOOR - payroll(lg, t.tid);
-    if (short <= 0.001) continue;
-    (lg.dead ??= []).push({ tid: t.tid, sal: short, exp: N, pid: '' });
-    if (t.tid === lg.userTid) lg.news.push({ s: N, t: `The ${t.name} missed the salary floor (${Math.round(FLOOR * 100)}% of the cap) – the ${pct(short)} shortfall is paid to the players and counts toward this season's payroll.` });
-  }
   flushFaLog(lg);
   for (const p of Object.values(lg.players)) { delete p.bird; delete p.rfa; delete p.qo; delete p.noRfa; }
   resetFatigue(lg);
@@ -1084,6 +1092,8 @@ function contracts(lg: League, rng: Rng, log: FreeAgency['log'], decisions: NonN
       } else {
         t.roster = t.roster.filter(pid => pid !== p.id);
         p.tid = null;
+        // the team wanted him but he tests the market: it keeps his Bird rights and may bid over the cap in free agency
+        if (wants && !rfaEligible(p, N, lg)) p.bird = t.tid;
         // restricted free agent: a qualifying offer keeps the right to match
         if (rfaEligible(p, N, lg) && worthKeeping(lg, p, qoAmount(p), N, t.strategy)) {
           p.rfa = t.tid; p.qo = qoAmount(p);

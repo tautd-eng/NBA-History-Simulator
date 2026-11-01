@@ -88,8 +88,8 @@ export function hardCap(lg: League) {
 }
 
 export function payroll(lg: League, tid: string) {
-  const dead = (lg.dead ?? []).reduce((a, d) => a + (d.tid === tid && d.exp >= lg.season ? d.sal : 0), 0);
-  return lg.teams[tid].roster.reduce((a, pid) => a + lg.players[pid].contract.sal, 0) + dead;
+  // no dead money: a released player's salary leaves the books with him
+  return lg.teams[tid].roster.reduce((a, pid) => a + lg.players[pid].contract.sal, 0);
 }
 
 /** Team strength = minutes-weighted BPM of its best eight. */
