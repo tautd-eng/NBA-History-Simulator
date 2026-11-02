@@ -775,9 +775,12 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .dev-cloud { display: grid; gap: 6px; }
 .dev-auto { display: inline-flex; gap: 6px; align-items: center; font-size: 0.85rem; }
 
-/* collapsible overview panels */
-.fold .fold-h { cursor: pointer; }
-.fold .fold-h::before { content: '▾ '; color: var(--muted); }
-.fold-closed { cursor: pointer; padding-top: 10px; padding-bottom: 10px; }
-.fold-closed h2 { margin: 0; }
-.fold-closed h2::before { content: '▸ '; color: var(--muted); }
+/* foldable panels: click the heading */
+.fold-h { cursor: pointer; }
+.fold-h::before { content: '▾ '; color: var(--muted); font-size: 0.8em; }
+.panel.collapsed .fold-h::before { content: '▸ '; }
+.panel.collapsed > :not(.fold-keep) { display: none !important; }
+.panel.collapsed { padding-top: 10px; padding-bottom: 10px; }
+.panel.collapsed .fold-keep h2, .panel.collapsed > h2.fold-h { margin: 0; }
+div.fold-h { position: relative; padding-left: 16px; }
+div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-size: 1.1em; }

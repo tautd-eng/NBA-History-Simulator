@@ -62,7 +62,63 @@ function Ovr({ v, small }: { v: number; small?: boolean }) {
 }
 
 // ---------------------------------------------------------------- app
+/**
+ * Every panel in the app can be folded: click its heading (▾ / ▸). Which headings are folded is remembered per
+ * browser by the heading's text, so "Standings" stays folded wherever it appears. Dialogs and panels that
+ * fold on their own (the season preview) are left alone.
+ */
+const FOLD_KEY = 'nba-folded';
+function foldedSet(): Set<string> { try { return new Set(JSON.parse(localStorage.getItem(FOLD_KEY) ?? '[]')); } catch { return new Set(); } }
+const foldName = (h: Element) => (h.textContent ?? '').split('·')[0].replace(/[▸▾]/g, '').replace(/[0-9–\-]+/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+function panelHeading(panel: Element): [Element, Element] | null {
+  const kids = Array.from(panel.children).slice(0, 4);
+  for (const c of kids) {
+    if (c.matches('h2, .eyebrow')) return [c, c];
+    const h = c.querySelector(':scope > h2');
+    if (h) return [h, c];
+  }
+  // a header row without a title (team page, stats): the row itself is the handle
+  const head = kids.find(c => /(^|\s)[\w-]*-head(\s|$)/.test(c.className));
+  return head ? [head, head] : null;
+}
+function usePanelFolding() {
+  useEffect(() => {
+    let folded = foldedSet(), raf = 0;
+    const apply = () => {
+      raf = 0;
+      document.querySelectorAll('.panel').forEach(panel => {
+        if (panel.tagName === 'DETAILS' || panel.closest('.overlay, .dialog')) return;
+        const hk = panelHeading(panel);
+        if (!hk) return;
+        const [h, keep] = hk;
+        h.classList.add('fold-h'); keep.classList.add('fold-keep');
+        const name = h.tagName === 'DIV' ? 'head:' + (h.className.match(/[\w-]*-head/)?.[0] ?? '') : foldName(h);
+        (panel as HTMLElement).dataset.fold = name;
+        panel.classList.toggle('collapsed', folded.has(name));
+      });
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(apply); };
+    const click = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest('a, button, select, input, label, textarea')) return;
+      const h = t.closest('.fold-h');
+      const panel = h?.closest('.panel') as HTMLElement | null;
+      if (!h || !panel?.dataset.fold) return;
+      const name = panel.dataset.fold;
+      folded.has(name) ? folded.delete(name) : folded.add(name);
+      try { localStorage.setItem(FOLD_KEY, JSON.stringify([...folded])); } catch { /* storage unavailable */ }
+      apply();
+    };
+    const mo = new MutationObserver(schedule);
+    mo.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('click', click);
+    apply();
+    return () => { mo.disconnect(); document.removeEventListener('click', click); if (raf) cancelAnimationFrame(raf); };
+  }, []);
+}
+
 function App() {
+  usePanelFolding();
   const [lg, setLg] = useState<any>(null);
   const [ready, setReady] = useState(false);
   const [rev, setRev] = useState(0);
@@ -536,20 +592,8 @@ function Setup({ onStart, onLoad }: any) {
 }
 
 // ---------------------------------------------------------------- overview
-/**
- * A collapsible overview panel: click its heading to fold it to a one-line bar (remembered per browser).
- * `sel` picks the panel's heading element (default its first h2).
- */
-function Fold({ id, title, sel = 'h2', children }: any) {
-  const key = 'nba-fold-' + id;
-  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) !== '0'; } catch { return true; } });
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { const h = ref.current?.querySelector(sel); if (h) h.classList.add('fold-h'); });
-  const set = (v: boolean) => { setOpen(v); try { localStorage.setItem(key, v ? '1' : '0'); } catch { /* storage unavailable */ } };
-  if (!children) return null;
-  if (!open) return <div className="panel fold-closed" role="button" tabIndex={0} onClick={() => set(true)} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && set(true)}><h2>{title}</h2></div>;
-  return <div className="fold" ref={ref} onClick={e => { const h = (e.target as HTMLElement).closest('.fold-h'); if (h && ref.current?.contains(h)) set(false); }}>{children}</div>;
-}
+/** Overview panels fold like every other panel (see usePanelFolding); kept as a plain wrapper. */
+function Fold({ children }: any) { return children ?? null; }
 
 function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sampler, onSaved, goFA, onTick }: any) {
   const last = lg.history[lg.history.length - 1];
