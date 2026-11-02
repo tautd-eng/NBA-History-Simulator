@@ -11,7 +11,7 @@ import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap, askin
 import { playerParts, moneyWeight, prospectValue, tradeValue, horizonOf, Horizon, slotPeak } from './tradevalue';
 import { posNum } from '../engine/game';
 import { bucket, tagOf, ageIn } from '../players';
-import { shownOvr } from '../data';
+import { shownOvr, K, OVR_VOLUME } from '../data';
 
 export const ROSTER_MIN = 13, ROSTER_MAX = 15;
 
@@ -172,7 +172,13 @@ const pCache = new Map<string, { prod: number; cost: number }>();
 function parts(lg: League, p: Player, strategy: Horizon) {
   const k = p.id + strategy;
   let v = pCache.get(k);
-  if (!v) { v = playerParts(lg, p, strategy); pCache.set(k, v); }
+  if (!v) {
+    // GMs judge a player by his impact and by the overall rating (where a scoring load counts), about 40/60 –
+    // the same blend as in a fantasy draft, so a high-overall scorer is not traded away for a lesser role player
+    const a = playerParts(lg, p, strategy), b = playerParts(lg, p, strategy, OVR_VOLUME * p.z[K.usg]);
+    v = { prod: 0.4 * a.prod + 0.6 * b.prod, cost: 0.4 * a.cost + 0.6 * b.cost, years: a.years.map((x, i) => 0.4 * x + 0.6 * b.years[i]) };
+    pCache.set(k, v);
+  }
   return v;
 }
 /** Net value of a player to a team: production minus salary cost weighted by how much the team minds money. */
@@ -560,7 +566,7 @@ export function looksFair(lg: League, aGets: TradeAsset[], bGets: TradeAsset[], 
     const vGet = marketValue(lg, get), vGive = marketValue(lg, give);
     // no sweetener when the players alone already cover it (small margin for taste), no clearly lopsided package
     if (pk.length && marketValue(lg, pl) >= vGet + 0.6) return false;
-    if (!loose && vGive > Math.max(0, vGet) * 1.25 + 0.6) return false;
+    if (!loose && vGive > Math.max(0, vGet) * 1.2 + 0.3) return false;
   }
   return true;
 }
@@ -778,7 +784,7 @@ export function aiResponse(lg: League, a: string, b: string, aGets: TradeAsset[]
   const t = lg.teams[b];
   if (!e.ok) return { accept: false, e, text: e.reason! };
   // the AI does not give away clearly more market value than it gets, however well the package fits its plans
-  if (marketValue(lg, aGets) > Math.max(0, marketValue(lg, bGets)) * 1.25 + 0.6) return { accept: false, e, text: `${t.name} decline: on the open market they would be giving away far more than they get.` };
+  if (marketValue(lg, aGets) > Math.max(0, marketValue(lg, bGets)) * 1.2 + 0.3) return { accept: false, e, text: `${t.name} decline: on the open market they would be giving away far more than they get.` };
   if (e.gainB >= th) return { accept: true, e, text: `${t.name} accept.` };
   const gap = th - e.gainB;
   const inB = bGets.filter(x => x.pid).map(x => lg.players[x.pid!]), outB = aGets.filter(x => x.pid).map(x => lg.players[x.pid!]);

@@ -59,11 +59,11 @@ const OUT_W = (() => { const d = OUT_PTS.map(x => Math.exp(-x * x / 2)); const t
 export interface Parts { prod: number; cost: number; years: number[] }
 
 /** Production and salary cost of a player for a team with this horizon. */
-export function playerParts(lg: League, p: Player, strategy: Horizon): Parts {
+export function playerParts(lg: League, p: Player, strategy: Horizon, shift = 0): Parts {
   const S = lg.season;
   const age = ageIn(p, S);
   const hb = hiddenBoost(p.id);
-  const proj = projectBpm(p.z, age, 5).map(v => v + hb);
+  const proj = projectBpm(p.z, age, 5).map(v => v + hb + shift);
   const w = HORIZON[strategy];
   // seasons left on his deal (this one included), an extension adds more
   const left = Math.max(1, p.contract.exp - S + 1);
