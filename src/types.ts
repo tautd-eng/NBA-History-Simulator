@@ -206,6 +206,8 @@ export interface League {
   draftClass?: { year: number; pool: string[] };
   pickRights?: (PickRight & { holder: string; from: string })[]; // outstanding swap / less-favourable rights // next draft's prospects, public from the start of the season
   fa?: FreeAgency;
+  /** season in which payrolls may stay over the hard cap (the first season after a fantasy draft) */
+  capGrace?: number;
   dead?: { tid: string; sal: number; exp: number; pid: string }[]; // salaries of released players still on the books
   start?: number;                     // first season of this league
   classMode?: 'real' | 'shuffle' | 'mixed';

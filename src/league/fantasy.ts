@@ -2,7 +2,7 @@
 // teams build new rosters in a snake draft. AI teams pick by value and need.
 import { League, Player } from '../types';
 import { rngOf, beginFirstSeason } from './league';
-import { valueFromZ, askingSalary, contractYears, MIN_SAL } from '../ai/value';
+import { valueFromZ, askingSalary, contractYears, MIN_SAL, hardCap, payroll } from '../ai/value';
 import { K, OVR_VOLUME } from '../data';
 import { hiddenBoost } from '../hboost';
 import { posNum } from '../engine/game';
@@ -112,6 +112,10 @@ export function fantasyFinish(lg: League) {
   const first = lg.players[f.picks[0].pid];
   lg.news.push({ s: lg.season, t: `Fantasy draft complete. First pick: ${tagOf(first, lg.season)}, ${lg.teams[f.picks[0].tid].abbr}.` });
   beginFirstSeason(lg);
+  // fresh contracts after a fantasy draft can't all fit: one season's grace, then everyone must be under the hard cap
+  lg.capGrace = lg.season;
   lg.news.push({ s: lg.season, t: `The ${lg.season - 1}–${String(lg.season).slice(2)} season begins. Destiny slider: ${Math.round(lg.destiny * 100)}%.` });
+  const hc = hardCap(lg), over = Object.values(lg.teams).filter(t => t.active && payroll(lg, t.tid) > hc + 1e-9);
+  if (hc < Infinity && over.length) lg.news.push({ s: lg.season, t: `Cap exception for the first season: ${over.length} team${over.length > 1 ? 's are' : ' is'} over the hard cap (${Math.round(hc * 100)}% of the cap) after the fantasy draft${over.some(t => t.tid === lg.userTid) ? ', yours included' : ''}. That is allowed this season, but by the start of next season every team must be under it – whoever still is over then releases his worst contracts.` });
 }
 export { ageIn };

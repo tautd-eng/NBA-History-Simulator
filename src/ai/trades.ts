@@ -726,6 +726,8 @@ function findDump(lg: League, A: Team, others: Team[], force = false) {
 export function complyHardCap(lg: League, rng: Rng, buyouts = false) {
   const hc = hardCap(lg);
   if (hc === Infinity) return;
+  // the season after a fantasy draft is exempt: teams have until the next season starts to get under the cap
+  if (lg.capGrace === lg.season) return;
   for (const A of Object.values(lg.teams)) {
     if (!A.active) continue;
     for (let tries = 0; tries < 3 && payroll(lg, A.tid) > hc + 1e-9; tries++) {
