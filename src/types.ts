@@ -124,7 +124,7 @@ export interface Pick { season: number; round: number; orig: string; owner: stri
  *  'worse' – the receiver gets the less favourable of the giver's two picks (orig a, orig b). Settled after the lottery. */
 export interface PickRight { kind: 'swap' | 'worse'; season: number; round: number; a: string; b: string }
 export interface TradeAsset { pid?: string; pick?: { season: number; round: number; orig: string }; right?: PickRight }
-export interface TradeRec { s: number; day: number; phase: string; a: string; b: string; aGets: TradeAsset[]; bGets: TradeAsset[]; user?: boolean; desc: string; info?: Record<string, [number, number]> }
+export interface TradeRec { s: number; day: number; phase: string; a: string; b: string; aGets: TradeAsset[]; bGets: TradeAsset[]; user?: boolean; desc: string; info?: Record<string, [number, number]>; mv?: [number, number] }
 
 /** games: regular-season games per team (null = as in that real season); series: playoff series length (null = as in that era). */
 export interface Settings {

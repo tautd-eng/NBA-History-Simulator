@@ -478,12 +478,15 @@ export function executeTrade(lg: League, a: string, b: string, aGets: TradeAsset
     }
   };
   // OVR and age at the time of the trade, for the trade history
+  // market value of each side at the moment of the deal (what the fairness check sees)
+  fresh(lg);
+  const mv: [number, number] = [Math.round(marketValue(lg, aGets) * 10) / 10, Math.round(marketValue(lg, bGets) * 10) / 10];
   const info: Record<string, [number, number]> = {};
   for (const x of [...aGets, ...bGets]) if (x.pid) { const p = lg.players[x.pid]; info[x.pid] = [shownOvr(p.z), ageIn(p, lg.season)]; }
   move(aGets, a, b);
   move(bGets, b, a);
   const desc = `${lg.teams[a].abbr} get ${describeAssets(lg, aGets)}; ${lg.teams[b].abbr} get ${describeAssets(lg, bGets)}.`;
-  const rec: TradeRec = { s: lg.season, day: lg.day, phase: lg.phase, a, b, aGets, bGets, user, desc, info };
+  const rec: TradeRec = { s: lg.season, day: lg.day, phase: lg.phase, a, b, aGets, bGets, user, desc, info, mv };
   (lg.trades ??= []).push(rec);
   lg.news.push({ s: lg.season, t: `Trade: ${desc}` });
   return rec;
@@ -560,6 +563,7 @@ export function aiTradeRound(lg: League, rng: Rng, intensity = 1): TradeRec[] {
  * than the other in neutral (market) value, whatever one GM's taste.
  */
 export function looksFair(lg: League, aGets: TradeAsset[], bGets: TradeAsset[], loose = false) {
+  fresh(lg);
   for (const [give, get] of [[bGets, aGets], [aGets, bGets]] as const) {
     const pl = give.filter(x => x.pid), pk = give.filter(x => x.pick);
     // market value of each side; a bad contract counts below zero, so a pick attached to dump it is fair

@@ -148,7 +148,7 @@ export function Trades({ lg, openPlayer, onDone }: any) {
         <h2>Trade history</h2>
         {trades.length ? (
           <ul className="news">
-            {trades.slice(0, 80).map((t: any, i: number) => <li key={i}><span className="yr">{t.s}</span><span>{t.user && <span className="chip tiny">yours</span>} <b><TL tid={t.a} abbr /></b> get <Assets lg={lg} xs={t.aGets} openPlayer={openPlayer} info={t.info ?? (t.s === lg.season ? undefined : {})} />; <b><TL tid={t.b} abbr /></b> get <Assets lg={lg} xs={t.bGets} openPlayer={openPlayer} info={t.info ?? (t.s === lg.season ? undefined : {})} />.</span></li>)}
+            {trades.slice(0, 80).map((t: any, i: number) => <li key={i}><span className="yr">{t.s}</span><span>{t.user && <span className="chip tiny">yours</span>} <b><TL tid={t.a} abbr /></b> get <Assets lg={lg} xs={t.aGets} openPlayer={openPlayer} info={t.info ?? (t.s === lg.season ? undefined : {})} />; <b><TL tid={t.b} abbr /></b> get <Assets lg={lg} xs={t.bGets} openPlayer={openPlayer} info={t.info ?? (t.s === lg.season ? undefined : {})} />.{t.mv ? <span className="dim" title="Neutral market value of what each side got, at the time of the trade"> · market value {t.mv[0]} / {t.mv[1]}</span> : null}</span></li>)}
           </ul>
         ) : <p className="note">No trades yet.</p>}
       </div>
