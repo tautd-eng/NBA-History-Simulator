@@ -53,6 +53,9 @@ export function moneyWeight(lg: League, tid: string) {
   return Math.max(0.2, Math.min(0.9, w));
 }
 
+const OUT_PTS = [-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2];
+const OUT_W = (() => { const d = OUT_PTS.map(x => Math.exp(-x * x / 2)); const t = d.reduce((a, x) => a + x, 0); return d.map(x => x / t); })();
+
 export interface Parts { prod: number; cost: number; years: number[] }
 
 /** Production and salary cost of a player for a team with this horizon. */
@@ -69,12 +72,24 @@ export function playerParts(lg: League, p: Player, strategy: Horizon): Parts {
   const n = Object.values(lg.teams).filter(t => t.active).length || 1;
   const G = lg.schedule.length ? lg.schedule.length * 2 / n : 82;
   const injF = lg.phase === 'regular' || lg.phase === 'playoffs' ? Math.max(0, 1 - (p.injury ?? 0) / Math.max(1, G)) : 1;
-  const upside = age <= 21 ? 1.15 : age <= 23 ? 1.08 : 1;
+  // a young player's future is uncertain both ways, and stars are worth disproportionately more than role players:
+  // the spread of outcomes (as for a pick) carries value, the wider the younger he is; a recent high pick also
+  // carries the same draft hype a pick at that slot would
+  const spread = age <= 23 ? Math.min(2.2, 0.55 * (24 - age)) : 0;
+  const since = p.draft?.year ? S - p.draft.year : 9;
+  const hype = since <= 2 && p.draft?.pick ? 1 + (slotPath(p.draft.pick).hype - 1) * (since <= 1 ? 1 : 0.5) : 1;
+  const prodY = (b: number, y: number) => {
+    if (!spread) return prodOf(b);
+    const sd = spread * Math.min(1, 0.5 + 0.2 * y);
+    let e = 0;
+    OUT_PTS.forEach((x, i) => (e += OUT_W[i] * prodOf(b + x * sd)));
+    return e * hype;
+  };
   const retain = p.contract.rookie ? 0.8 : 0.55; // chance he stays after the deal (rights, restricted free agency)
   let prod = 0, cost = 0;
   const years: number[] = [];
   for (let y = 0; y < 5; y++) {
-    const pr = prodOf(proj[y]) * (y === 0 ? injF : 1) * upside;
+    const pr = prodY(proj[y], y) * (y === 0 ? injF : 1);
     let c: number, keep = 1;
     if (y < left) c = costOf(p.contract.sal);
     else if (y < left + extLeft) c = costOf(p.ext!.sal);

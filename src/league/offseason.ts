@@ -16,6 +16,7 @@ import { discount, offerUtility } from './prefs';
 import { pickOwner, ensurePicks, aiTradeRound, isFreeAgent, complyHardCap, aiDraftTrade, boardScore, settlePickRights } from '../ai/trades';
 import {
   askingSalary, contractYears, payroll, playerValue, peakBpm, MIN_SAL, zClamp, projectBpm, maxSalary, hardCap, vetMin,
+  deadPay, releaseDead,
 } from '../ai/value';
 
 const save = (lg: League, r: Rng) => { lg.rng = [...r.s] as any; };
@@ -440,7 +441,7 @@ export function enterFreeAgency(lg: League) {
     if (team.name !== t.name) lg.news.push({ s: N, t: `The ${team.name} are now the ${t.name}.` });
     team.name = t.name; team.abbr = t.abbr; team.conf = t.conf;
   }
-  lg.dead = [];
+  lg.dead = (lg.dead ?? []).filter(d => d.exp >= N);
   lg.phase = 'freeagency';
   archiveFa(lg, N - 1);
   lg.fa = { stage: 0, pending, mle: [], log: optLog, decisions, sheets: [] };
@@ -564,7 +565,7 @@ export function faRenounce(lg: League, pid: string) {
   if (p) { delete p.bird; lg.fa.log.push({ st: lg.fa.stage, kind: 'leave', pid, tid: lg.userTid ?? undefined, user: true }); }
 }
 
-/** Release a player: his salary comes off the books. */
+/** Release a player: half of his remaining salary stays on the books until the contract ends. */
 export function faRelease(lg: League, pid: string): { ok: boolean; msg: string } {
   const tid = lg.userTid;
   const p = lg.players[pid];
@@ -573,11 +574,12 @@ export function faRelease(lg: League, pid: string): { ok: boolean; msg: string }
   const t = lg.teams[tid];
   if (lg.phase === 'regular' && t.roster.length <= ROSTER_MIN - 1) return { ok: false, msg: `During the season you must keep at least ${ROSTER_MIN - 1} players.` };
   t.roster = t.roster.filter(x => x !== pid);
+  releaseDead(lg, tid, p);
   p.tid = null;
   p.contract = { sal: MIN_SAL, exp: lg.season };
   lg.fa?.log.push({ st: lg.fa.stage, kind: 'release', pid, tid, user: true });
   lg.news.push({ s: lg.season, t: `The ${t.name} released ${tagOf(p, lg.season)}.` });
-  return { ok: true, msg: `${p.name} released. His salary comes off the books.` };
+  return { ok: true, msg: `${p.name} released. Half of his salary stays on the books until his contract ends.` };
 }
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}% of the cap`;
@@ -763,7 +765,7 @@ function reachFloor(lg: League, rng: Rng) {
         const cut = t.roster.map(pid => lg.players[pid]).filter(x => x.contract.sal <= vetMin(x, N) + 0.006 && !x.contract.rookie)
           .sort((a, b) => playerValue(a, N, t.strategy) - playerValue(b, N, t.strategy))[0];
         if (!cut || playerValue(cut, N, t.strategy) >= playerValue(p, N, t.strategy)) break;
-        t.roster = t.roster.filter(x => x !== cut.id); cut.tid = null;
+        t.roster = t.roster.filter(x => x !== cut.id); releaseDead(lg, t.tid, cut); cut.tid = null;
         pay = payroll(lg, t.tid);
         cut.contract = { sal: MIN_SAL, exp: N };
         fa.log.push({ st: 3, kind: 'release', pid: cut.id, tid: t.tid });
@@ -885,7 +887,7 @@ export function startSeason(lg: League) {
     if (t?.active && t.tid !== lg.userTid && t.roster.length >= ROSTER_MAX) {
       const worst = t.roster.map(pid => lg.players[pid]).sort((a, b) => playerValue(a, N, t.strategy) - playerValue(b, N, t.strategy))[0];
       if (worst && playerValue(worst, N, t.strategy) < playerValue(p, N, t.strategy)) {
-        t.roster = t.roster.filter(pid => pid !== worst.id); worst.tid = null;
+        t.roster = t.roster.filter(pid => pid !== worst.id); releaseDead(lg, t.tid, worst); worst.tid = null;
         worst.contract = { sal: MIN_SAL, exp: N };
         lg.fa?.log.push({ st: 3, kind: 'release', pid: worst.id, tid: t.tid });
       }
@@ -929,6 +931,7 @@ export function startSeason(lg: League) {
     while (t.roster.length > ROSTER_MAX) {
       const worst = t.roster.map(pid => lg.players[pid]).sort((a, b) => playerValue(a, N, t.strategy) - playerValue(b, N, t.strategy))[0];
       t.roster = t.roster.filter(pid => pid !== worst.id);
+      releaseDead(lg, t.tid, worst);
       worst.tid = null;
       cut.push(tagOf(worst, N));
       addTx(worst, N, `Released by ${t.name} before the season`, -1);
@@ -1070,7 +1073,7 @@ function contracts(lg: League, rng: Rng, log: FreeAgency['log'], decisions: NonN
     const expiring = t.roster.map(pid => lg.players[pid]).filter(p => p.contract.exp <= Y);
     if (!expiring.length) continue;
     const keepers = t.roster.map(pid => lg.players[pid]).filter(p => p.contract.exp > Y);
-    let pay = keepers.reduce((a, p) => a + p.contract.sal, 0);
+    let pay = keepers.reduce((a, p) => a + p.contract.sal, 0) + deadPay(lg, t.tid, N);
     // re-sign the most valuable first
     expiring.sort((a, b) => playerValue(b, Y + 1, t.strategy) - playerValue(a, Y + 1, t.strategy));
     const ranked = t.roster.map(pid => lg.players[pid]).sort((a, b) => playerValue(b, Y + 1, t.strategy) - playerValue(a, Y + 1, t.strategy));

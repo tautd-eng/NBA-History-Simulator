@@ -377,7 +377,7 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
       {u && (
         <section className="panel">
           <h2>{u.name}</h2>
-          <p className="note">{u.roster.length} players (13–15 allowed) · payroll {moneyOf(pay, N)} ({Math.round(pay * 100)}% of the cap). A released player's salary comes off the books.</p>
+          <p className="note">{u.roster.length} players (13–15 allowed) · payroll {moneyOf(pay, N)} ({Math.round(pay * 100)}% of the cap). A released player's salary stays on the books at half until his contract ends.</p>
           <div className="tbl-wrap"><table className="tbl">
             <thead><tr><th className="l">Player</th><th>OVR</th><th className="l">Contract</th><th></th></tr></thead>
             <tbody>{mine.map((p: any) => <tr key={p.id}>

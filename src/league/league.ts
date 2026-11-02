@@ -297,7 +297,7 @@ export function updateModes(lg: League, announce = true) {
     const hot = inSeason && !losing && i < Math.max(6, Math.round(n * 0.25)) && ((g >= 10 && wp >= 0.64) || (g >= 20 && wp >= 0.6) || (t.mode === 'allin' && g >= 10 && wp >= 0.55));
     if ((t.strategy === 'contend' && !losing && (i < 3 || (i < 6 && coreAge >= 29) || (inSeason && g >= 20 && wp >= 0.62))) || hot) mode = 'allin';
     else if (i >= n - Math.max(2, Math.round(n * 0.2)) && (young <= 1 || coreAge >= 27) && !winning) mode = 'tank';
-    else if (pay > hc - 0.02) mode = 'capclear';
+    else if (pay > hc - 0.02 && lg.capGrace !== lg.season) mode = 'capclear';
     else if (young >= 2 && coreAge <= 25.5 && i >= 3) mode = 'rising';
     // stuck in the middle: not good enough to contend, too good to tank – the GM keeps making side moves
     else if (t.mode === 'retool' && inSeason ? (i >= Math.round(n * 0.15) && i < n - 2 && (!inSeason || g < 15 || (wp >= 0.33 && wp <= 0.67)))

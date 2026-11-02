@@ -88,8 +88,18 @@ export function hardCap(lg: League) {
 }
 
 export function payroll(lg: League, tid: string) {
-  // no dead money: a released player's salary leaves the books with him
-  return lg.teams[tid].roster.reduce((a, pid) => a + lg.players[pid].contract.sal, 0);
+  return lg.teams[tid].roster.reduce((a, pid) => a + lg.players[pid].contract.sal, 0) + deadPay(lg, tid);
+}
+
+/** Share of a released player's salary that stays on the team's books until his contract ends. */
+export const DEAD_SHARE = 0.5;
+/** Dead money a team still carries this season. */
+export function deadPay(lg: League, tid: string, season = lg.season) {
+  return (lg.dead ?? []).reduce((a, d) => a + (d.tid === tid && d.exp >= season ? d.sal : 0), 0);
+}
+/** Releasing a player: half of his remaining salary stays on the books (minimum deals cost nothing). */
+export function releaseDead(lg: League, tid: string, p: Player) {
+  if (p.contract.exp >= lg.season && p.contract.sal > MIN_SAL * 1.0001) (lg.dead ??= []).push({ tid, sal: p.contract.sal * DEAD_SHARE, exp: p.contract.exp, pid: p.id });
 }
 
 /** Team strength = minutes-weighted BPM of its best eight. */

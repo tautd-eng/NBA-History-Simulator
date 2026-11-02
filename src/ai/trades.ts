@@ -7,7 +7,7 @@ import { H, seasonInfo, LAST_SEASON, ovrOf, bpmOf } from '../data';
 import { Rng, hash01 } from '../rng';
 import { League, Player, Team, Pick, TradeAsset, TradeRec, PickRight } from '../types';
 import { rosterFit, GMFIT } from '../archetypes';
-import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap, askingSalary, peakBpm, projectBpm } from './value';
+import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap, askingSalary, peakBpm, projectBpm, releaseDead, deadPay } from './value';
 import { playerParts, moneyWeight, prospectValue, tradeValue, horizonOf, Horizon, slotPeak } from './tradevalue';
 import { posNum } from '../engine/game';
 import { bucket, tagOf, ageIn } from '../players';
@@ -78,6 +78,11 @@ export function justTraded(lg: League, p: Player) {
   if (lg.phase === 'regular' && a.ph === 'regular' && a.s === lg.season) return lg.day - a.day < 30;
   if ((lg.phase === 'freeagency' || lg.phase === 'draft') && (a.ph === 'freeagency' || a.ph === 'draft') && a.s === lg.season) return true;
   return false;
+}
+/** Did this team trade him away this season? (nobody buys back the player it just sold) */
+export function soldBy(lg: League, p: Player, tid: string) {
+  const a = (p as any).acq;
+  return !!a && a.from === tid && a.s === lg.season;
 }
 /** Is a pick tied up in an outstanding swap / less-favourable right? */
 export function pickTied(lg: League, pk: { season: number; round: number; orig: string }) {
@@ -284,8 +289,11 @@ function teamValue(lg: League, t: Team, side: Side, moneyW: number) {
   // above the hard cap the team must shed salary: every share of the cap over it weighs heavily
   const hc = hardCap(lg);
   if (hc < Infinity) {
-    const pay = side.players.reduce((a, p) => a + p.contract.sal, 0);
-    v -= 60 * Math.max(0, pay - hc) + 8 * Math.max(0, pay - (hc - 0.03));
+    const pay = side.players.reduce((a, p) => a + p.contract.sal, 0) + deadPay(lg, t.tid);
+    // (in the grace season after a fantasy draft being over is allowed: it only has to be fixed by next season,
+    // so it weighs far less and nobody pays a fortune to shed salary right away)
+    const g = lg.capGrace === lg.season ? 0.12 : 1;
+    v -= g * (60 * Math.max(0, pay - hc) + 8 * Math.max(0, pay - (hc - 0.03)));
   }
   // a rotation needs ball handlers and big men: a missing piece costs (matters most to teams trying to win now)
   const top8 = ps.slice(0, 8);
@@ -451,7 +459,7 @@ export function executeTrade(lg: League, a: string, b: string, aGets: TradeAsset
     for (const x of xs) {
       if (x.pid) {
         const p = lg.players[x.pid];
-        (p as any).acq = { s: lg.season, ph: lg.phase, day: lg.day };
+        (p as any).acq = { s: lg.season, ph: lg.phase, day: lg.day, from };
         lg.teams[from].roster = lg.teams[from].roster.filter(id => id !== p.id);
         lg.teams[to].roster.push(p.id);
         p.tid = to;
@@ -481,9 +489,10 @@ export function fillRoster(lg: League, tid: string) {
   faCache = null;
   while (t.roster.length > ROSTER_MAX && tid !== lg.userTid) {
     const cut = t.roster.map(pid => lg.players[pid])
-      // the least valuable player for his salary goes (his salary leaves with him)
-      .sort((x, y) => (playerValue(x, lg.season, t.strategy) - x.contract.sal * 20) - (playerValue(y, lg.season, t.strategy) - y.contract.sal * 20))[0];
+      // the least valuable player for his salary goes (half of it comes off the books)
+      .sort((x, y) => (playerValue(x, lg.season, t.strategy) - x.contract.sal * 10) - (playerValue(y, lg.season, t.strategy) - y.contract.sal * 10))[0];
     t.roster = t.roster.filter(pid => pid !== cut.id);
+    releaseDead(lg, tid, cut);
     cut.tid = null;
     cut.contract = { sal: MIN_SAL, exp: lg.season };
     lg.news.push({ s: lg.season, t: `The ${t.name} waived ${cut.name} to make room on the roster.` });
@@ -529,7 +538,8 @@ export function aiTradeRound(lg: League, rng: Rng, intensity = 1): TradeRec[] {
     const deal = A.mode === 'tank' || (rush && (losing || A.strategy === 'rebuild')) ? (findSale(lg, A, others, rng) ?? findDeal(lg, A, others, rng))
       : A.mode === 'capclear' ? (findDump(lg, A, others) ?? findDeal(lg, A, others, rng))
       : findDeal(lg, A, others, rng);
-    if (!deal) continue;
+    // every deal passes the market check, whatever path found it
+    if (!deal || !looksFair(lg, deal.aGets, deal.bGets)) continue;
     const rec = executeTrade(lg, A.tid, deal.b, deal.aGets, deal.bGets);
     fillRoster(lg, A.tid); fillRoster(lg, deal.b);
     busy.add(A.tid); busy.add(deal.b);
@@ -543,15 +553,22 @@ export function aiTradeRound(lg: League, rng: Rng, intensity = 1): TradeRec[] {
  * gives are already worth at least what it gets, and no package is far richer
  * than the other in neutral (market) value, whatever one GM's taste.
  */
-function looksFair(lg: League, aGets: TradeAsset[], bGets: TradeAsset[], loose = false) {
+export function looksFair(lg: League, aGets: TradeAsset[], bGets: TradeAsset[], loose = false) {
   for (const [give, get] of [[bGets, aGets], [aGets, bGets]] as const) {
     const pl = give.filter(x => x.pid), pk = give.filter(x => x.pick);
-    const vGet = neutralValue(lg, get);
+    // market value of each side; a bad contract counts below zero, so a pick attached to dump it is fair
+    const vGet = marketValue(lg, get), vGive = marketValue(lg, give);
     // no sweetener when the players alone already cover it (small margin for taste), no clearly lopsided package
-    if (pk.length && neutralValue(lg, pl) >= vGet + 0.6) return false;
-    if (!loose && neutralValue(lg, give) > vGet * 1.4 + 2.2) return false;
+    if (pk.length && marketValue(lg, pl) >= vGet + 0.6) return false;
+    if (!loose && vGive > Math.max(0, vGet) * 1.25 + 0.6) return false;
   }
   return true;
+}
+/** Neutral market value of a package, bad contracts below zero. */
+function marketValue(lg: League, xs: TradeAsset[]) {
+  let v = 0;
+  for (const x of xs) v += x.pid ? pv(lg, lg.players[x.pid], 'middle') : x.right ? rightValue(lg, x.right, 'middle', 0.45) : pickValue(lg, x.pick!, 'middle', 0.45);
+  return v;
 }
 
 function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
@@ -572,7 +589,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
   for (const B of others) {
     for (const pid of B.roster) {
       const p = lg.players[pid];
-      if (tradeLocked(lg, p) || justTraded(lg, p)) continue;
+      if (tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid)) continue;
       const hB = horizonOf(B);
       const va = playerValue(p, S, hA), vb = playerValue(p, S, hB);
       if (va < 2.5) continue;
@@ -617,7 +634,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
     const bCore = new Set(B.roster.map(pid => lg.players[pid]).sort((x, y) => playerValue(y, S, hB) - playerValue(x, S, hB)).slice(0, 3).map(p => p.id));
     for (const pid of B.roster) {
       const p = lg.players[pid];
-      if (pid === tgt.p.id || bCore.has(pid) || tradeLocked(lg, p) || justTraded(lg, p)) continue;
+      if (pid === tgt.p.id || bCore.has(pid) || tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid)) continue;
       cands.push({ a: { pid }, edge: playerValue(p, S, hA) - playerValue(p, S, hB) - 0.5, sal: p.contract.sal, back: true });
     }
     for (const pk of (lg.picks ?? []).filter(p => p.owner === B.tid && p.round === 2 && !pickUsed(lg, p))) {
@@ -663,7 +680,7 @@ function findSale(lg: League, A: Team, others: Team[], rng: Rng) {
   const cornerstone = (p: Player) => (shownOvr(p.z) >= 86 && ageIn(p, S2) < 30) || (bpmOf(p.z) >= best && ageIn(p, S2) < 28);
   const vets = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && !justTraded(lg, p) && !cornerstone(p) && ageIn(p, S) >= minAge && bpmOf(p.z) > 0).sort((x, y) => bpmOf(y.z) - bpmOf(x.z)).slice(0, 5);
   for (const p of rng.shuffle([...vets])) {
-    const buyers = others.filter(B => B.mode === 'allin' || B.strategy === 'contend' || B.strategy === 'middle')
+    const buyers = others.filter(B => (B.mode === 'allin' || B.strategy === 'contend' || B.strategy === 'middle') && !soldBy(lg, p, B.tid))
       .map(B => ({ B, v: pv(lg, p, horizonOf(B), B.tid) })).sort((x, y) => y.v - x.v).slice(0, 4);
     for (const { B } of buyers) {
       const bGets: TradeAsset[] = [{ pid: p.id }];
@@ -684,7 +701,8 @@ function findSale(lg: League, A: Team, others: Team[], rng: Rng) {
         if (best < 0) break;
         aGets.push(cands.splice(best, 1)[0]);
         const e = evaluateTrade(lg, A.tid, B.tid, aGets, bGets);
-        if (e.ok && e.gainA >= threshold(lg, A.tid) && e.gainB >= threshold(lg, B.tid) && looksFair(lg, aGets, bGets, true)) return { b: B.tid, aGets, bGets };
+        // the buyer's package must also look sane on the open market (no two firsts and a prospect for a 37-year-old)
+        if (e.ok && e.gainA >= threshold(lg, A.tid) && e.gainB >= threshold(lg, B.tid) && looksFair(lg, aGets, bGets)) return { b: B.tid, aGets, bGets };
         if (e.gainB < threshold(lg, B.tid) - 1) break;
       }
     }
@@ -714,7 +732,7 @@ function findDump(lg: League, A: Team, others: Team[], force = false) {
       const bGets: TradeAsset[] = [{ pid: p.id }];
       for (let k = 0; k <= Math.min(3, picks.length); k++) {
         const e = evaluateTrade(lg, A.tid, B.tid, [], bGets);
-        if (e.ok && e.gainB >= threshold(lg, B.tid) && (e.gainA >= 0 || force)) return { b: B.tid, aGets: [] as TradeAsset[], bGets };
+        if (e.ok && e.gainB >= threshold(lg, B.tid) && (e.gainA >= 0 || force) && looksFair(lg, [], bGets)) return { b: B.tid, aGets: [] as TradeAsset[], bGets };
         if (k < picks.length) bGets.push(picks[k]);
       }
     }
@@ -738,15 +756,16 @@ export function complyHardCap(lg: League, rng: Rng, buyouts = false) {
       executeTrade(lg, A.tid, deal.b, deal.aGets, deal.bGets);
       fillRoster(lg, A.tid); fillRoster(lg, deal.b);
     }
-    // last resort: the worst contract for the money is released
+    // last resort: the worst contract for the money is released (half of it stays on the books)
     while (buyouts && payroll(lg, A.tid) > hc + 1e-9) {
       const h = horizonOf(A);
       const p = A.roster.map(pid => lg.players[pid]).filter(x => x.contract.sal > MIN_SAL * 1.5)
         .sort((x, y) => pv(lg, x, h, A.tid) / x.contract.sal - pv(lg, y, h, A.tid) / y.contract.sal)[0];
       if (!p) break;
       A.roster = A.roster.filter(x => x !== p.id);
+      releaseDead(lg, A.tid, p);
       p.tid = null;
-      lg.news.push({ s: lg.season, t: `${A.name} release ${tagOf(p, lg.season)} to get under the hard cap.` });
+      lg.news.push({ s: lg.season, t: `${A.name} release ${tagOf(p, lg.season)} to get under the hard cap (half his salary stays on the books).` });
       p.contract = { sal: MIN_SAL, exp: lg.season };
     }
   }
@@ -758,6 +777,8 @@ export function aiResponse(lg: League, a: string, b: string, aGets: TradeAsset[]
   const th = threshold(lg, b, true);
   const t = lg.teams[b];
   if (!e.ok) return { accept: false, e, text: e.reason! };
+  // the AI does not give away clearly more market value than it gets, however well the package fits its plans
+  if (marketValue(lg, aGets) > Math.max(0, marketValue(lg, bGets)) * 1.25 + 0.6) return { accept: false, e, text: `${t.name} decline: on the open market they would be giving away far more than they get.` };
   if (e.gainB >= th) return { accept: true, e, text: `${t.name} accept.` };
   const gap = th - e.gainB;
   const inB = bGets.filter(x => x.pid).map(x => lg.players[x.pid!]), outB = aGets.filter(x => x.pid).map(x => lg.players[x.pid!]);
@@ -883,7 +904,7 @@ export function aiDraftTrade(lg: League, rng: Rng): TradeRec | null {
   if (!best) return null;
   if (tradeRules(lg, X.tid, best.Yt.tid, best.aGets, [{ pick: curPk }])) return null;
   // a board can be wrong: no deal the market would call a giveaway
-  if (!looksFair(lg, best.aGets, [{ pick: curPk }], true)) return null;
+  if (!looksFair(lg, best.aGets, [{ pick: curPk }])) return null;
   const rec = executeTrade(lg, X.tid, best.Yt.tid, best.aGets, [{ pick: curPk }]);
   lg.news.push({ s: Y, t: `Draft-day trade: ${best.Yt.name} move up to No. ${i + 1}; ${X.name} move down to No. ${best.j + 1}${best.aGets.length > 1 ? ` and add ${describeAssets(lg, best.aGets.slice(1))}` : ''}.` });
   return rec;
