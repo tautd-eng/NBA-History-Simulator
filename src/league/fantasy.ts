@@ -2,9 +2,8 @@
 // teams build new rosters in a snake draft. AI teams pick by value and need.
 import { League, Player } from '../types';
 import { rngOf, beginFirstSeason } from './league';
-import { valueFromZ, askingSalary, contractYears, MIN_SAL, hardCap, payroll } from '../ai/value';
-import { K, OVR_VOLUME } from '../data';
-import { hiddenBoost } from '../hboost';
+import { askingSalary, contractYears, MIN_SAL, hardCap, payroll } from '../ai/value';
+import { marketPlayerValue } from '../ai/trades';
 import { posNum } from '../engine/game';
 import { ageIn, tagOf, addTx } from '../players';
 
@@ -25,18 +24,18 @@ export function fantasyPool(lg: League): Player[] {
 }
 
 /**
- * How a front office rates a player in a fantasy draft: what he gives a team over the next years (age and the
- * aging curve included), about a third by impact and two thirds by the overall rating (scoring load counts there), plus the
- * upside scouts see in a young player – the higher he was drafted, the more of it.
+ * How a front office rates a player in a fantasy draft: exactly as the trade market will rate him once the
+ * season starts (impact and overall, age, a young player's upside, on the market-value contract he signs after
+ * the draft) – so a player is not worth more on draft day than in a trade a week later.
  */
-export function fantasyValue(p: Player, season: number) {
-  const age = ageIn(p, season), hb = hiddenBoost(p.id);
-  const pick = p.draft?.pick || 61;
-  const ped = pick <= 3 ? 1.2 : pick <= 10 ? 0.9 : pick <= 20 ? 0.6 : pick <= 30 ? 0.4 : 0.2;
-  const upside = age <= 23 ? (24 - age) * 0.3 * ped : 0;
-  const impact = valueFromZ(p.z, age, 'middle', hb + upside);
-  const overall = valueFromZ(p.z, age, 'middle', hb + upside + OVR_VOLUME * p.z[K.usg]);
-  return 0.35 * impact + 0.65 * overall;
+export function fantasyValue(lg: League, p: Player) {
+  const S = lg.season, age = ageIn(p, S);
+  const years = age <= 29 ? 3 : age <= 32 ? 2 : 1;
+  const c = p.contract;
+  p.contract = { sal: askingSalary(p, S), exp: S - 1 + years };
+  const v = marketPlayerValue(lg, p);
+  p.contract = c;
+  return v;
 }
 
 function aiChoice(lg: League, tid: string): Player {
@@ -47,15 +46,15 @@ function aiChoice(lg: League, tid: string): Player {
   const guards = roster.filter(p => posNum(p.pos) <= 2).length;
   let best: Player | null = null, bestV = -1e9;
   for (const p of fantasyPool(lg)) {
-    let v = fantasyValue(p, lg.season);
-    const pn = posNum(p.pos);
+    let v = fantasyValue(lg, p);
+    const pn = posNum(p.pos), m = Math.abs(v);
     if (roster.length >= 3) {
-      if (pn >= 4 && bigs < 2) v *= 1.15;
-      if (pn <= 2 && guards < 2) v *= 1.15;
-      if (pn >= 4 && bigs >= 5) v *= 0.8;
-      if (pn <= 2 && guards >= 5) v *= 0.8;
+      if (pn >= 4 && bigs < 2) v += 0.15 * m;
+      if (pn <= 2 && guards < 2) v += 0.15 * m;
+      if (pn >= 4 && bigs >= 5) v -= 0.2 * m;
+      if (pn <= 2 && guards >= 5) v -= 0.2 * m;
     }
-    v += rng.normal() * (1.2 - t.gm.scouting) * 2;
+    v += rng.normal() * (1.2 - t.gm.scouting) * 0.6;
     if (v > bestV) { bestV = v; best = p; }
   }
   lg.rng = [...rng.s] as any;

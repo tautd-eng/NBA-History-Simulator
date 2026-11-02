@@ -574,6 +574,8 @@ export function looksFair(lg: League, aGets: TradeAsset[], bGets: TradeAsset[], 
   }
   return true;
 }
+/** Neutral market value of one player (the same number the fairness check and the trade market use). */
+export function marketPlayerValue(lg: League, p: Player) { fresh(lg); return pv(lg, p, 'middle'); }
 /** Neutral market value of a package, bad contracts below zero. */
 function marketValue(lg: League, xs: TradeAsset[]) {
   let v = 0;
