@@ -10,13 +10,13 @@
 // in any skill, or a talent spread that is too wide or too flat, is pulled back
 // part of the way. With the destiny slider at 100% the sim already follows the
 // real careers, so the guard does almost nothing there.
-import { H, NK, K, agingIndex, bpmOf, ovrOf, LAST_SEASON, FIRST_SEASON, era } from '../data';
+import { H, NK, K, agingIndex, bpmOf, ovrOf, LAST_SEASON, FIRST_SEASON, era, shownOvr } from '../data';
 import { Rng } from '../rng';
 import { League, Player, StatLine, emptyLine, addLine } from '../types';
 import { ageIn, realTarget, snapRatings } from '../players';
 import { zClamp } from '../ai/value';
 
-export const DEV = { noise: 0.32, ar: 0.55, maxOvrStep: 8, soft: 2.7, maxSkillStep: 0.5, primeDrop: 2.5 };
+export const DEV = { noise: 0.32, ar: 0.55, maxOvrStep: 8, soft: 2.7, maxSkillStep: 0.5, primeDrop: 2.5, maxUp: 6, rookieUp: 5 };
 /**
  * Leniency for young players: up to maxAge, a season slightly below expectations
  * (performance signal above -deadZone OVR) does not hurt, a flop (below `flop`)
@@ -248,6 +248,16 @@ export function develop(lg: League, rng: Rng) {
       if (drop < -maxDrop) {
         let lo = 0, hi = 1; // largest share of this summer's change that keeps the drop within the limit
         for (let it = 0; it < 12; it++) { const t = (lo + hi) / 2; if (ovrOf(z0.map((v, i) => v + t * (p.z[i] - v))) - o0 >= -maxDrop) lo = t; else hi = t; }
+        for (let i = 0; i < NK; i++) p.z[i] = z0[i] + lo * (p.z[i] - z0[i]);
+      }
+    }
+    // nobody jumps more than a few overall points in one summer (a rookie even less): big leaps happen over years
+    {
+      const rookie = p.entered >= Y;
+      const capUp = rookie ? DEV.rookieUp : DEV.maxUp, o0 = shownOvr(z0);
+      if (shownOvr(p.z) - o0 > capUp) {
+        let lo = 0, hi = 1;
+        for (let it = 0; it < 12; it++) { const t = (lo + hi) / 2; if (shownOvr(z0.map((v, i) => v + t * (p.z[i] - v))) - o0 <= capUp) lo = t; else hi = t; }
         for (let i = 0; i < NK; i++) p.z[i] = z0[i] + lo * (p.z[i] - z0[i]);
       }
     }

@@ -97,7 +97,15 @@ export function prospectZ(pid: string, draftYear: number, destiny: number, rng: 
   const tgt = realTarget(pid, draftYear + 1) ?? (hp?.s.length ? { z: hp.s[0][7], mp: hp.s[0][3], interp: true } : undefined);
   if (tgt) return base.map((v, i) => v + destiny * (tgt.z[i] - v));
   // never played in the NBA: in the destiny world he was below his slot
-  return base.map((v, i) => v - destiny * (i === K.tov || i === K.pf ? -0.6 : 0.6));
+  const z = base.map((v, i) => v - destiny * (i === K.tov || i === K.pf ? -0.6 : 0.6));
+  // a prospect nobody has seen in the NBA yet can't enter as a finished star: a ceiling by draft slot
+  const cap = pick <= 3 ? 80 : pick <= 10 ? 78 : pick <= 30 ? 76 : 73;
+  if (shownOvr(z) > cap) {
+    let lo = 0, hi = 1;
+    for (let it = 0; it < 14; it++) { const t = (lo + hi) / 2; if (shownOvr(z.map((v, i) => prior[i] + t * (v - prior[i]))) <= cap) lo = t; else hi = t; }
+    return z.map((v, i) => prior[i] + lo * (v - prior[i]));
+  }
+  return z;
 }
 
 export function playerBpm(p: Player) { return bpmOf(p.z); }
