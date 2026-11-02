@@ -2,7 +2,9 @@
 // teams build new rosters in a snake draft. AI teams pick by value and need.
 import { League, Player } from '../types';
 import { rngOf, beginFirstSeason } from './league';
-import { playerValue, askingSalary, contractYears, MIN_SAL } from '../ai/value';
+import { valueFromZ, askingSalary, contractYears, MIN_SAL } from '../ai/value';
+import { K, OVR_VOLUME } from '../data';
+import { hiddenBoost } from '../hboost';
 import { posNum } from '../engine/game';
 import { ageIn, tagOf, addTx } from '../players';
 
@@ -22,6 +24,21 @@ export function fantasyPool(lg: League): Player[] {
   return Object.values(lg.players).filter(p => !p.tid && !p.retired && !(p as any).stash);
 }
 
+/**
+ * How a front office rates a player in a fantasy draft: what he gives a team over the next years (age and the
+ * aging curve included), about a third by impact and two thirds by the overall rating (scoring load counts there), plus the
+ * upside scouts see in a young player – the higher he was drafted, the more of it.
+ */
+export function fantasyValue(p: Player, season: number) {
+  const age = ageIn(p, season), hb = hiddenBoost(p.id);
+  const pick = p.draft?.pick || 61;
+  const ped = pick <= 3 ? 1.2 : pick <= 10 ? 0.9 : pick <= 20 ? 0.6 : pick <= 30 ? 0.4 : 0.2;
+  const upside = age <= 23 ? (24 - age) * 0.3 * ped : 0;
+  const impact = valueFromZ(p.z, age, 'middle', hb + upside);
+  const overall = valueFromZ(p.z, age, 'middle', hb + upside + OVR_VOLUME * p.z[K.usg]);
+  return 0.35 * impact + 0.65 * overall;
+}
+
 function aiChoice(lg: League, tid: string): Player {
   const rng = rngOf(lg);
   const t = lg.teams[tid];
@@ -30,7 +47,7 @@ function aiChoice(lg: League, tid: string): Player {
   const guards = roster.filter(p => posNum(p.pos) <= 2).length;
   let best: Player | null = null, bestV = -1e9;
   for (const p of fantasyPool(lg)) {
-    let v = playerValue(p, lg.season, 'middle');
+    let v = fantasyValue(p, lg.season);
     const pn = posNum(p.pos);
     if (roster.length >= 3) {
       if (pn >= 4 && bigs < 2) v *= 1.15;
