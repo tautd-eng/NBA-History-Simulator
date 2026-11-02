@@ -536,14 +536,29 @@ function Setup({ onStart, onLoad }: any) {
 }
 
 // ---------------------------------------------------------------- overview
+/**
+ * A collapsible overview panel: click its heading to fold it to a one-line bar (remembered per browser).
+ * `sel` picks the panel's heading element (default its first h2).
+ */
+function Fold({ id, title, sel = 'h2', children }: any) {
+  const key = 'nba-fold-' + id;
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) !== '0'; } catch { return true; } });
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { const h = ref.current?.querySelector(sel); if (h) h.classList.add('fold-h'); });
+  const set = (v: boolean) => { setOpen(v); try { localStorage.setItem(key, v ? '1' : '0'); } catch { /* storage unavailable */ } };
+  if (!children) return null;
+  if (!open) return <div className="panel fold-closed" role="button" tabIndex={0} onClick={() => set(true)} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && set(true)}><h2>{title}</h2></div>;
+  return <div className="fold" ref={ref} onClick={e => { const h = (e.target as HTMLElement).closest('.fold-h'); if (h && ref.current?.contains(h)) set(false); }}>{children}</div>;
+}
+
 function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sampler, onSaved, goFA, onTick }: any) {
   const last = lg.history[lg.history.length - 1];
   if (lg.phase === 'draft') return (
     <div className="col">
       <DraftRoom lg={lg} onChange={onSaved} onTick={onTick} openPlayer={openPlayer} openTeam={openTeam} />
       <div className="grid-2">
-        <section className="col">{last && <SeasonCard lg={lg} s={last} openPlayer={openPlayer} />}<Standings lg={lg} openTeam={openTeam} /></section>
-        <section className="col"><Reporter lg={lg} sampler={sampler} busy={busy} onSaved={onSaved} /><News lg={lg} /></section>
+        <section className="col">{last && <Fold id="results" title="Season results"><SeasonCard lg={lg} s={last} openPlayer={openPlayer} /></Fold>}<Fold id="standings" title="Standings"><Standings lg={lg} openTeam={openTeam} /></Fold></section>
+        <section className="col"><Fold id="reporter" title="Daily roundup" sel=".eyebrow"><Reporter lg={lg} sampler={sampler} busy={busy} onSaved={onSaved} /></Fold><Fold id="news" title="League news"><News lg={lg} /></Fold></section>
       </div>
     </div>
   );
@@ -552,26 +567,26 @@ function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sam
       {lg.phase === 'freeagency' ? <FAHub lg={lg} onChange={onSaved} openPlayer={openPlayer} openTeam={openTeam} goFA={goFA} />
         : <div className="panel accent"><h2>Draft complete</h2><p className="note">Click “To free agency” at the top.</p></div>}
       <div className="grid-2">
-        <section className="col">{last && <SeasonCard lg={lg} s={last} openPlayer={openPlayer} />}</section>
-        <section className="col"><News lg={lg} /></section>
+        <section className="col">{last && <Fold id="results" title="Season results"><SeasonCard lg={lg} s={last} openPlayer={openPlayer} /></Fold>}</section>
+        <section className="col"><Fold id="news" title="League news"><News lg={lg} /></Fold></section>
       </div>
     </div>
   );
   return (
     <div className="grid-2">
       <section className="col">
-        <Today lg={lg} watch={watch} clutch={clutch} busy={busy} openGame={openGame} />
-        {lg.phase === 'playoffs' || (lg.series.length && lg.phase !== 'regular') ? <Bracket lg={lg} openTeam={openTeam} openGame={openGame} /> : null}
-        <Standings lg={lg} openTeam={openTeam} />
+        <Fold id="today" title={lg.phase === 'playoffs' ? 'Next playoff games' : 'Today\'s games'}><Today lg={lg} watch={watch} clutch={clutch} busy={busy} openGame={openGame} /></Fold>
+        {lg.phase === 'playoffs' || (lg.series.length && lg.phase !== 'regular') ? <Fold id="bracket" title={`${lg.season} Playoffs`}><Bracket lg={lg} openTeam={openTeam} openGame={openGame} /></Fold> : null}
+        <Fold id="standings" title="Standings"><Standings lg={lg} openTeam={openTeam} /></Fold>
       </section>
       <section className="col">
         {lg.phase === 'regular' && <SeasonPreview lg={lg} openTeam={openTeam} />}
-        {lg.phase === 'playoffs' && <PlayoffPreviews lg={lg} openGame={openGame} />}
-        {lg.phase === 'playoffs' && lg.seasonAwards && <RegAwardsCard lg={lg} a={lg.seasonAwards} openPlayer={openPlayer} />}
-        {last && (lg.phase === 'draft' || lg.phase === 'offseason') && <SeasonCard lg={lg} s={last} openPlayer={openPlayer} />}
-        <TodayGames lg={lg} openGame={openGame} />
-        <Reporter lg={lg} sampler={sampler} busy={busy} onSaved={onSaved} />
-        <News lg={lg} />
+        {lg.phase === 'playoffs' && <Fold id="series" title="Series previews"><PlayoffPreviews lg={lg} openGame={openGame} /></Fold>}
+        {lg.phase === 'playoffs' && lg.seasonAwards && <Fold id="awards" title="Awards"><RegAwardsCard lg={lg} a={lg.seasonAwards} openPlayer={openPlayer} /></Fold>}
+        {last && (lg.phase === 'draft' || lg.phase === 'offseason') && <Fold id="results" title="Season results"><SeasonCard lg={lg} s={last} openPlayer={openPlayer} /></Fold>}
+        <Fold id="latest" title="Latest games"><TodayGames lg={lg} openGame={openGame} /></Fold>
+        <Fold id="reporter" title="Daily roundup" sel=".eyebrow"><Reporter lg={lg} sampler={sampler} busy={busy} onSaved={onSaved} /></Fold>
+        <Fold id="news" title="League news"><News lg={lg} /></Fold>
       </section>
     </div>
   );

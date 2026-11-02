@@ -774,3 +774,10 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .dev-row input[type=password] { flex: 1; min-width: 200px; }
 .dev-cloud { display: grid; gap: 6px; }
 .dev-auto { display: inline-flex; gap: 6px; align-items: center; font-size: 0.85rem; }
+
+/* collapsible overview panels */
+.fold .fold-h { cursor: pointer; }
+.fold .fold-h::before { content: '▾ '; color: var(--muted); }
+.fold-closed { cursor: pointer; padding-top: 10px; padding-bottom: 10px; }
+.fold-closed h2 { margin: 0; }
+.fold-closed h2::before { content: '▸ '; color: var(--muted); }
