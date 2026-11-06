@@ -112,6 +112,9 @@ const hyp = Math.hypot;
 /** small deterministic generator for a window's cosmetic choices */
 function gen(seed: number) { let s = (seed * 2654435761) >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 
+/** Big-head cartoon proportions for the arena: a shorter body under a much larger head. */
+const TOON = { body: 0.74, head: 1.85 };
+
 /** A slow-motion replay is on screen: the live viewer holds its clock until it ends. */
 export const REPLAY = { on: false };
 
@@ -163,6 +166,7 @@ export class PixelCourt {
   benchCache = new Map<string, HTMLCanvasElement>();
   R = 1; // extra resolution of the canvas (crisp text and overlays)
   Rw = 1; // arena: resolution of the pixel buffer the scene is drawn into (scaled up ×R)
+  toon = true; // arena: big-head cartoon proportions (off: true-to-life proportions)
   buf: HTMLCanvasElement | null = null;
   courtL: Layer | null = null;
   private emblemImg: HTMLImageElement | null = null;
@@ -2545,9 +2549,9 @@ export class PixelCourt {
   private heightPx(lk: Look, d = 25) {
     // differences in height a little exaggerated, so a point guard next to a centre reads at a glance
     const ht = lk.ht || 79, eff = 79 + (ht - 79) * 1.45;
-    return (eff / 12) * VZ * depthScale(d) * this.K * 1.08;
+    return (eff / 12) * VZ * depthScale(d) * this.K * 1.08 * (this.toon ? TOON.body : 1);
   }
-  private headU(d = 25) { return (79 / 12) * VZ * depthScale(d) * this.K * 1.32 / 100; } // a touch larger than life: faces read at broadcast distance
+  private headU(d = 25) { return (79 / 12) * VZ * depthScale(d) * this.K * 1.32 / 100 * (this.toon ? TOON.head : 1); } // a touch larger than life: faces read at broadcast distance
   private kitOf(side: Side) {
     const [prim, sec] = this.tc(side);
     return side === 'h'

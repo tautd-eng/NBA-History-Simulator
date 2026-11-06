@@ -434,7 +434,7 @@ function drawHead(ctx: Ctx, cx: number, cy: number, u: number, f: number, b: Bod
   else oval(ctx, cx, cy, rx, ry, shade(skin, 0.9), -1e9, 1e9, cx + rx * 0.5);
   if (!back) oval(ctx, cx + fx * 1.2 * u, cy + 3.6 * u, rx * (side ? 0.72 : 0.8), ry * 0.42, skin, cy + 2 * u);
   // cheekbone light
-  if (!back) oval(ctx, cx + (side ? f * 1.8 : -2.2) * u, cy + 0.8 * u, 1.4 * u, 1 * u, skinL);
+  if (!back) oval(ctx, cx + (side ? f * 1.8 : -2.2) * u, cy + 1.2 * u, 1.3 * u, 0.9 * u, shade(skin, 1.06));
   // ears
   if (side) { oval(ctx, cx - f * 1.9 * u, cy + 0.6 * u, 1.1 * u, 1.7 * u, shade(skin, 0.86)); oval(ctx, cx - f * 1.75 * u, cy + 0.7 * u, 0.45 * u, 0.8 * u, shade(skin, 0.7)); }
   else { oval(ctx, cx - rx - 0.3 * u, cy + 0.6 * u, 1.2 * u, 1.9 * u, skinD); oval(ctx, cx + rx + 0.3 * u, cy + 0.6 * u, 1.2 * u, 1.9 * u, skinD); }
