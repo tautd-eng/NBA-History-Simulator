@@ -27,6 +27,7 @@ export interface AthOpts {
   suit?: string;      // a coach: suit of this colour (long sleeves and trousers)
   hand?: number;      // dribbling hand (1 = front hand)
   headU?: number;     // head size unit (the same for everybody), defaults to H/100
+  crisp?: boolean;    // hard pixel edges (cartoon pixel-art look)
   from?: AthPose;     // the pose he is coming out of
   blend?: number;     // 0 = still in `from`, 1 = fully in `pose`
   t?: number;         // time left in a timed pose (animations that unfold)
@@ -434,7 +435,7 @@ function drawHead(ctx: Ctx, cx: number, cy: number, u: number, f: number, b: Bod
   else oval(ctx, cx, cy, rx, ry, shade(skin, 0.9), -1e9, 1e9, cx + rx * 0.5);
   if (!back) oval(ctx, cx + fx * 1.2 * u, cy + 3.6 * u, rx * (side ? 0.72 : 0.8), ry * 0.42, skin, cy + 2 * u);
   // cheekbone light
-  if (!back) oval(ctx, cx + (side ? f * 1.8 : -2.2) * u, cy + 1.2 * u, 1.3 * u, 0.9 * u, shade(skin, 1.06));
+
   // ears
   if (side) { oval(ctx, cx - f * 1.9 * u, cy + 0.6 * u, 1.1 * u, 1.7 * u, shade(skin, 0.86)); oval(ctx, cx - f * 1.75 * u, cy + 0.7 * u, 0.45 * u, 0.8 * u, shade(skin, 0.7)); }
   else { oval(ctx, cx - rx - 0.3 * u, cy + 0.6 * u, 1.2 * u, 1.9 * u, skinD); oval(ctx, cx + rx + 0.3 * u, cy + 0.6 * u, 1.2 * u, 1.9 * u, skinD); }
@@ -475,7 +476,7 @@ function drawHead(ctx: Ctx, cx: number, cy: number, u: number, f: number, b: Bod
     limb(ctx, ex - 1.5 * u * w, cy - 2.15 * u, ex + 1.4 * u * w, cy - 2.55 * u, 0.85 * u, 0.6 * u, brow);
   };
   // soft shading: light on the forehead, shadow under the cheekbones
-  oval(ctx, cx - fx * 0.6 * u, cy - 3.2 * u, rx * 0.55, ry * 0.25, shade(skin, 1.1), cy - ry + 2.4 * u, cy - 2.4 * u);
+
   if (side) eye(cx + f * 2.5 * u, 0.85); else { eye(cx - 2.35 * u); eye(cx + 2.35 * u); }
   if (b.goggles) { limb(ctx, cx - rx, cy - 0.3 * u, cx + rx, cy - 0.3 * u, 2.8 * u, 2.8 * u, '#1d1d22'); if (side) oval(ctx, cx + f * 2.6 * u, cy - 0.3 * u, 1.7 * u, 1.4 * u, '#7fb6d9'); else { oval(ctx, cx - 2.3 * u, cy - 0.3 * u, 1.6 * u, 1.3 * u, '#7fb6d9'); oval(ctx, cx + 2.3 * u, cy - 0.3 * u, 1.6 * u, 1.3 * u, '#7fb6d9'); } }
   // nose
@@ -505,14 +506,22 @@ const mixHex = (a: string, b: string, t: number) => {
 let bufA: HTMLCanvasElement | null = null, bufB: HTMLCanvasElement | null = null;
 export function drawAthleteOutlined(ctx: Ctx, X: number, Y: number, o: AthOpts, line = 'rgba(14,12,18,0.85)'): Hands {
   if (typeof document === 'undefined') return drawAthlete(ctx, X, Y, o);
-  const W = Math.ceil(o.H * 1.4) + 8, Hh = Math.ceil(o.H * 1.45) + 8;
+  const W = Math.ceil(o.H * (o.crisp ? 2.2 : 1.4)) + 8, Hh = Math.ceil(o.H * (o.crisp ? 1.9 : 1.45)) + 8;
   if (!bufA) { bufA = document.createElement('canvas'); bufB = document.createElement('canvas'); }
   for (const c of [bufA, bufB!]) if (c.width < W || c.height < Hh) { c.width = Math.max(c.width, W); c.height = Math.max(c.height, Hh); }
   const a = bufA.getContext('2d')!, bb = bufB!.getContext('2d')!;
   a.setTransform(1, 0, 0, 1, 0, 0); a.clearRect(0, 0, W, Hh);
   const ox = Math.round(W / 2), oy = Hh - 4;
   const fx = X - Math.round(X), fy = Y - Math.round(Y);
-  const hands = drawAthlete(a, ox + fx, oy + fy, o);
+  let hands: Hands;
+  if (o.crisp) { a.save(); a.translate(ox + fx, 0); a.scale(1.18, 1); hands = drawAthlete(a, 0, oy + fy, o); a.restore(); const wx = (p: { x: number; y: number }) => ({ x: ox + fx + p.x * 1.18, y: p.y }); hands = { front: wx(hands.front), back: wx(hands.back), head: wx(hands.head) }; }
+  else hands = drawAthlete(a, ox + fx, oy + fy, o);
+  if (o.crisp) {
+    // pixel art: every pixel either there or not (no soft anti-aliased edges)
+    const im = a.getImageData(0, 0, W, Hh), px = im.data;
+    for (let i = 3; i < px.length; i += 4) px[i] = px[i] < 110 ? 0 : 255;
+    a.putImageData(im, 0, 0);
+  }
   bb.setTransform(1, 0, 0, 1, 0, 0); bb.globalCompositeOperation = 'source-over'; bb.clearRect(0, 0, W, Hh);
   bb.drawImage(bufA, 0, 0);
   bb.globalCompositeOperation = 'source-in'; bb.fillStyle = line; bb.fillRect(0, 0, W, Hh);

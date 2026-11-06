@@ -228,7 +228,7 @@ export class PixelCourt {
     if (looks) this.o.looks = looks;
     const R = this.arena ? 2 : 1;
     // the arena scene is drawn at the canvas' full resolution: faces, numbers and shoes keep their detail
-    const Rw = this.arena ? 2 : 1;
+    const Rw = this.arena && !this.toon ? 2 : 1; // the cartoon look is real pixel art: drawn small, scaled up crisp
     if (Rw !== this.Rw) { this.Rw = Rw; this.buf = null; this.courtL = null; this.standsL = null; }
     if (R !== this.R || this.canvas.width !== VW * S * R) {
       this.R = R;
@@ -2483,7 +2483,7 @@ export class PixelCourt {
     for (const w of this.waiting) {
       const at = this.tableSpot(w.side, w.i), q = this.proj(at.x, at.d), P = this.toCanvas(q.x, q.y);
       const lk = this.looksOf(w.pid);
-      drawAthlete(g, Math.round(P.X), Math.round(P.Y), { H: this.heightPx(lk, at.d), headU: this.headU(at.d), face: w.side === 'h' ? 1 : -1, pose: 'rest', ph: 0, amp: 0, air: false, kit: this.kitOf(w.side), body: lk, shorts: this.shortsLen(), font: this.font, view: 'side' });
+      drawAthlete(g, Math.round(P.X), Math.round(P.Y), { H: this.heightPx(lk, at.d), crisp: this.toon, headU: this.headU(at.d), face: w.side === 'h' ? 1 : -1, pose: 'rest', ph: 0, amp: 0, air: false, kit: this.kitOf(w.side), body: lk, shorts: this.shortsLen(), font: this.font, view: 'side' });
     }
   }
 
@@ -2504,7 +2504,7 @@ export class PixelCourt {
       let img = this.benchCache.get(key);
       if (!img && typeof document !== 'undefined') {
         const c = document.createElement('canvas'); c.width = Math.ceil(H * 1.5); c.height = Math.ceil(H * 1.5);
-        drawAthlete(c.getContext('2d')!, c.width / 2, c.height - 4, { H, headU: this.headU(-6) * 0.92, face: hash01(pid + 'f') < 0.5 ? 1 : -1, pose, ph: 0, amp: 0, air: false, kit: this.kitOf(side), body: lk, shorts: this.shortsLen(), font: this.font, num: false, view: 'front' });
+        drawAthlete(c.getContext('2d')!, c.width / 2, c.height - 4, { H, crisp: this.toon, headU: this.headU(-6) * 0.92, face: hash01(pid + 'f') < 0.5 ? 1 : -1, pose, ph: 0, amp: 0, air: false, kit: this.kitOf(side), body: lk, shorts: this.shortsLen(), font: this.font, num: false, view: 'front' });
         this.benchCache.set(key, img = c);
       }
       if (img) g.drawImage(img, Math.round(X - img.width / 2), Math.round(Y - img.height + 4));
@@ -2518,7 +2518,7 @@ export class PixelCourt {
     const pose: AthPose = mood && mood.t > 0 ? mood.pose : Math.abs(Math.cos(time * 0.35 + ch('p') * 6)) > 0.25 ? 'run' : 'stand';
     const body: Look = { skin: SKIN[Math.floor(ch('s') * SKIN.length)], hair: ch('h') < 0.35 ? 'bald' : 'short', hairColor: ch('g') < 0.4 ? '#9a9a9a' : '#2a1d14', facial: ch('f') < 0.3 ? 'goatee' : 'none', band: false, num: 0, ht: 76, build: 0.65, shoe: '#151515', socks: '#151515' } as any;
     const H = this.heightPx(body, -2);
-    drawAthlete(g, Math.round(X), Math.round(Y), { H, headU: this.headU(-2), face: side === 'h' ? 1 : -1, pose, ph: time * 4, amp: pose === 'run' ? 0.18 : 0, air: false, kit: { jersey: ch('c') < 0.5 ? '#23262e' : '#3a3f4a', trim: '#e9e9e9', trim2: '#9b2335', shorts: ch('c') < 0.5 ? '#23262e' : '#3a3f4a' }, body, shorts: 0.9, font: this.font, num: false, view: 'side', suit: ch('c') < 0.5 ? '#23262e' : '#3a3f4a' });
+    drawAthlete(g, Math.round(X), Math.round(Y), { H, crisp: this.toon, headU: this.headU(-2), face: side === 'h' ? 1 : -1, pose, ph: time * 4, amp: pose === 'run' ? 0.18 : 0, air: false, kit: { jersey: ch('c') < 0.5 ? '#23262e' : '#3a3f4a', trim: '#e9e9e9', trim2: '#9b2335', shorts: ch('c') < 0.5 ? '#23262e' : '#3a3f4a' }, body, shorts: 0.9, font: this.font, num: false, view: 'side', suit: ch('c') < 0.5 ? '#23262e' : '#3a3f4a' });
   }
 
   private looksOf(pid: string): Look {
@@ -2604,7 +2604,7 @@ export class PixelCourt {
     const turning = (p.ft ?? 1) < 0.09 && sp < 9 && !['shoot', 'layup', 'dunk', 'hook', 'stance', 'fade', 'follow'].includes(pose);
     const view = spinView ? spinView : turning ? 'front' : pose === 'stance' || pose === 'shoot' || pose === 'layup' || pose === 'dunk' || pose === 'hook' ? 'side' : sp > 3 && across > along * 1.4 ? (p.vd < 0 ? 'back' : 'front') : 'side';
     const nm = (this.o.names[p.pid] ?? '').split(' ').slice(1).join(' ').toUpperCase();
-    const hands = drawAthlete(g, Math.round(X), Math.round(Y - lift), { H, headU: this.headU(p.d), face: spinFace ? -face : face, pose: ap, ph: ap === 'stand' || (ap === 'stance' && sp < 2) ? time * 2.6 + hash01(p.pid) * 6 : p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm, hand: p.hand ?? 1, t: p.pt > 0 ? p.pt : 0, from: blend < 1 ? p.fromPose : undefined, blend });
+    const hands = drawAthlete(g, Math.round(X), Math.round(Y - lift), { H, crisp: this.toon, headU: this.headU(p.d), face: spinFace ? -face : face, pose: ap, ph: ap === 'stand' || (ap === 'stance' && sp < 2) ? time * 2.6 + hash01(p.pid) * 6 : p.ph, amp: Math.min(1, sp / 15), air: lift > 2, kit: this.kitOf(p.side), body: lk, shorts: this.shortsLen(), font: this.font, view, name: nm, hand: p.hand ?? 1, t: p.pt > 0 ? p.pt : 0, from: blend < 1 ? p.fromPose : undefined, blend });
     if (this.ball.holder === p.pid && !this.ball.fly) this.drawHeldBall(p, hands, Y, pose, H);
     // on fire: a flicker of flames around a hot shooter
     if (this.hot.get(p.pid) && !this.ff) {

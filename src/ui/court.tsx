@@ -68,7 +68,7 @@ export function CourtCanvas({ home, away, names, sides, pos, events, v, upto, sp
   useEffect(() => { if (court.current && upto == null) court.current.ext = v ?? 0; }, [v]);
   useEffect(() => { if (court.current) court.current.speed = speed; }, [speed]);
   useEffect(() => { if (court.current) { court.current.replays = replays; if (!replays) court.current.pending = null; } }, [replays]);
-  useEffect(() => { if (court.current) { court.current.toon = toon; court.current.benchCache.clear(); } }, [toon]);
+  useEffect(() => { if (court.current) { court.current.toon = toon; court.current.benchCache.clear(); court.current.setStyle(mode, looksFor(names)); } }, [toon]);
   useEffect(() => { court.current?.setStyle(mode, looksFor(names)); }, [mode]);
 
   return <canvas ref={ref} className="pixel-court" aria-label="Court" />;
