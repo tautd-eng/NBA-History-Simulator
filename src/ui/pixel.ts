@@ -291,7 +291,7 @@ export class PixelCourt {
       else if (this.auto) target = Math.min(this.limit, this.v + dt * this.speed);
       const dv = target - this.v;
       if (this.tl && (dv < -0.01 || dv > 3)) { this.pending = null; this.seek(target); }
-      else if (dv > 1e-6) this.advance(dv);
+      else if (dv > 1e-6) { this.advance(dv); this.watchdog(dv); }
       else if (this.auto) { this.behave(); this.physics(dt); this.ballStep(dt); } // waiting for the coach: players settle
       if (this.pending && this.v >= this.pending.at) {
         const pr = this.pending; this.pending = null;
@@ -516,6 +516,45 @@ export class PixelCourt {
   private guardAll(off: Side) {
     for (const [o, d] of this.match) { const dp = this.P(d); if (dp && dp.side !== off) dp.beh = { k: 'guard', man: o, tight: 0 }; }
   }
+  /**
+   * Keeps the picture honest between the scripted moments: a ball left on the floor gets picked up by the
+   * team that has it next, and every man on the floor has a defender while the ball is live.
+   */
+  private looseT = 0;
+  private watchdog(dt: number) {
+    if (!this.tl || this.ff || this.replaying) return;
+    const it = this.tl.items[Math.min(this.cur, this.tl.items.length - 1)];
+    if (!it || it.e.k === 'timeout' || it.e.k === 'period' || it.e.k === 'end') { this.looseT = 0; return; }
+    const b = this.ball;
+    if (!b.holder && !b.fly && b.z <= 1.2) {
+      this.looseT += dt;
+      if (this.looseT > 0.8) {
+        const side = this.possSide(this.cur);
+        const p = this.on(side).sort((a, c) => hyp(a.x - b.x, a.d - b.d) - hyp(c.x - b.x, c.d - b.d))[0];
+        if (p) {
+          if (hyp(p.x - b.x, p.d - b.d) < 1.6) { this.give(p.pid); this.looseT = 0; }
+          else { p.beh = { k: 'spot' }; this.go(p, b.x, b.d, RUN); }
+        }
+      }
+    } else this.looseT = 0;
+    // nobody left alone: a defender without a man takes the nearest unguarded one
+    const hold = b.holder ? this.P(b.holder) : null;
+    if (hold && it.live) {
+      const off = hold.side, def = other(off);
+      const guarded = new Set<string>();
+      for (const q of this.on(def)) { const bh = q.beh as any; if ((bh.k === 'guard' || bh.k === 'mark' || bh.k === 'box' || bh.k === 'zone' || bh.k === 'follow') && (bh.man === undefined || this.P(bh.man)?.side === off)) { if (bh.man) guarded.add(bh.man); if (bh.pid) guarded.add(bh.pid); if (bh.k === 'zone') guarded.add('zone'); } }
+      if (guarded.has('zone')) return;
+      const free = this.on(off).filter(o => !guarded.has(o.pid));
+      const idle = this.on(def).filter(q => { const bh = q.beh as any; return bh.k === 'spot' || ((bh.k === 'guard' || bh.k === 'box') && this.P(bh.man)?.side !== off) || (bh.k === 'guard' && !this.P(bh.man)); });
+      for (const q of idle) {
+        if (!free.length) break;
+        free.sort((a, c) => hyp(a.x - q.x, a.d - q.d) - hyp(c.x - q.x, c.d - q.d));
+        const o = free.shift()!;
+        this.assign(o.pid, q.pid);
+        q.beh = { k: 'guard', man: o.pid, tight: 0 };
+      }
+    }
+  }
   private retreat(def: Side) {
     // the defence sprints back, then picks up its man
     this.ord(def).forEach((p, i) => {
@@ -610,6 +649,9 @@ export class PixelCourt {
           let tx = man.x + dx * f, td = man.d + dd * f;
           const w = db > 18 ? 0.12 : 0.05;
           tx += (bp.x - tx) * w; td += (bp.d - td) * w;
+          // never more than a long closeout away from his man (a big's man may be given a little more room)
+          const gapMax = bigMan ? 10 : 7.5, gp = hyp(tx - man.x, td - man.d);
+          if (gp > gapMax) { tx = man.x + (tx - man.x) * gapMax / gp; td = man.d + (td - man.d) * gapMax / gp; }
           // nobody guards a man 40 feet from the basket: the defence gets back and builds its wall first
           const fromB = hyp(tx - B.x, td - B.d), lim = this.v < this.pressUntil ? 90 : 23; // pressing: pick up full court
           if (fromB > lim) { tx = B.x + (tx - B.x) * lim / fromB; td = B.d + (td - B.d) * lim / fromB; }
@@ -649,6 +691,17 @@ export class PixelCourt {
 
   private physics(dt: number) {
     const bp = this.ballPos();
+    // nobody stands inside anybody else: teammates keep a couple of feet apart, opponents can bump but not overlap
+    const sepP = [...this.players.values()].filter(p => !p.leaving);
+    for (let i = 0; i < sepP.length; i++) for (let j = i + 1; j < sepP.length; j++) {
+      const a = sepP[i], c = sepP[j];
+      const min = a.side === c.side ? 2.4 : 1.3;
+      const dx = c.x - a.x, dd = (c.d - a.d) * 1.4, dist = hyp(dx, dd);
+      if (dist >= min || dist < 1e-4) continue;
+      const push = Math.min(min - dist, 6 * dt) / 2, ux = dx / dist, ud = dd / dist / 1.4;
+      const wa = this.ball.holder === a.pid ? 0.3 : 1, wc = this.ball.holder === c.pid ? 0.3 : 1;
+      a.x -= ux * push * wa; a.d -= ud * push * wa; c.x += ux * push * wc; c.d += ud * push * wc;
+    }
     for (const [pid, p] of this.players) {
       if (p.hang && p.hang > 0) p.hang -= dt;
       else if (p.jd > 0) { p.jt += dt; const u = p.jt / p.jd; if (u >= 1) { p.jd = 0; p.z = 0; } else p.z = p.jh * 4 * u * (1 - u); }
@@ -2551,7 +2604,7 @@ export class PixelCourt {
     const ht = lk.ht || 79, eff = 79 + (ht - 79) * 1.45;
     return (eff / 12) * VZ * depthScale(d) * this.K * 1.08 * (this.toon ? TOON.body : 1);
   }
-  private headU(d = 25) { return (79 / 12) * VZ * depthScale(d) * this.K * 1.32 / 100 * (this.toon ? TOON.head : 1); } // a touch larger than life: faces read at broadcast distance
+  private headU(d = 25) { return (79 / 12) * VZ * depthScale(d) * this.K * 1.45 / 100 * (this.toon ? TOON.head / 1.1 : 1); } // a touch larger than life: faces read at broadcast distance
   private kitOf(side: Side) {
     const [prim, sec] = this.tc(side);
     return side === 'h'
