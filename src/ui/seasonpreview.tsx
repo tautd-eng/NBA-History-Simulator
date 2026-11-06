@@ -78,7 +78,18 @@ export function makePreview(lg: any) {
     const hurt = top8.filter((p: any) => p.injury >= 10).slice(0, 1);
     for (const p of hurt) why.push({ w: 4, good: false, t: `${p.name} starts the season injured (out ~${p.injury} games)` });
     why.sort((a, b) => b.w - a.w);
-    return { tid: t.tid, conf: t.conf, wp, w: Math.round(wp * G), l: G - Math.round(wp * G), why: why.slice(0, 4), lastW: ls?.w, lastL: ls?.l };
+    // material for the team-by-team write-up
+    const xf = ps.filter((p: any) => p !== star && p !== second && ageIn(p, S) <= 23).sort(byB)[0];
+    const extra = {
+      core: ps.slice(0, 3).map((p: any) => ({ id: p.id, n: p.name, o: ovrOf(p.z) })),
+      added: arr.map((p: any) => ({ id: p.id, n: p.name, o: ovrOf(p.z), from: lg.teams[prevTid(p)]?.abbr ?? '?' })),
+      lost: lost.map((p: any) => ({ id: p.id, n: p.name, o: ovrOf(p.z), to: p.retired ? 'retired' : p.tid ? lg.teams[p.tid].abbr : 'FA' })),
+      rook: rook ? { id: rook.id, n: rook.name, pick: rook.draft.pick } : null,
+      xf: xf ? { id: xf.id, n: xf.name, o: ovrOf(xf.z), age: ageIn(xf, S) } : null,
+      mode: t.mode ?? null, strat: t.strategy ?? null, age: Math.round(age * 10) / 10, oR, dR, depthR: depthRank[i], fit,
+      allWhy: why.map(x => ({ t: x.t, good: x.good })),
+    };
+    return { tid: t.tid, conf: t.conf, wp, w: Math.round(wp * G), l: G - Math.round(wp * G), why: why.slice(0, 4), lastW: ls?.w, lastL: ls?.l, ...extra };
   });
   // title odds: stronger teams win series far more often than their win% suggests
   const ex = rows.map(r => Math.exp(0.42 * (r.wp - 0.5) / 0.0245));
@@ -90,8 +101,58 @@ export function makePreview(lg: any) {
 
 export function ensurePreview(lg: any) {
   if (lg.phase !== 'regular' && lg.phase !== 'playoffs') return null;
-  if (!lg.preview || lg.preview.season !== lg.season) lg.preview = makePreview(lg);
+  // (a preview made by an older version has no team write-ups: early in the season it is simply made again)
+  const old = lg.preview && lg.preview.season === lg.season && !lg.preview.rows[0]?.core && lg.phase === 'regular' && (lg.day ?? 0) < 10;
+  if (!lg.preview || lg.preview.season !== lg.season || old) lg.preview = makePreview(lg);
   return lg.preview;
+}
+
+const ORD = (n: number) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th');
+const pickOf = (key: string, xs: string[]) => { let h = 0; for (const c of key) h = (h * 31 + c.charCodeAt(0)) | 0; return xs[Math.abs(h) % xs.length]; };
+const lc = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+
+/** A pundit's paragraph about one team, built from the projection and the reasons behind it. */
+function teamBlurb(lg: any, r: any, confRank: number, nConf: number, S: number) {
+  const name = lg.teams[r.tid].name, key = r.tid + S;
+  const tier = confRank <= 2 ? 'contender' : confRank <= 6 ? 'playoff' : confRank <= 10 ? 'playin' : 'lottery';
+  const conf = r.conf === 'E' ? 'East' : r.conf === 'W' ? 'West' : 'league';
+  const out: string[] = [];
+  out.push(pickOf(key + 'a', ({
+    contender: [`The ${name} start the year as a genuine title threat`, `Few teams have a better case than the ${name}`, `The ${name} are built to play in June`],
+    playoff: [`The ${name} look like a solid playoff team`, `The ${name} should be playing in late April`, `Expect the ${name} in the playoff picture`],
+    playin: [`The ${name} sit right on the play-in line`, `It could go either way for the ${name}`, `The ${name} are a coin flip for the postseason`],
+    lottery: [`It looks like a long winter for the ${name}`, `The ${name} are headed for the lottery`, `Ping-pong balls are the likelier prize for the ${name}`],
+  } as any)[tier]) + ` – projected ${r.w}–${r.l}, ${ORD(confRank)} in the ${conf}.`);
+  const c = r.core ?? [];
+  if (c.length >= 2) {
+    const sup = `${c[1].n} (${c[1].o})${c[2] ? ` and ${c[2].n} (${c[2].o})` : ''}`;
+    out.push(pickOf(key + 'c', [
+      `Everything runs through ${c[0].n} (${c[0].o}), with ${sup} in support.`,
+      `${c[0].n} (${c[0].o}) is the engine; ${sup} ${c[2] ? 'are' : 'is'} next in line.`,
+      `It starts with ${c[0].n} (${c[0].o}) – ${sup} ${c[2] ? 'complete' : 'completes'} the core.`,
+    ]));
+  }
+  const adds = r.added ?? [], lost = r.lost ?? [];
+  if (adds.length || lost.length || r.rook) {
+    const bits: string[] = [];
+    if (adds.length) bits.push(`added ${adds.map((p: any) => `${p.n} from ${p.from}`).join(' and ')}`);
+    if (lost.length) bits.push(`lost ${lost.map((p: any) => `${p.n} (${p.to === 'retired' ? 'retired' : p.to === 'FA' ? 'still a free agent' : 'to ' + p.to})`).join(' and ')}`);
+    if (r.rook) bits.push(`drafted ${r.rook.n} at No. ${r.rook.pick}`);
+    out.push(`Over the summer they ${bits.join(', ').replace(/, ([^,]*)$/, ' and $1')}.`);
+  }
+  const why = r.allWhy ?? r.why ?? [];
+  const good = why.find((x: any) => x.good && !/^Added|^Rookie|^Defending|^Reached|^Built|^Led|^Two stars|one of the/.test(x.t));
+  const bad = why.find((x: any) => !x.good && !/^Lost/.test(x.t));
+  if (good) out.push(`${pickOf(key + 'g', ['The strength:', 'What works:', 'Reason for hope:'])} ${lc(good.t)}.`);
+  if (bad) out.push(`${pickOf(key + 'b', ['The worry:', 'The question mark:', 'What could go wrong:'])} ${lc(bad.t)}.`);
+  if (r.mode === 'tank') out.push('The front office is playing for the draft – veterans could be moved before the deadline.');
+  else if (r.mode === 'allin') out.push('Management has pushed its chips in: expect them to buy at the deadline.');
+  else if (r.mode === 'rising') out.push('A young core is growing up – patience is the plan.');
+  if (r.xf && !c.some((p: any) => p.id === r.xf.id)) out.push(`X-factor: ${r.xf.n} (${r.xf.age}, ${r.xf.o}) – ${pickOf(key + 'x', r.xf.o >= 78
+    ? ['already part of the rotation and still getting better', 'one more step from him and this team looks different', 'young, already useful, and nowhere near his ceiling']
+    : ['a leap from him would change the outlook', 'worth watching: the minutes are there for him', 'raw, but the upside is real'])}.`);
+  else if (r.xf) out.push(`Only ${r.xf.age}, ${r.xf.n} is still getting better – a big reason for optimism.`);
+  return out.join(' ');
 }
 
 function Why({ r }: any) {
@@ -149,6 +210,20 @@ export function SeasonPreview({ lg, openTeam }: any) {
           </table>
         ))}
       </div>
+      {pv.rows[0]?.core && <>
+        <h3>Team by team</h3>
+        {confs.map((c: string) => (
+          <div key={c} className="sp-teams">
+            {confs.length > 1 && <h4>{c === 'E' ? 'Eastern Conference' : 'Western Conference'}</h4>}
+            {pv.rows.filter((r: any) => r.conf === c).map((r: any, i: number, arr: any[]) => (
+              <div key={r.tid} className={`sp-team ${r.tid === lg.userTid ? 'mine' : ''}`}>
+                <div className="sp-head"><TLogo lg={lg} tid={r.tid} size={22} /><b><TL tid={r.tid} /></b><span className="dim">proj. {r.w}–{r.l}{!early && cur(r.tid) ? ` · now ${cur(r.tid)}` : ''} · title {pct(r.odds)}</span></div>
+                <p>{teamBlurb(lg, r, i + 1, arr.length, pv.season)}</p>
+              </div>
+            ))}
+          </div>
+        ))}
+      </>}
       <p className="note">Projection from the rosters before the season{last ? '' : ' (first season of the league – no previous record)'}. Hover a team in the table for the reasons.</p>
     </details>
   );

@@ -53,8 +53,11 @@ export class Timeline {
       v += len; g = Math.max(g, e.t);
       // shot clock after the event
       if (k === 'make2' || k === 'make3' || k === 'drb' || k === 'tov' || k === 'period' || (k === 'ft' && this.lastFt(i))) { sc0 = g; scb = 24; }
-      else if (k === 'orb') { sc0 = g; scb = this.orbReset; }
+      // a blocked shot never hit the rim: the offence keeps the ball but the shot clock runs on
+      else if (k === 'orb' && !(prev && (prev as any).bk)) { sc0 = g; scb = this.orbReset; }
       prev = e;
+      // last two minutes of the fourth quarter and of overtime: the clock stops after a made basket until the inbound
+      if ((k === 'make2' || k === 'make3') && e.p >= 4 && e.c <= 120 && e.c > 0) v += 2.6;
       // who has the ball after this event
       const was = poss;
       if (k === 'drb' || k === 'orb') poss = e.s;

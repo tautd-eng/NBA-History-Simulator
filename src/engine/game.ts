@@ -55,6 +55,7 @@ interface GP {
   ed: ReturnType<typeof edgeTraits>; // role matchups: what he attacks with and what he stops
   e: number;            // energy
   target: number;       // planned minutes
+  inAt?: number; outAt?: number; // game time he last checked in / out (no ping-pong substitutions)
   on: boolean;
   fouls: number;
   st: StatLine;
@@ -144,6 +145,7 @@ export interface PbpEv {
   m?: string;                               // primary defender on the play (matchup)
   v?: string;                               // turnover type: strip, pick (intercepted pass), bad (pass out of bounds), travel, oob, clock (shot clock), charge (offensive foul)
   fb?: 1;                                   // fast break
+  bk?: 1;                                   // the miss was a blocked shot
   call?: string;                            // the offence's situational call (milk, quick, hold, two4one, three)
   d?: [string, string, number][];          // stat deltas [pid, stat, n]
   on?: { h: string[]; a: string[] };       // lineups after a substitution
@@ -211,19 +213,23 @@ function spread(w: number[], total: number, maxMin = C.maxMin) {
 function chooseLineup(side: Side, period: number, rem: number, margin: number, start: boolean, elapsed: number) {
   const avail = side.gps.filter(g => g.fouls < 6 && !g.hurt);
   const garbage = period >= 4 && ((rem < 330 && Math.abs(margin) >= 20) || (rem < 540 && Math.abs(margin) >= 28));
-  const crunch = (period >= 4 && rem < 300 && Math.abs(margin) <= 10) || period > 4;
+  // the closing lineup: the best players finish any game that is still in doubt
+  const crunch = (period >= 4 && ((rem < 300 && Math.abs(margin) <= 12) || (rem < 150 && Math.abs(margin) <= 16))) || period > 4;
   const allowed = period === 1 ? 2 : period === 2 ? 3 : period === 3 ? 4 : 5;
   const look = elapsed + 150;
   const score = (g: GP) => {
     let s: number;
-    if (crunch) s = 100 + g.q * (0.25 + 0.75 * g.e);
+    if (crunch) s = 100 + g.q * (0.6 + 0.4 * g.e) + (g.on && !start ? 2.5 : 0); // the closers stay together
     else if (garbage) s = -g.q + (g.target > 26 ? -1000 : 0);
     else {
       s = (g.target * look) / 2880 - g.st.min;           // minutes "owed" by the plan
       if (g.on && !start) s += C.stay;
       s += g.q * 0.004;
+      // a stint lasts a few minutes: nobody comes in for one trip down the floor and goes straight back out
+      if (!start && g.on && g.inAt !== undefined && elapsed - g.inAt < 120 && g.e > 0.55) s += 20;
+      if (!start && !g.on && g.outAt !== undefined && elapsed - g.outAt < 90) s -= 20;
     }
-    if (g.e < 0.3) s -= 50;
+    if (g.e < (crunch ? 0.08 : 0.3)) s -= 50; // at winning time only true exhaustion keeps a star on the bench
     if (!crunch && g.fouls >= allowed) s -= 6;
     return s;
   };
@@ -242,8 +248,12 @@ function chooseLineup(side: Side, period: number, rem: number, margin: number, s
   }
   // never fewer than five on the floor (a short-handed team plays its fouled-out or hurt men)
   if (five.length < 5) for (const g of side.gps) if (five.length < 5 && !five.includes(g)) five.push(g);
-  for (const g of side.gps) g.on = false;
-  for (const g of five) g.on = true;
+  for (const g of side.gps) {
+    const now = five.includes(g);
+    if (now && !g.on) g.inAt = elapsed;
+    if (!now && g.on) g.outAt = elapsed;
+    g.on = now;
+  }
   side.on = five;
 }
 
@@ -298,6 +308,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   let fastBreak = false, lateClock = false;
   let userFive: string[] | null = null;
   let timeoutsLeft = ctl?.timeouts ?? 0;
+  let orbBy: GP | null = null, lastBlocked = false, scLeft = 24;
+  const orbClock = season >= 2019 ? 14 : 24;
 
   let offense = rng.chance(0.5) ? H : A;
   let period = 1;
@@ -504,18 +516,21 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       while (!possEnded) {
         // possession length: most shots come mid-clock, few with the clock nearly gone
         let dur = first ? T0 * (0.3 + 0.6 * (rng.next() + rng.next())) : T0 * (0.25 + 0.5 * rng.next());
+        // after an offensive rebound the shot clock resets – unless the shot was blocked and never hit the rim
+        if (first) scLeft = 24; else if (!lastBlocked) scLeft = orbClock;
         if (first && fastBreak) dur = 2 + 4 * rng.next();
         else if (first) dur = callDuration(dur, rem);
-        dur = Math.max(2, Math.min(dur, first ? 23.7 : 13.7)); // within the shot clock
+        dur = Math.max(first ? 2 : 1, Math.min(dur, first ? 23.7 : Math.min(orbClock - 0.3, scLeft - 0.3))); // within the shot clock
         lateClock = first && !fastBreak && dur >= 19;
         if (first && offCall === 'milk' && off.pts > def.pts && rem <= 24 && defCall !== 'foul' && period >= 4) dur = rem; // run it all out
         if (dur > rem) dur = rem;
-        tick(dur); rem -= dur; elapsed += dur; curRem = rem;
+        tick(dur); rem -= dur; elapsed += dur; curRem = rem; scLeft -= dur;
         // ahead with the shot clock turned off and nobody fouling: dribble out the clock, no shot
         if (first && offCall === 'milk' && off.pts > def.pts && rem <= 0 && defCall !== 'foul' && period >= 4) {
           ev('hold', off, `${off === H ? '{h}' : '{a}'} dribble out the clock`);
           possEnded = true; break;
         }
+        if (first) orbBy = null;
         const res = first && defCall === 'foul' ? intentionalFoul(off, def) : play(off, def, !first);
         first = false;
         fastBreak = false;
@@ -588,7 +603,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     }
     if (def !== user && late && period >= 4) {
       // trailing late: foul to stop the clock and send a poor shooter to the line
-      if (((lead >= 4 && lead <= 9 && rem < 45) || (lead === 3 && rem < 40 && rem > 24)) && rem > 2) defCall = 'foul';
+      // (down one or two with the shot clock off: foul at once and hope for misses; down three, foul only before a tying three can be set up)
+      if (((lead >= 4 && lead <= 10 && rem < 60) || (lead >= 1 && lead <= 2 && rem < 24) || (lead === 3 && rem < 40 && rem > 12)) && rem > 1.5) defCall = 'foul';
       // down two to four possessions in the last three minutes: press full court after scores
       else if (lead >= 5 && lead <= 14 && rem < 180 && rem > 45 && (ended === 'make' || stopped) && cr.chance(0.55)) defCall = 'pressure';
     }
@@ -625,6 +641,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     // the offence looks for the weak spot: a soft or much smaller defender draws more shots
     const edge = (g: GP) => { const d = guard(g); return C.mmUsg * (defZ - d.def) + C.mmSize * Math.max(-6, Math.min(6, g.p.ht - d.p.ht)) * (g.posNum >= 3.5 ? 1 : 0.4); };
     let actor = on[rng.weighted(on.map(g => g.usg * (0.6 + 0.4 * g.e) * Math.exp(edge(g)) * (offCall === 'three' && !afterOrb ? Math.max(0.05, g.tpr) * 3 : 1)))];
+    // the man who just grabbed the offensive rebound is under the basket: he goes right back up about half the time
+    if (afterOrb && orbBy && on.includes(orbBy) && rng.chance(orbBy.posNum >= 3.5 ? 0.55 : 0.4)) actor = orbBy;
     if (offCall === 'iso' && isoPid && !afterOrb) {
       const iso = on.find(g => g.p.id === isoPid);
       if (iso && cr.chance(0.85)) actor = iso;
@@ -683,8 +701,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         if (log) ev('tov', off, `Offensive foul on ${an} (${actor.fouls}) – ${short(drawer.p.name)} takes the charge`, { m: drawer.p.id, v: 'charge', ...tag });
       } else if (log) {
         const r = cr.next();
-        const v = lc && r < 0.18 ? 'clock' : r < 0.45 ? 'bad' : r < 0.7 ? 'travel' : 'oob';
-        ev('tov', off, v === 'clock' ? `Shot clock violation on ${off === H ? '{h}' : '{a}'}` : v === 'bad' ? `${an} throws it away` : v === 'travel' ? `${an} travels` : `${an} loses it out of bounds`, { m: md.p.id, v, ...tag });
+        const v = lc && r < 0.18 ? 'clock' : r < 0.45 ? 'bad' : r < 0.68 ? 'travel' : r < 0.74 && !afterOrb ? 'backcourt' : 'oob';
+        ev('tov', off, v === 'clock' ? `Shot clock violation on ${off === H ? '{h}' : '{a}'}` : v === 'bad' ? `${an} throws it away` : v === 'travel' ? `${an} travels` : v === 'backcourt' ? `Backcourt violation on ${an}` : `${an} loses it out of bounds`, { m: md.p.id, v, ...tag });
       }
       return 'end';
     }
@@ -702,7 +720,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     if (offCall === 'inside') tprAdj *= 0.15;
     if (dsc === 'zone' && !fb) tprAdj = sigm(logit(Math.min(0.97, Math.max(0.01, tprAdj))) + 0.25); // a zone dares you to shoot
     if (fb) tprAdj *= C.fbThree;
-    const three = rng.chance(afterOrb ? tprAdj * C.putback3 : tprAdj);
+    const three = rng.chance(afterOrb ? (actor === orbBy ? 0.05 : tprAdj * C.putback3) : tprAdj);
     // defence on the shot: his own defender matters most, help defence (team) the rest; size inside.
     // Jumpers meet perimeter defence; shots at the rim meet the best rim protector on the floor.
     const zone = zoneOf(three, actor, fb, afterOrb);
@@ -724,6 +742,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const shift = passQ + homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + fitAll + (three ? e3 : fit2 + e2) + callShift + (defCall === 'pressure' ? 0.08 : 0) + (fb && !three ? C.fbMake : 0) - (lc ? C.lateClock : 0);
     inc(actor, 'fga');
     if (three) inc(actor, 'tpa');
+    lastBlocked = false;
     let made: boolean;
     let blocker: GP | null = null;
     if (three) {
@@ -734,6 +753,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       const pBlk = Math.min(0.3, dOn.reduce((a, g) => a + g.blk, 0) * C.blk * E.blk * blkZ);
       const pMake = zoneP(sigm(logit(actor.p2) + C.p2 + E.p2 + shift), zone);
       if (rng.chance(pBlk)) {
+        lastBlocked = true;
         blocker = dOn[rng.weighted(dOn.map(g => g.blk * (g === md ? 2.5 : 1)))];
         inc(blocker, 'blk');
         made = false;
@@ -763,7 +783,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       }
       return 'end';
     }
-    ev(three ? 'miss3' : 'miss2', off, blocker ? `${short(blocker.p.name)} blocks ${an}${spot.sk ? `'s ${({ dunk: 'dunk attempt', stepback: 'step-back' } as Record<string, string>)[spot.sk] ?? spot.sk}` : ''}` : three ? `${an} misses a three` : `${an} ${MISS[spot.sk] ?? `misses ${what === 'at the rim' ? 'at the rim' : what === 'a putback' ? 'the putback' : 'a mid-range jumper'}`}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, ...(log ? (() => { const ms = on.filter(g => g !== actor); const pp = playOf(actor, ms, three, spot, fb, afterOrb, cr.chance(three ? 0.55 : spot.rim ? 0.4 : 0.35) ? passerOf(ms) : null); return { pl: pp.pl, cr: pp.cr }; })() : {}), m: md.p.id, ...tag });
+    ev(three ? 'miss3' : 'miss2', off, blocker ? `${short(blocker.p.name)} blocks ${an}${spot.sk ? `'s ${({ dunk: 'dunk attempt', stepback: 'step-back' } as Record<string, string>)[spot.sk] ?? spot.sk}` : ''}` : three ? `${an} misses a three` : `${an} ${MISS[spot.sk] ?? `misses ${what === 'at the rim' ? 'at the rim' : what === 'a putback' ? 'the putback' : 'a mid-range jumper'}`}`, { x: spot.x, y: spot.y, sk: spot.sk || undefined, ...(blocker ? { bk: 1 as const } : {}), ...(log ? (() => { const ms = on.filter(g => g !== actor); const pp = playOf(actor, ms, three, spot, fb, afterOrb, cr.chance(three ? 0.55 : spot.rim ? 0.4 : 0.35) ? passerOf(ms) : null); return { pl: pp.pl, cr: pp.cr }; })() : {}), m: md.p.id, ...tag });
     return rebound(off, def, false);
   }
 
@@ -801,7 +821,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const D = def.on.reduce((a, g) => a + g.drb, 0);
     if (rng.chance(O / (O + D))) {
       const g = off.on[rng.weighted(off.on.map(g => g.orb))];
-      inc(g, 'orb');
+      inc(g, 'orb'); orbBy = g;
       ev('orb', off, `${log ? short(g.p.name) : ''} grabs the offensive rebound`);
       return 'orb';
     }

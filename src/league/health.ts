@@ -15,6 +15,7 @@ import { Rng } from '../rng';
 import { League, Player, StatLine, emptyLine, addLine } from '../types';
 import { ageIn, realTarget, snapRatings } from '../players';
 import { zClamp } from '../ai/value';
+import { roleOf } from '../archetypes';
 
 export const DEV = { noise: 0.32, ar: 0.55, maxOvrStep: 8, soft: 2.7, maxSkillStep: 0.5, primeDrop: 2.5, maxUp: 6, rookieUp: 5 };
 /**
@@ -100,7 +101,31 @@ function wls(xs: number[], ys: number[], ws: number[]) {
  * that season; only what a player did above or below that line counts. So the
  * signal is pure over/under-performance and cannot feed on itself.
  */
+/** Weighted ridge regression of y on the whole rating profile (all box-score skills, not defence). */
+function profileFit(zs: number[][], ys: number[], ws: number[]) {
+  const ks = Array.from({ length: NK }, (_, k) => k).filter(k => k !== K.def);
+  const m = ks.length + 1, n = ys.length;
+  if (n < m * 4) return null;
+  const A = Array.from({ length: m }, () => new Array(m).fill(0)), bv = new Array(m).fill(0);
+  for (let i = 0; i < n; i++) {
+    const x = [1, ...ks.map(k => zs[i][k])], w = ws[i];
+    for (let a = 0; a < m; a++) { bv[a] += w * x[a] * ys[i]; for (let c = 0; c < m; c++) A[a][c] += w * x[a] * x[c]; }
+  }
+  const W = ws.reduce((a, x) => a + x, 0);
+  for (let a = 1; a < m; a++) A[a][a] += 0.02 * W;
+  // Gaussian elimination
+  for (let c = 0; c < m; c++) {
+    let piv = c; for (let r = c + 1; r < m; r++) if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
+    [A[c], A[piv]] = [A[piv], A[c]]; [bv[c], bv[piv]] = [bv[piv], bv[c]];
+    if (Math.abs(A[c][c]) < 1e-12) return null;
+    for (let r = 0; r < m; r++) if (r !== c) { const f = A[r][c] / A[c][c]; if (!f) continue; for (let q = c; q < m; q++) A[r][q] -= f * A[c][q]; bv[r] -= f * bv[c]; }
+  }
+  const beta = bv.map((v, i) => v / A[i][i]);
+  return (z: number[]) => beta[0] + ks.reduce((a, k, j) => a + beta[j + 1] * z[k], 0);
+}
+
 export function performanceShift(lg: League, Y: number) {
+  if (!OVR_DIR.length) initDev();
   const lines: { p: Player; l: StatLine }[] = [];
   for (const p of Object.values(lg.players)) { const l = seasonLine(p, Y); if (l && l.min >= 60) lines.push({ p, l }); }
   const out = new Map<string, { dz: number[]; ovrGain: number }>();
@@ -157,7 +182,16 @@ export function performanceShift(lg: League, Y: number) {
   // 2) overall production per 36 minutes against what his overall rating predicts
   const xs = lines.map(x => bpmOf(x.p.z)), ys = lines.map(x => gameScore(x.l) / x.l.min * 36), ws = lines.map(x => x.l.min);
   const f = wls(xs, ys, ws);
-  const ores = f ? deCtx(ys.map((y, i) => y - f.fit(xs[i])), lines.map(x => x.p), ws) : [];
+  // what a player with his exact skill profile usually produces in the box score – so a defensive anchor (whose
+  // value barely shows in a box score) or a low-usage role player is measured against players like him, not
+  // against scorers of the same overall rating
+  const prof = profileFit(lines.map(x => x.p.z), ys, ws);
+  const ores0 = f ? deCtx(ys.map((y, i) => y - (prof ? prof(lines[i].p.z) : f.fit(xs[i]))), lines.map(x => x.p), ws) : [];
+  // no role is better or worse at beating its own expectations: take out what is common to a whole role
+  const roleMean = new Map<string, [number, number]>();
+  const roleOfP = lines.map(x => roleOf(x.p.z, x.p.pos).arch.id);
+  ores0.forEach((r, i) => { const m = roleMean.get(roleOfP[i]) ?? [0, 0]; m[0] += ws[i] * r; m[1] += ws[i]; roleMean.set(roleOfP[i], m); });
+  const ores = ores0.map((r, i) => { const m = roleMean.get(roleOfP[i])!; return m[1] > 3000 ? r - m[0] / m[1] : r; });
   if (f) lines.forEach(({ p, l }, i) => {
     const sl = Math.max(0.3, f.slope(xs[i]));
     const bpmShift = Math.max(-4, Math.min(4, ores[i] / sl));

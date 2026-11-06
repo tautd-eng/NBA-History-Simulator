@@ -71,7 +71,19 @@ export function playerParts(lg: League, p: Player, strategy: Horizon, shift = 0)
   // a long injury takes away part of this season
   const n = Object.values(lg.teams).filter(t => t.active).length || 1;
   const G = lg.schedule.length ? lg.schedule.length * 2 / n : 82;
-  const injF = lg.phase === 'regular' || lg.phase === 'playoffs' ? Math.max(0, 1 - (p.injury ?? 0) / Math.max(1, G)) : 1;
+  // (measured against the games his team has left; what does not fit in this season eats into the next one,
+  // and a long layoff also carries the risk that he is not quite the same player when he comes back)
+  const out = p.injury ?? 0;
+  let injF = 1, injF1 = 1;
+  if (out > 0) {
+    if (lg.phase === 'regular') {
+      const left = p.tid ? lg.schedule.filter(g => !g.done && (g.home === p.tid || g.away === p.tid)).length : G / 2;
+      injF = left > 0 ? Math.max(0, 1 - Math.min(out, left) / left) : 0;
+      injF1 = Math.max(0.15, 1 - Math.max(0, out - left) / G);
+    } else if (lg.phase === 'playoffs' || lg.phase === 'draft') injF1 = Math.max(0.15, 1 - out / G);
+    else injF = Math.max(0.15, 1 - out / G);
+    if (out >= 40) { injF *= 0.92; injF1 *= 0.92; }
+  }
   // a young player's future is uncertain both ways, and stars are worth disproportionately more than role players:
   // the spread of outcomes (as for a pick) carries value, the wider the younger he is; a recent high pick also
   // carries the same draft hype a pick at that slot would
@@ -89,7 +101,7 @@ export function playerParts(lg: League, p: Player, strategy: Horizon, shift = 0)
   let prod = 0, cost = 0;
   const years: number[] = [];
   for (let y = 0; y < 5; y++) {
-    const pr = prodY(proj[y], y) * (y === 0 ? injF : 1);
+    const pr = prodY(proj[y], y) * (y === 0 ? injF : y === 1 ? injF1 : 1);
     let c: number, keep = 1;
     if (y < left) c = costOf(p.contract.sal);
     else if (y < left + extLeft) c = costOf(p.ext!.sal);

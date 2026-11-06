@@ -112,6 +112,9 @@ const hyp = Math.hypot;
 /** small deterministic generator for a window's cosmetic choices */
 function gen(seed: number) { let s = (seed * 2654435761) >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 
+/** A slow-motion replay is on screen: the live viewer holds its clock until it ends. */
+export const REPLAY = { on: false };
+
 export class PixelCourt {
   ctx: CanvasRenderingContext2D;
   o: CourtOpts;
@@ -213,7 +216,7 @@ export class PixelCourt {
     };
     this.raf = requestAnimationFrame(loop);
   }
-  stop() { cancelAnimationFrame(this.raf); }
+  stop() { cancelAnimationFrame(this.raf); REPLAY.on = false; }
 
   /** Switch between the classic broadcast court and the arena view. */
   setStyle(style: 'classic' | 'arena', looks?: Record<string, Look>) {
@@ -273,7 +276,7 @@ export class PixelCourt {
       // slow-motion replay of the last play, then back to live
       this.replay.t += dt;
       const u = this.replay.from + this.replay.t * 0.42;
-      if (u >= this.replay.to || this.ext == null || this.ext < this.replay.from - 0.5) { this.replay = null; this.replaying = false; this.seek(this.ext ?? this.v); }
+      if (u >= this.replay.to || this.ext == null || this.ext < this.replay.from - 0.5) { this.replay = null; this.replaying = false; REPLAY.on = false; this.seek(this.ext ?? this.v); }
       else if (u > this.v) this.advance(u - this.v);
     } else {
       let target = this.v;
@@ -285,7 +288,7 @@ export class PixelCourt {
       else if (this.auto) { this.behave(); this.physics(dt); this.ballStep(dt); } // waiting for the coach: players settle
       if (this.pending && this.v >= this.pending.at) {
         const pr = this.pending; this.pending = null;
-        if (this.ext != null && this.extRate < 2.6 && this.replays) { this.replay = { from: pr.from, to: pr.to, t: 0 }; this.replaying = true; this.seek(pr.from); }
+        if (this.ext != null && this.extRate < 2.6 && this.replays) { this.replay = { from: pr.from, to: pr.to, t: 0 }; this.replaying = true; REPLAY.on = true; this.seek(pr.from); }
       }
     }
     if (this.auto && !this.idleFired && this.v >= this.limit - 1e-6) { this.idleFired = true; this.onIdle?.(); }

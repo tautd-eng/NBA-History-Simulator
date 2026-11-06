@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CourtCanvas, BoxPair, rosterMaps, fmtTxt, mmss, periodName } from './court';
 import { colorsOf } from './art';
 import { Timeline } from './timeline';
+import { REPLAY } from './pixel';
 import { nav } from './nav';
 
 const SPEEDS = [[1, '×1'], [2, '×2'], [4, '×4'], [8, '×8'], [24, '×24'], [72, '×72'], [240, '×240']] as const;
@@ -33,6 +34,7 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
     const step = (now: number) => {
       const dt = (now - last) / 1000; last = now;
       setV(x => {
+        if (REPLAY.on) return x; // the game clock waits while a replay is shown
         const nx = Math.min(endV, x + dt * speed);
         if (nx >= endV) setPlaying(false);
         return nx;

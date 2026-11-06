@@ -989,8 +989,11 @@ function retirements(lg: League, rng: Rng, notes: string[]) {
     // walking away while still employable: fitted to real rotation players (500+ minutes, 1980–2018) –
     // quality matters far more than age, so a good 36-year-old usually plays on; past 39 age takes over
     const b = bpmOf(p.z);
-    const base = age < 28 ? 1 / (1 + Math.exp(-((age - 35.5) * 0.9 + (46 - ovr) * 0.09)))
+    const base0 = age < 28 ? 1 / (1 + Math.exp(-((age - 35.5) * 0.9 + (46 - ovr) * 0.09)))
       : 1 / (1 + Math.exp(-(0.22 * (age - 45.3) - 0.47 * b + (age > 39 ? 0.6 * (age - 39) : 0))));
+    // a rotation-calibre player in his twenties practically never walks away on his own
+    const shNow = shownOvr(p.z);
+    const base = shNow >= 74 && age < 32 ? base0 * (age < 30 ? 0.1 : 0.3) : base0;
     let pr = base, hist = 0, uns = 0;
     const lr = lastRealSeason(p.id);
     const last = lr !== undefined ? lr + (p.shift ?? 0) : undefined;
@@ -1009,7 +1012,10 @@ function retirements(lg: League, rng: Rng, notes: string[]) {
     // unsigned for a long time → leaves the league
     if (!p.tid && p.cur.gp === 0 && !p.career.some(c => c.s === Y)) {
       const lastPlayed = Math.max(p.entered, ...p.career.map(c => c.s));
-      if (Y - lastPlayed >= 1) { uns = age >= 30 ? 0.7 : 0.35; pr = Math.max(pr, uns); }
+      // a player who sat out hurt, or who is plainly good enough for a job, comes back instead
+      const hurt = (p.injHist ?? []).some(h => h.s >= Y - 1 && h.g >= 30) || p.injury > 0;
+      const sh = shownOvr(p.z);
+      if (Y - lastPlayed >= 1 && !hurt && (sh < 72 || (age >= 33 && sh < 76))) { uns = (age >= 30 ? 0.7 : 0.35) * (sh >= 70 ? 0.5 : 1); pr = Math.max(pr, uns); }
     }
     if (rng.chance(pr)) {
       (p as any).retWhy = uns >= Math.max(hist, base) ? 'unsigned' : hist > base ? 'history' : 'age';

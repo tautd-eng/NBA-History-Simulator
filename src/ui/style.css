@@ -784,3 +784,10 @@ svg.face { display: inline-block; vertical-align: middle; margin-right: 7px; bor
 .panel.collapsed .fold-keep h2, .panel.collapsed > h2.fold-h { margin: 0; }
 div.fold-h { position: relative; padding-left: 16px; }
 div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-size: 1.1em; }
+
+/* season preview: team by team */
+.sp-teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.sp-teams h4 { grid-column: 1 / -1; margin: 6px 0 0; }
+.sp-team { border: 1px solid var(--line, rgba(127,127,127,.25)); border-radius: 8px; padding: 8px 10px; }
+.sp-team.mine { border-color: var(--accent, #e8743b); }
+.sp-team p { margin: 6px 0 0; line-height: 1.45; font-size: 0.92em; }
