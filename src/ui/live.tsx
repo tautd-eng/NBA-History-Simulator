@@ -25,6 +25,7 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
   const t = tl.gameAt(v);
   const setT = (g: number) => setV(Math.min(endV, tl.vOfGame(g)));
   const raf = useRef(0);
+  const stage = useRef<HTMLDivElement>(null);
   const holdRef = useRef(hold);
   holdRef.current = hold;
 
@@ -127,11 +128,15 @@ export function LiveGame({ lg, data, close, openPlayer, hold }: any) {
           <button onClick={() => { setV(endV); setPlaying(false); }}>To the end</button>
           <button className="ghost" onClick={close}>Close</button>
         </div>
+        {view !== 'chart' && (
+          <div className="live-stage" ref={stage}>
+            <CourtCanvas mode={view} home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos} events={pbp} v={v} replays={replays} />
+            <button className="stage-full" title="Full screen" aria-label="Full screen" onClick={() => { const el: any = stage.current; try { if (document.fullscreenElement) document.exitFullscreen(); else el?.requestFullscreen?.(); } catch { /* not available */ } }}>⛶</button>
+          </div>
+        )}
         <div className="live-grid">
           <div className="live-left">
-            {view !== 'chart' ? (
-              <CourtCanvas mode={view} home={{ tid: home.tid, abbr: home.abbr }} away={{ tid: away.tid, abbr: away.abbr }} names={maps.names} sides={maps.sides} pos={maps.pos} events={pbp} v={v} replays={replays} />
-            ) : (
+            {view !== 'chart' ? null : (
               <div className="court-wrap">
                 <svg viewBox="-1 -1 52 36" className="court" role="img" aria-label="Shot chart">
                   <rect x="0" y="0" width="50" height="34" className="floor" />

@@ -429,7 +429,7 @@ details.more[open] { display: flex; flex-direction: column; gap: 14px; }
 .feed.short { max-height: 200px; }
 .clutch-bottom { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; }
 .confirm-bar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--surface); border: 2px solid var(--accent); border-radius: var(--r); padding: 10px 12px; }
-.clutch .pixel-court { width: min(100%, calc(58vh * 16 / 9)); margin: 0 auto; }
+.clutch .pixel-court { width: min(100%, calc((100vh - 330px) * 16 / 9)); min-width: min(100%, 520px); margin: 0 auto; }
 .field.check > span { display: inline-flex; gap: 8px; align-items: center; }
 .field.check input { accent-color: var(--accent); width: 16px; height: 16px; }
 .search { border: 1px solid var(--line); background: var(--sunk); border-radius: 8px; padding: 6px 10px; min-width: 0; flex: 1 1 160px; }
@@ -791,3 +791,12 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .sp-team { border: 1px solid var(--line, rgba(127,127,127,.25)); border-radius: 8px; padding: 8px 10px; }
 .sp-team.mine { border-color: var(--accent, #e8743b); }
 .sp-team p { margin: 6px 0 0; line-height: 1.45; font-size: 0.92em; }
+
+/* live game: the court gets the full width (as large as the screen height allows) */
+.live { width: min(1480px, 100%); }
+.live-stage { position: relative; width: min(100%, calc((100vh - 210px) * 16 / 9)); min-width: min(100%, 560px); margin: 0 auto; }
+.live-stage .pixel-court { width: 100%; }
+.live-stage:fullscreen { width: 100vw; height: 100vh; max-width: none; background: #000; display: flex; align-items: center; justify-content: center; }
+.live-stage:fullscreen .pixel-court { width: min(100vw, calc(100vh * 16 / 9)); height: auto; border-radius: 0; }
+.stage-full { position: absolute; right: 8px; bottom: 8px; border: none; border-radius: 6px; background: rgba(0,0,0,.55); color: #fff; font-size: 18px; line-height: 1; padding: 6px 8px; cursor: pointer; opacity: .75; }
+.stage-full:hover { opacity: 1; }
