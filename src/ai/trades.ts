@@ -79,6 +79,16 @@ export function justTraded(lg: League, p: Player) {
   if ((lg.phase === 'freeagency' || lg.phase === 'draft') && (a.ph === 'freeagency' || a.ph === 'draft') && a.s === lg.season) return true;
   return false;
 }
+/**
+ * A recent high pick still on his rookie deal is the young core: teams build around him and don't shop him
+ * (only a team going all-in for a title will move him in a deal).
+ */
+export function youngCore(lg: League, p: Player) {
+  if (!p.contract.rookie || !p.draft?.pick || p.draft.pick > 14) return false;
+  if (lg.season - (p.draft.year ?? 0) > 4 || ageIn(p, lg.season) > 24) return false;
+  const t = p.tid ? lg.teams[p.tid] : null;
+  return !!t && t.mode !== 'allin';
+}
 /** Did this team trade him away this season? (nobody buys back the player it just sold) */
 export function soldBy(lg: League, p: Player, tid: string) {
   const a = (p as any).acq;
@@ -588,7 +598,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
   fresh(lg);
   const hA = horizonOf(A);
   const playerValue = (p: Player, _s: number, st: Horizon) => pv(lg, p, st, st === hA ? A.tid : undefined);
-  const myPlayers = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && !justTraded(lg, p));
+  const myPlayers = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && !justTraded(lg, p) && !youngCore(lg, p));
   const myPicks = (lg.picks ?? []).filter(p => p.owner === A.tid && !pickUsed(lg, p));
   const myCore = new Set([...myPlayers].sort((x, y) => playerValue(y, S, hA) - playerValue(x, S, hA)).slice(0, hA === 'rebuild' || hA === 'tank' ? 1 : 2).map(p => p.id));
   // what adding a player does for A's roster as a whole (fills a hole, or just more of the same)
@@ -601,7 +611,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
   for (const B of others) {
     for (const pid of B.roster) {
       const p = lg.players[pid];
-      if (tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid)) continue;
+      if (tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid) || youngCore(lg, p)) continue;
       const hB = horizonOf(B);
       const va = playerValue(p, S, hA), vb = playerValue(p, S, hB);
       if (va < 2.5) continue;
@@ -646,7 +656,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
     const bCore = new Set(B.roster.map(pid => lg.players[pid]).sort((x, y) => playerValue(y, S, hB) - playerValue(x, S, hB)).slice(0, 3).map(p => p.id));
     for (const pid of B.roster) {
       const p = lg.players[pid];
-      if (pid === tgt.p.id || bCore.has(pid) || tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid)) continue;
+      if (pid === tgt.p.id || bCore.has(pid) || tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid) || youngCore(lg, p)) continue;
       cands.push({ a: { pid }, edge: playerValue(p, S, hA) - playerValue(p, S, hB) - 0.5, sal: p.contract.sal, back: true });
     }
     for (const pk of (lg.picks ?? []).filter(p => p.owner === B.tid && p.round === 2 && !pickUsed(lg, p))) {

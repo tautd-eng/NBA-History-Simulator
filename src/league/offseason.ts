@@ -1,5 +1,6 @@
 // Off-season: expansion, lottery and draft, retirements, development, contracts,
 // arrivals and free agency.
+import { nextPayroll } from './extensions';
 import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, agingIndex, NK, shownOvr, shownFromRaw } from '../data';
 import { rosterFit, GMFIT } from '../archetypes';
 import { Rng } from '../rng';
@@ -1050,7 +1051,8 @@ function processOptions(lg: League, rng: Rng, log: FreeAgency['log'], decisions:
       }
     } else if (t.tid === lg.userTid) {
       decisions.push({ pid, kind: 'team', rec: worthKeeping(lg, p, p.contract.sal, N, t.strategy), sal: p.contract.sal });
-    } else if (worthKeeping(lg, p, p.contract.sal, N, t.strategy) && payroll(lg, t.tid) <= hardCap(lg)) {
+    } else if (worthKeeping(lg, p, p.contract.sal, N, t.strategy) && (nextPayroll(lg, t.tid) <= hardCap(lg) || (ageIn(p, N) <= 25 && shownOvr(p.z) >= 76))) {
+      // (next season's books decide, not this season's – and a good young player on a cheap option is always kept)
       p.contract.opts = p.contract.opts!.filter(x => x !== o);
       log.push({ st: 0, kind: 'option', pid, tid: t.tid, desc: 'team exercised the option' });
     } else {
