@@ -523,7 +523,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         // after an offensive rebound the shot clock resets – unless the shot was blocked and never hit the rim
         if (first) scLeft = 24; else if (!lastBlocked) scLeft = orbClock;
         if (first && fastBreak) dur = 2 + 4 * rng.next();
-        else if (first) dur = callDuration(dur, rem);
+        else if (first) dur = callDuration(dur, rem, def.pts - off.pts);
+        else if (offCall === 'three' || (period >= 4 && rem < 30 && def.pts > off.pts)) dur = Math.min(dur, 1.5 + 2 * rng.next()); // chasing late: kick it out and fire at once
         dur = Math.max(first ? 2 : 1, Math.min(dur, first ? 23.7 : Math.min(orbClock - 0.3, scLeft - 0.3))); // within the shot clock
         lateClock = first && !fastBreak && dur >= 19;
         if (first && offCall === 'milk' && off.pts > def.pts && rem <= 24 && defCall !== 'foul' && period >= 4) dur = rem; // run it all out
@@ -601,7 +602,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       const d = -lead;
       if (late && lead > 0 && rem < 60) offCall = 'milk';
       else if (late && d >= 0 && d <= 2 && rem < 24) offCall = 'milk';
-      else if (late && d === 3 && rem < 35) offCall = 'three';
+      else if (late && d === 3 && rem < 45) offCall = 'three';
       else if (late && d >= 4 && d <= 6 && rem < 22) offCall = 'three';
       else if (late && d >= 4 && d <= 6 && rem < 50) offCall = 'quick';
       else if (late && d >= 7 && rem < 45) offCall = 'three';
@@ -621,9 +622,12 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const id = dIdent(def.tid);
     dsc = defCall === 'pressure' ? 'press' : cr.chance(id.zone) ? 'zone' : cr.chance(id.sw) ? 'switch' : 'man';
   }
-  function callDuration(dur: number, rem: number) {
+  function callDuration(dur: number, rem: number, trail = 0) {
     if (defCall === 'foul') return 1.5 + 2.5 * rng.next();
-    if (offCall === 'milk') return rem <= 24 ? Math.max(1, rem - 1 - rng.next() * 1.5) : 18 + rng.next() * 5;
+    // last possession: tied → the very last shot; behind by one or two → attack with a few seconds left (time for a rebound)
+    if (offCall === 'milk') { const behind = trail > 0; return rem <= 24 ? Math.max(1, rem - (behind ? 4 + rng.next() * 3 : 1 + rng.next() * 1.5)) : 18 + rng.next() * 5; }
+    // chasing threes: set one up quickly, never let the clock run out on it
+    if (offCall === 'three') return rem <= 24 ? Math.max(1, Math.min(dur, rem - 3 - rng.next() * 4)) : Math.max(3, dur * 0.6);
     if (offCall === 'hold') return Math.max(1, rem - 1 - rng.next() * 2.5);
     if (offCall === 'quick') return 3 + rng.next() * 4;
     if (offCall === 'two4one') return Math.max(3, rem - 30 + rng.next() * 2);
@@ -649,9 +653,9 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const guard = (g: GP) => dS[oS.indexOf(g)] ?? dS[0];
     // the offence looks for the weak spot: a soft or much smaller defender draws more shots
     const edge = (g: GP) => { const d = guard(g); return C.mmUsg * (defZ - d.def) + C.mmSize * Math.max(-6, Math.min(6, g.p.ht - d.p.ht)) * (g.posNum >= 3.5 ? 1 : 0.4); };
-    let actor = on[rng.weighted(on.map(g => g.usg * (0.6 + 0.4 * g.e) * Math.exp(edge(g)) * (offCall === 'three' && !afterOrb ? Math.max(0.05, g.tpr) * 3 : 1)))];
+    let actor = on[rng.weighted(on.map(g => g.usg * (0.6 + 0.4 * g.e) * Math.exp(edge(g)) * (offCall === 'three' ? Math.max(0.03, g.tpr) ** 1.5 * 6 : 1)))];
     // the man who just grabbed the offensive rebound is under the basket: he goes right back up about half the time
-    if (afterOrb && orbBy && on.includes(orbBy) && rng.chance(orbBy.posNum >= 3.5 ? 0.55 : 0.4)) actor = orbBy;
+    if (afterOrb && orbBy && on.includes(orbBy) && offCall !== 'three' && rng.chance(orbBy.posNum >= 3.5 ? 0.55 : 0.4)) actor = orbBy;
     if (offCall === 'iso' && isoPid && !afterOrb) {
       const iso = on.find(g => g.p.id === isoPid);
       if (iso && cr.chance(0.85)) actor = iso;
@@ -725,11 +729,12 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     }
     // field-goal attempt
     let tprAdj = sigm(logit(Math.min(0.97, Math.max(0.003, actor.tpr))) + C.tpa + E.tpa);
-    if (!afterOrb && offCall === 'three') tprAdj = Math.max(tprAdj, 0.85);
+    // down three late there is no point in a two: everybody hunts a three, also after an offensive rebound
+    if (offCall === 'three') tprAdj = Math.max(tprAdj, def.pts - off.pts === 3 ? 0.97 : 0.88);
     if (offCall === 'inside') tprAdj *= 0.15;
     if (dsc === 'zone' && !fb) tprAdj = sigm(logit(Math.min(0.97, Math.max(0.01, tprAdj))) + 0.25); // a zone dares you to shoot
     if (fb) tprAdj *= C.fbThree;
-    const three = rng.chance(afterOrb ? (actor === orbBy ? 0.05 : tprAdj * C.putback3) : tprAdj);
+    const three = rng.chance(offCall === 'three' ? tprAdj : afterOrb ? (actor === orbBy ? 0.05 : tprAdj * C.putback3) : tprAdj);
     // defence on the shot: his own defender matters most, help defence (team) the rest; size inside.
     // Jumpers meet perimeter defence; shots at the rim meet the best rim protector on the floor.
     const zone = zoneOf(three, actor, fb, afterOrb);
