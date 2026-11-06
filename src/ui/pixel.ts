@@ -223,6 +223,9 @@ export class PixelCourt {
     this.arena = style === 'arena';
     if (looks) this.o.looks = looks;
     const R = this.arena ? 2 : 1;
+    // the arena scene is drawn at the canvas' full resolution: faces, numbers and shoes keep their detail
+    const Rw = this.arena ? 2 : 1;
+    if (Rw !== this.Rw) { this.Rw = Rw; this.buf = null; this.courtL = null; this.standsL = null; }
     if (R !== this.R || this.canvas.width !== VW * S * R) {
       this.R = R;
       this.canvas.width = VW * S * R; this.canvas.height = VH * S * R;
@@ -2544,7 +2547,7 @@ export class PixelCourt {
     const ht = lk.ht || 79, eff = 79 + (ht - 79) * 1.45;
     return (eff / 12) * VZ * depthScale(d) * this.K * 1.08;
   }
-  private headU(d = 25) { return (79 / 12) * VZ * depthScale(d) * this.K * 1.08 / 100; }
+  private headU(d = 25) { return (79 / 12) * VZ * depthScale(d) * this.K * 1.32 / 100; } // a touch larger than life: faces read at broadcast distance
   private kitOf(side: Side) {
     const [prim, sec] = this.tc(side);
     return side === 'h'

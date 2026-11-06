@@ -430,19 +430,20 @@ function drawHead(ctx: Ctx, cx: number, cy: number, u: number, f: number, b: Bod
   if (style === 'dreads') for (let i = 0; i < 6; i++) { const sxx = side ? -f * (1.5 + i * 0.9) : (i - 2.5) * 2.1; limb(ctx, cx + sxx * u, cy - 3 * u, cx + sxx * 1.15 * u, cy + (5 + (i % 3) * 1.8) * u, 1.9 * u, 1.5 * u, i % 2 ? hcL : hc); }
   // head and jaw
   oval(ctx, cx, cy, rx, ry, skin);
-  if (side) oval(ctx, cx, cy, rx, ry, shade(skin, 0.88), -1e9, 1e9, f > 0 ? -1e9 : cx + rx * 0.45, f > 0 ? cx - rx * 0.45 : 1e9);
+  if (side) oval(ctx, cx, cy, rx, ry, shade(skin, 0.93), -1e9, 1e9, f > 0 ? -1e9 : cx + rx * 0.55, f > 0 ? cx - rx * 0.55 : 1e9);
   else oval(ctx, cx, cy, rx, ry, shade(skin, 0.9), -1e9, 1e9, cx + rx * 0.5);
   if (!back) oval(ctx, cx + fx * 1.2 * u, cy + 3.6 * u, rx * (side ? 0.72 : 0.8), ry * 0.42, skin, cy + 2 * u);
   // cheekbone light
   if (!back) oval(ctx, cx + (side ? f * 1.8 : -2.2) * u, cy + 0.8 * u, 1.4 * u, 1 * u, skinL);
   // ears
-  if (side) { oval(ctx, cx - f * 1.6 * u, cy + 0.6 * u, 1.4 * u, 2 * u, skinD); oval(ctx, cx - f * 1.4 * u, cy + 0.6 * u, 0.6 * u, 1.1 * u, shade(skin, 0.65)); }
+  if (side) { oval(ctx, cx - f * 1.9 * u, cy + 0.6 * u, 1.1 * u, 1.7 * u, shade(skin, 0.86)); oval(ctx, cx - f * 1.75 * u, cy + 0.7 * u, 0.45 * u, 0.8 * u, shade(skin, 0.7)); }
   else { oval(ctx, cx - rx - 0.3 * u, cy + 0.6 * u, 1.2 * u, 1.9 * u, skinD); oval(ctx, cx + rx + 0.3 * u, cy + 0.6 * u, 1.2 * u, 1.9 * u, skinD); }
   // hair
   const cap = (lift: number, line: number) => {
     if (back) { oval(ctx, cx, cy - lift, rx + 0.5 * u, ry + 0.3 * u, hc, -1e9, cy + 2.5 * u); return; }
     oval(ctx, cx, cy - lift, rx + 0.5 * u, ry + 0.3 * u, hc, -1e9, cy - line);
-    if (side) oval(ctx, cx, cy - lift, rx + 0.5 * u, ry + 0.3 * u, hc, -1e9, cy + 1.5 * u, f > 0 ? -1e9 : cx + 0.8 * u, f > 0 ? cx - 0.8 * u : 1e9);
+    // seen from the side the hair covers the back of the skull down to the top of the ear – not the face
+    if (side) oval(ctx, cx, cy - lift, rx + 0.5 * u, ry + 0.3 * u, hc, -1e9, cy - 0.8 * u, f > 0 ? -1e9 : cx + 2.2 * u, f > 0 ? cx - 2.2 * u : 1e9);
     else { oval(ctx, cx - rx + 0.6 * u, cy - 1 * u, 1.2 * u, 2.4 * u, hc); oval(ctx, cx + rx - 0.6 * u, cy - 1 * u, 1.2 * u, 2.4 * u, hc); }
   };
   const texture = () => { for (let i = 0; i < 7; i++) rect(ctx, cx + (((i * 37) % 11) - 5) * u, cy - ry + (1 + ((i * 13) % 5)) * u * 0.8, 0.8 * u, 0.6 * u, i % 2 ? hcL : hcD); };
@@ -461,27 +462,44 @@ function drawHead(ctx: Ctx, cx: number, cy: number, u: number, f: number, b: Bod
   }
   if (b.band) limb(ctx, cx - rx - 0.3 * u, cy - 3.2 * u, cx + rx + 0.3 * u, cy - 3.2 * u, 1.9 * u, 1.9 * u, '#f4f4f4');
   if (back) return;
-  // face: eyes with whites, brows, nose, lips
-  const brow = shade(hc === '#9a9a9a' ? '#5a5a5a' : hc, 0.9);
-  const eye = (ex: number) => {
-    rect(ctx, ex - 0.9 * u, cy - 0.9 * u, 1.9 * u, 1.4 * u, '#f2ece4');
-    rect(ctx, ex - 0.2 * u + (side ? f * 0.4 * u : 0), cy - 0.9 * u, 0.95 * u, 1.4 * u, '#1a1210');
-    rect(ctx, ex - 1.2 * u, cy - 2.4 * u, 2.5 * u, 0.85 * u, brow);
+  // face: big friendly eyes (whites, iris, a catch-light), arched brows, a soft nose, lips with colour
+  const brow = shade(hc === '#9a9a9a' ? '#5a5a5a' : hc, 0.85);
+  const iris = '#2a1a12';
+  const eye = (ex: number, w = 1) => {
+    oval(ctx, ex, cy - 0.15 * u, 1.35 * u * w, 1.05 * u, '#fbf6ef');
+    const ix = ex + (side ? f * 0.45 * u : 0);
+    oval(ctx, ix, cy - 0.05 * u, 0.78 * u * w, 0.9 * u, iris);
+    rect(ctx, ix - (side ? f * 0.1 : 0.15) * u + 0.15 * u, cy - 0.55 * u, 0.45 * u, 0.45 * u, '#ffffff');
+    // upper lid line and brow
+    rect(ctx, ex - 1.35 * u * w, cy - 1.15 * u, 2.7 * u * w, 0.45 * u, shade(skin, 0.55));
+    limb(ctx, ex - 1.5 * u * w, cy - 2.15 * u, ex + 1.4 * u * w, cy - 2.55 * u, 0.85 * u, 0.6 * u, brow);
   };
-  if (side) eye(cx + f * 2.6 * u); else { eye(cx - 2.3 * u); eye(cx + 2.3 * u); }
-  if (b.goggles) { limb(ctx, cx - rx, cy - 0.6 * u, cx + rx, cy - 0.6 * u, 2.6 * u, 2.6 * u, '#1d1d22'); if (side) oval(ctx, cx + f * 2.6 * u, cy - 0.6 * u, 1.6 * u, 1.3 * u, '#7fb6d9'); else { oval(ctx, cx - 2.3 * u, cy - 0.6 * u, 1.5 * u, 1.2 * u, '#7fb6d9'); oval(ctx, cx + 2.3 * u, cy - 0.6 * u, 1.5 * u, 1.2 * u, '#7fb6d9'); } }
+  // soft shading: light on the forehead, shadow under the cheekbones
+  oval(ctx, cx - fx * 0.6 * u, cy - 3.2 * u, rx * 0.55, ry * 0.25, shade(skin, 1.1), cy - ry + 2.4 * u, cy - 2.4 * u);
+  if (side) eye(cx + f * 2.5 * u, 0.85); else { eye(cx - 2.35 * u); eye(cx + 2.35 * u); }
+  if (b.goggles) { limb(ctx, cx - rx, cy - 0.3 * u, cx + rx, cy - 0.3 * u, 2.8 * u, 2.8 * u, '#1d1d22'); if (side) oval(ctx, cx + f * 2.6 * u, cy - 0.3 * u, 1.7 * u, 1.4 * u, '#7fb6d9'); else { oval(ctx, cx - 2.3 * u, cy - 0.3 * u, 1.6 * u, 1.3 * u, '#7fb6d9'); oval(ctx, cx + 2.3 * u, cy - 0.3 * u, 1.6 * u, 1.3 * u, '#7fb6d9'); } }
   // nose
-  if (side) { rect(ctx, cx + f * 5.2 * u - (f > 0 ? 0 : 1.2 * u), cy + 0.2 * u, 1.2 * u, 2.2 * u, skin); rect(ctx, cx + f * 4.2 * u - (f > 0 ? 0 : 1 * u), cy + 2.1 * u, 1.2 * u, 0.6 * u, skinD); }
-  else { rect(ctx, cx - 0.5 * u, cy + 0.2 * u, 1 * u, 2.2 * u, skinD); rect(ctx, cx - 1.1 * u, cy + 2.2 * u, 2.2 * u, 0.6 * u, shade(skin, 0.7)); }
+  if (side) { oval(ctx, cx + f * 5.4 * u, cy + 1.4 * u, 1.1 * u, 1.3 * u, skin); oval(ctx, cx + f * 4.6 * u, cy + 2.2 * u, 0.7 * u, 0.45 * u, shade(skin, 0.68)); }
+  else { oval(ctx, cx, cy + 1.6 * u, 1.15 * u, 1.05 * u, shade(skin, 1.06)); oval(ctx, cx - 0.65 * u, cy + 2.2 * u, 0.42 * u, 0.32 * u, shade(skin, 0.6)); oval(ctx, cx + 0.65 * u, cy + 2.2 * u, 0.42 * u, 0.32 * u, shade(skin, 0.6)); }
   const fac = b.facial;
-  const mx = side ? cx + f * 2.4 * u - (f > 0 ? 0 : 2 * u) : cx - 1.4 * u, mw = side ? 2 * u : 2.8 * u;
-  if (fac === 'beard') oval(ctx, cx + fx * 0.8 * u, cy + 3.4 * u, rx * 0.95, ry * 0.58, hc, cy + 1.9 * u, 1e9, side && f > 0 ? cx - rx * 0.4 : -1e9, side && f < 0 ? cx + rx * 0.4 : 1e9);
+  const mx = side ? cx + f * 3 * u : cx, mw = side ? 1.6 * u : 2.4 * u;
+  if (fac === 'beard') oval(ctx, cx + fx * 0.8 * u, cy + 3.6 * u, rx * 0.95, ry * 0.56, hc, cy + 2.3 * u, 1e9, side && f > 0 ? cx - rx * 0.4 : -1e9, side && f < 0 ? cx + rx * 0.4 : 1e9);
   else if (fac === 'goatee' || fac === 'chin') oval(ctx, cx + fx * 2.4 * u, cy + 5.6 * u, 1.9 * u, 1.5 * u, hc);
-  else if (fac === 'stubble') oval(ctx, cx + fx * 0.8 * u, cy + 3.6 * u, rx * 0.9, ry * 0.5, shade(skin, 0.84), cy + 2.2 * u);
-  if (fac === 'mustache' || fac === 'goatee' || fac === 'beard') rect(ctx, mx - 0.4 * u, cy + 2.8 * u, mw + 0.8 * u, 0.9 * u, hc);
-  rect(ctx, mx, cy + 4 * u, mw, 0.7 * u, shade(skin, 0.58));
-  rect(ctx, mx + 0.3 * u, cy + 4.7 * u, mw - 0.6 * u, 0.5 * u, shade(skin, 0.75));
+  else if (fac === 'stubble') oval(ctx, cx + fx * 0.8 * u, cy + 3.8 * u, rx * 0.9, ry * 0.48, shade(skin, 0.86), cy + 2.5 * u);
+  if (fac === 'mustache' || fac === 'goatee' || fac === 'beard') oval(ctx, mx, cy + 3.15 * u, mw * 0.7 + 0.4 * u, 0.55 * u, hc);
+  // lips: a darker upper lip, a lighter lower one with a touch of colour, a hint of a smile at the corners
+  const lip = shade(skin, 0.62), lipL = mixHex(shade(skin, 0.85), '#c0605a', 0.25);
+  oval(ctx, mx, cy + 4.15 * u, mw * 0.55, 0.38 * u, lip);
+  oval(ctx, mx, cy + 4.6 * u, mw * 0.45, 0.35 * u, lipL);
+  if (!side) { rect(ctx, mx - mw * 0.62, cy + 3.9 * u, 0.4 * u, 0.4 * u, lip); rect(ctx, mx + mw * 0.62 - 0.4 * u, cy + 3.9 * u, 0.4 * u, 0.4 * u, lip); }
 }
+
+const mixHex = (a: string, b: string, t: number) => {
+  if (!a.startsWith('#') || !b.startsWith('#')) return a;
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const ch = (sh: number) => Math.round(((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t).toString(16).padStart(2, '0');
+  return `#${ch(16)}${ch(8)}${ch(0)}`;
+};
 
 /** The player with a dark pixel outline (drawn through an off-screen buffer). */
 let bufA: HTMLCanvasElement | null = null, bufB: HTMLCanvasElement | null = null;
