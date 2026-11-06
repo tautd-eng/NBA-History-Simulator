@@ -43,6 +43,7 @@ export interface Player {
   dev?: { pot: number; peak: number; vol: number; e: number[] }; // hidden development traits
   rh?: number[][];       // ratings history: [season, ...RATING_LABELS ratings]
   prospect?: boolean;    // on the draft board, not yet in the league
+  cut?: { tid: string; s: number };   // released by this team this season (it cannot sign him back cheaply)
   bird?: string;         // team holding this free agent's re-signing rights
   shift?: number;        // years between his real draft and this league's (shuffled or mixed classes)
   fat?: number; fatDay?: number; // fatigue after his last game and its calendar day

@@ -658,7 +658,67 @@ function signWith(lg: League, p: Player, tid: string, sal: number, exp: number, 
   p.tid = tid; lg.teams[tid].roster.push(p.id);
   p.contract = rng ? vetContract(p, lg.season, sal, exp - lg.season + 1, rng) : { sal, exp };
   lockTrade(lg, p);
-  delete p.bird; delete p.rfa; delete p.qo;
+  delete p.bird; delete p.rfa; delete p.qo; delete p.cut;
+}
+
+/**
+ * A good player left without a team once free agency is over (bought out, released) is not a bargain for whoever
+ * is short a man: the AI teams that can pay most of his ask bid, and he takes the offer he likes best.
+ */
+export function lateMarket(lg: League, rng: Rng) {
+  const N = lg.season;
+  const pool = Object.values(lg.players).filter(p => isFreeAgent(lg, p) && !p.rfa && askingSalary(p, N) > MIN_SAL * 2.5)
+    .sort((a, b) => playerValue(b, N) - playerValue(a, N));
+  for (const p of pool) {
+    const best = bestBid(lg, p, rng);
+    if (!best) continue;
+    const from = prevTeam(p);
+    delete p.cut;
+    if (best.cut) waive(lg, best.t, best.cut, lg.phase === 'regular' ? 5 : 4);
+    signWith(lg, p, best.t.tid, best.sal, N - 1 + best.yrs, rng);
+    const desc = `${p.contract.exp - N + 1} yrs, ${Math.round(best.sal * 1000) / 10}% of the cap`;
+    lg.fa?.log.push({ st: lg.phase === 'regular' ? 5 : 4, kind: 'sign', pid: p.id, tid: best.t.tid, from, sal: best.sal, exp: p.contract.exp, desc: 'late free agent' });
+    if (!lg.fa) addTx(p, N, `Signed with ${best.t.name}: ${desc}`, -1);
+    if (bpmOf(p.z) > NEWS_BPM) lg.news.push({ s: N, t: `${tagOf(p, N)} signs with the ${best.t.name} (${desc}).` });
+  }
+}
+
+/** A full AI roster makes room for a clearly better player by waiving its least valuable minimum-type contract. */
+function cheapCut(lg: League, t: Team, p: Player): Player | null {
+  const N = lg.season;
+  const c = t.roster.map(pid => lg.players[pid]).filter(x => x.contract.sal <= vetMin(x, N) * 1.6 + 0.006 && !(x.contract.rookie && x.draft?.pick && x.draft.pick <= 30))
+    .sort((a, b) => playerValue(a, N, t.strategy) - playerValue(b, N, t.strategy))[0];
+  return c && playerValue(c, N, t.strategy) + 0.5 < playerValue(p, N, t.strategy) ? c : null;
+}
+function waive(lg: League, t: Team, x: Player, st: number) {
+  t.roster = t.roster.filter(pid => pid !== x.id); releaseDead(lg, t.tid, x); x.tid = null;
+  x.contract = { sal: MIN_SAL, exp: lg.season }; x.cut = { tid: t.tid, s: lg.season };
+  lg.fa?.log.push({ st, kind: 'release', pid: x.id, tid: t.tid });
+}
+
+/** The best offer an AI team (other than `skip`) can still make him: most of his ask, out of real cap room. */
+function bestBid(lg: League, p: Player, rng: Rng, skip?: string) {
+  const N = lg.season;
+  const ask = Math.min(maxSalary(p, N), askingSalary(p, N));
+  const yrs = contractYears(p, N, () => rng.next());
+  let best: { t: Team; sal: number; yrs: number; score: number; cut: Player | null } | null = null;
+  for (const t of activeTeams(lg)) {
+    if (t.tid === lg.userTid || t.tid === skip) continue;
+    if (p.cut?.tid === t.tid && p.cut.s === N) continue;
+    const cut = t.roster.length >= ROSTER_MAX ? cheapCut(lg, t, p) : null;
+    if (t.roster.length >= ROSTER_MAX && !cut) continue;
+    const room = ceiling(lg, N) - payroll(lg, t.tid);
+    const sal = Math.min(ask * (1 - discount(lg, p, t.tid)), room);
+    if (sal < Math.max(MIN_SAL * 2.5, 0.35 * ask)) continue;
+    if (t.strategy === 'rebuild' && ageIn(p, N) > 30) continue;
+    const vals = t.roster.map(pid => playerValue(lg.players[pid], N, t.strategy)).sort((a, b) => b - a);
+    const twelfth = vals[Math.min(vals.length, 12) - 1] ?? 0;
+    if (t.roster.length >= ROSTER_MIN && playerValue(p, N, t.strategy) <= twelfth) continue;
+    if (!worthKeeping(lg, p, sal, N, t.strategy)) continue;
+    const score = offerUtility(lg, p, t.tid, sal, ask, yrs) + 0.05 * rng.normal();
+    if (!best || score > best.score) best = { t, sal, yrs, score, cut };
+  }
+  return best;
 }
 
 /** Does the team holding his rights match an offer sheet? */
@@ -771,7 +831,7 @@ function reachFloor(lg: League, rng: Rng) {
         cut.contract = { sal: MIN_SAL, exp: N };
         fa.log.push({ st: 3, kind: 'release', pid: cut.id, tid: t.tid });
       }
-      const sal = Math.min(maxSalary(p, N), FLOOR - pay, Math.max(askingSalary(p, N), (FLOOR - pay) / 2));
+      const sal = Math.min(maxSalary(p, N), Math.max(FLOOR - pay, askingSalary(p, N)), Math.max(FLOOR - pay, ceiling(lg, N) - pay));
       const from = prevTeam(p);
       signWith(lg, p, t.tid, sal, N);
       fa.log.push({ st: 3, kind: 'sign', pid: p.id, tid: t.tid, from, sal, exp: N, desc: '1-year deal to reach the salary floor' });
@@ -805,9 +865,10 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
     const ask = askingSalary(p, N) * STAGE_MULT[stage];
     const max = maxSalary(p, N);
     const yrsOffer = contractYears(p, N, () => rng.next());
-    const offers: { t: Team; sal: number; score: number; mle: boolean }[] = [];
+    const offers: { t: Team; sal: number; score: number; mle: boolean; cut: Player | null }[] = [];
     for (const t of teams) {
-      if (t.roster.length >= ROSTER_MAX) continue;
+      const cut = t.roster.length >= ROSTER_MAX ? cheapCut(lg, t, p) : null;
+      if (t.roster.length >= ROSTER_MAX && !cut) continue;
       const pay = payroll(lg, t.tid);
       const room = ceiling(lg, N) - pay;
       let sal = 0, mle = false;
@@ -840,7 +901,7 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
       if (t.mode === 'tank' && ageIn(p, N) > 27 && sal > MIN_SAL * 2.5 && !(shownOvr(p.z) >= 85 && ageIn(p, N) <= 30)) continue;
       // the player picks the offer he likes best: money against his ask, plus the team's appeal to him
       const score = offerUtility(lg, p, t.tid, sal, ask, yrsOffer) + 0.06 * rng.normal();
-      offers.push({ t, sal, score, mle });
+      offers.push({ t, sal, score, mle, cut });
     }
     if (!offers.length) continue;
     // early on, some players wait for a better market
@@ -866,6 +927,7 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
       }
     }
     if (o.mle) fa.mle.push(o.t.tid);
+    if (o.cut && o.t.roster.length >= ROSTER_MAX) waive(lg, o.t, o.cut, stage);
     const wasRfa = !!rights && rights !== o.t.tid;
     const from = prevTeam(p);
     signWith(lg, p, o.t.tid, o.sal, N - 1 + yrs, rng);
@@ -905,6 +967,19 @@ export function startSeason(lg: League) {
           continue;
         }
       }
+      // a team with room still sends him an offer sheet; his team matches only if it can and wants to
+      const bid = t.tid !== lg.userTid ? bestBid(lg, p, rng, t.tid) : null;
+      if (bid && bid.sal > (p.qo ?? MIN_SAL) * 1.3) {
+        if (aiMatches(lg, p, t.tid, bid.sal)) {
+          signWith(lg, p, t.tid, bid.sal, N - 1 + bid.yrs);
+          lg.fa?.log.push({ st: 3, kind: 'match', pid: p.id, tid: t.tid, from: t.tid, sal: bid.sal, exp: p.contract.exp, desc: `matched the ${bid.t.abbr} offer` });
+        } else {
+          if (bid.cut) waive(lg, bid.t, bid.cut, 3);
+          signWith(lg, p, bid.t.tid, bid.sal, N - 1 + bid.yrs, rng);
+          lg.fa?.log.push({ st: 3, kind: 'sign', pid: p.id, tid: bid.t.tid, from: t.tid, sal: bid.sal, exp: p.contract.exp, desc: `${t.abbr} did not match` });
+        }
+        continue;
+      }
       const qo = p.qo ?? MIN_SAL;
       signWith(lg, p, t.tid, qo, N);
       lg.fa?.log.push({ st: 3, kind: 'qo', pid: p.id, tid: t.tid, from: t.tid, sal: qo, exp: N, desc: 'accepted the qualifying offer (1 yr)' });
@@ -913,11 +988,13 @@ export function startSeason(lg: League) {
   }
   // everyone under the hard cap before the season (after the qualifying offers): dumps, then buyouts
   complyHardCap(lg, rng, true);
+  // good players released to get under the cap still have a market: teams with room bid for them
+  lateMarket(lg, rng);
   const aiFill: string[] = [];
   for (const t of activeTeams(lg)) {
     const filled: string[] = [];
     while (t.roster.length < ROSTER_MIN) {
-      const best = Object.values(lg.players).filter(p => isFreeAgent(lg, p)).sort((a, b) => playerValue(b, N, t.strategy) - playerValue(a, N, t.strategy))[0];
+      const best = Object.values(lg.players).filter(p => isFreeAgent(lg, p) && !(p.cut?.tid === t.tid && p.cut.s === N)).sort((a, b) => playerValue(b, N, t.strategy) - playerValue(a, N, t.strategy))[0];
       if (!best) break;
       best.tid = t.tid; t.roster.push(best.id);
       const fair = fillSalary(lg, best, t.tid, N);

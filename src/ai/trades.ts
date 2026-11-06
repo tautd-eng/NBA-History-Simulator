@@ -517,7 +517,7 @@ export function fillRoster(lg: League, tid: string) {
     lg.news.push({ s: lg.season, t: `The ${t.name} waived ${cut.name} to make room on the roster.` });
   }
   while (t.roster.length < ROSTER_MIN) {
-    const fa = Object.values(lg.players).filter(p => isFreeAgent(lg, p))
+    const fa = Object.values(lg.players).filter(p => isFreeAgent(lg, p) && !(p.cut?.tid === tid && p.cut.s === lg.season))
       .sort((x, y) => playerValue(y, lg.season, t.strategy) - playerValue(x, lg.season, t.strategy))[0];
     if (!fa) break;
     // a good player signed late still costs most of his market value (within the hard cap)
@@ -526,7 +526,7 @@ export function fillRoster(lg: League, tid: string) {
     for (let i = fa.career.length - 1; i >= 0 && !from; i--) from = fa.career[i].tid ?? '';
     fa.tid = tid; t.roster.push(fa.id);
     fa.contract = { sal, exp: lg.season };
-    delete fa.bird; delete fa.rfa; delete fa.qo;
+    delete fa.bird; delete fa.rfa; delete fa.qo; delete fa.cut;
     if (lg.phase === 'regular' || lg.phase === 'playoffs') {
       lg.fa?.log.push({ st: 5, kind: 'sign', pid: fa.id, tid, from, sal, exp: lg.season, desc: 'in-season signing' });
       lg.news.push({ s: lg.season, t: `The ${t.name} signed free agent ${tagOf(fa, lg.season)} (1 yr) to fill the roster.` });
@@ -786,7 +786,7 @@ export function complyHardCap(lg: League, rng: Rng, buyouts = false) {
       if (!p) break;
       A.roster = A.roster.filter(x => x !== p.id);
       releaseDead(lg, A.tid, p);
-      p.tid = null;
+      p.tid = null; p.cut = { tid: A.tid, s: lg.season };
       lg.news.push({ s: lg.season, t: `${A.name} release ${tagOf(p, lg.season)} to get under the hard cap (half his salary stays on the books).` });
       p.contract = { sal: MIN_SAL, exp: lg.season };
     }
