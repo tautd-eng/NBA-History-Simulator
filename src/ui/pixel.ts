@@ -595,10 +595,13 @@ export class PixelCourt {
         } else {
           const db = hyp(man.x - bp.x, man.d - bp.d);
           const ballRim = hyp(bp.x - B.x, bp.d - B.d);
-          let f = 0.16 + 0.24 * Math.min(1, db / 28) + (ballRim < 12 ? 0.14 : 0) - b.tight * 0.12;
+          // off the ball he sags toward the rim the farther his man is from the ball – but not so far that a
+          // shooter stands alone: a big man's defender may sag more, a perimeter player's stays within a closeout
+          const bigMan = this.posN(man.pid) >= 4;
+          let f = 0.1 + 0.2 * Math.min(1, db / 28) + (ballRim < 12 ? 0.08 : 0) + (bigMan ? 0.06 : 0) - b.tight * 0.12;
           if (dist > 50) f = 6 / dist;
           let tx = man.x + dx * f, td = man.d + dd * f;
-          const w = db > 18 ? 0.2 : 0.06;
+          const w = db > 18 ? 0.12 : 0.05;
           tx += (bp.x - tx) * w; td += (bp.d - td) * w;
           // nobody guards a man 40 feet from the basket: the defence gets back and builds its wall first
           const fromB = hyp(tx - B.x, td - B.d), lim = this.v < this.pressUntil ? 90 : 23; // pressing: pick up full court

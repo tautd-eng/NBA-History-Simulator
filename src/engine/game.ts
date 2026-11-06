@@ -316,7 +316,11 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   let ot = 0;
   const other = (s: Side) => (s === H ? A : H);
 
+  // scoring runs (only for the broadcast: a coach stops a run with a timeout)
+  let runSide: Side | null = null, runPts = 0;
+  const toUsed = new Map<Side, number>();
   const score = (s: Side, pts: number) => {
+    if (runSide === s) runPts += pts; else { runSide = s; runPts = pts; }
     s.pts += pts;
     for (const g of s.on) g.st.pm += pts;
     for (const g of other(s).on) g.st.pm -= pts;
@@ -544,6 +548,11 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       // or a made basket in the last two minutes, when the clock stops – never on a live rebound or a steal.
       // A fouled-out or hurt player is replaced at once.
       const forced = [...H.on, ...A.on].some(g => g.fouls >= 6 || g.hurt);
+      // a coach whose team is being run over stops the game (the broadcast shows the huddle; nothing else changes)
+      if (log && runSide && runPts >= 8 && rem > 30 && !(clutch && ctl && (ctl.side === 'h' ? H : A) === other(runSide))) {
+        const vic = other(runSide), used = toUsed.get(vic) ?? 0;
+        if (used < 4 && (ended === 'make' || stopped)) { toUsed.set(vic, used + 1); ev('timeout', vic, `Timeout – ${runPts}–0 run`); runPts = 0; }
+      }
       const dead = stopped || ended === 'dead' || (ended === 'make' && period >= 4 && rem < 120) || forced;
       stopped = false;
       const ph = H.on, pa = A.on;
