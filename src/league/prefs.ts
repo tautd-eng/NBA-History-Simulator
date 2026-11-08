@@ -89,7 +89,7 @@ export function discount(lg: League, p: Player, tid: string): number {
 export function offerUtility(lg: League, p: Player, tid: string, sal: number, ask: number, years: number) {
   const age = ageIn(p, lg.season);
   const money = Math.min(1.3, sal / Math.max(1e-6, ask));
-  const security = age >= 30 ? 0.02 * Math.min(4, years) : 0;
+  const security = age >= 30 ? 0.02 * years : 0;
   return money + discount(lg, p, tid) + security;
 }
 
@@ -179,7 +179,7 @@ export function extensionChance(lg: League, p: Player, tid: string, sal: number,
 
 /**
  * What the length of a deal does to his price (any contract: extension or free agency).
- * A veteran pays for security (each year up to four is worth ~2.5% to him); a deal too long for his age costs;
+ * A veteran pays for security (each extra year is worth ~2.5% to him);
  * a long deal for a young player is priced on what he is expected to become over the deal: his projected path
  * from today toward his peak (around 27), year by year, averaged – the team buys some of the upside and takes
  * the risk that he never gets there; the player gives a little of it back for the security.
@@ -188,8 +188,9 @@ export function extensionChance(lg: League, p: Player, tid: string, sal: number,
 export function lengthPrice(p: Player, N: number, years: number, ask: number) {
   const age = ageIn(p, N);
   let len = 0, why = '';
-  if (age >= 30) len += 0.025 * (Math.min(years, 4) - 1);
-  if (years > (age >= 32 ? 3 : 5)) len -= 0.1;
+  // a veteran wants security: every extra year is guaranteed money he might not get otherwise
+  // (if he retires early the rest of the deal simply comes off the books)
+  if (age >= 30) len += 0.025 * (years - 1);
   let young = 1;
   if (age <= 25 && years >= 2) {
     const now = bpmOf(p.z), peak = Math.max(now, peakBpm(p, N));
@@ -206,5 +207,5 @@ export function lengthPrice(p: Player, N: number, years: number, ask: number) {
 /** The length he would pick himself: young players keep their next free agency close, veterans want security. */
 export function preferredYears(p: Player, N: number) {
   const a = ageIn(p, N);
-  return a <= 24 ? 2 : a <= 29 ? 3 : a <= 32 ? 3 : 2;
+  return a <= 24 ? 2 : a <= 29 ? 3 : 4;
 }
