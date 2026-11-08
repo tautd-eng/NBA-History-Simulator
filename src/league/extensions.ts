@@ -6,7 +6,9 @@ import { Rng } from '../rng';
 import { League, Player } from '../types';
 import { tagOf, ageIn, addTx } from '../players';
 import { playerValue, maxSalary, MIN_SAL, contractYears, hardCap } from '../ai/value';
-import { extensionNeed } from './prefs';
+import { extensionNeed, extensionChance } from './prefs';
+import { rngOf } from './league';
+const save = (lg: League, r: Rng) => { lg.rng = [...r.s] as any; };
 import { shownOvr } from '../data';
 
 /** Next season's payroll: contracts that run on, signed extensions, dead money. */
@@ -38,9 +40,18 @@ export function userExtend(lg: League, pid: string, sal: number, years: number):
   sal = Math.max(MIN_SAL, sal);
   const hc = hardCap(lg);
   if (nextPayroll(lg, tid) + sal > hc + 1e-9) return { ok: false, msg: `You would exceed the hard cap next season (${Math.round(hc * 100)}% of the cap): ${Math.round(nextPayroll(lg, tid) * 100)}% is already committed.` };
-  const { need, why } = extensionNeed(lg, p, tid, years);
-  if (sal + 1e-9 < need) {
-    return { ok: false, msg: `${p.name} says no for now: he wants at least ${(need * 100).toFixed(1)}% of the cap${why.length ? ` (because: ${why.join(', ')})` : ''}. His mood changes during the season – you can try again later.` };
+  if ((p.extNo ?? -1) > lg.day) return { ok: false, msg: `${p.name} turned down your last offer and is not talking for now – try again in ${p.extNo! - lg.day} days.` };
+  const { need, why, chance } = extensionChance(lg, p, tid, sal, years);
+  if (chance <= 0) return { ok: false, msg: `${p.name} says no: he wants at least ${(need * 100).toFixed(1)}% of the cap for ${years} yrs${why.length ? ` (${why.join(', ')})` : ''}.` };
+  if (chance < 1) {
+    // below his number: a gamble – and a refusal ends the talks for a while
+    const rng = rngOf(lg);
+    const yes = rng.chance(chance);
+    save(lg, rng);
+    if (!yes) {
+      p.extNo = lg.day + 10;
+      return { ok: false, msg: `${p.name} turned it down (${Math.round(chance * 100)}% chance) – he wanted ${(need * 100).toFixed(1)}% of the cap. No more talks for 10 days.` };
+    }
   }
   p.ext = { sal, exp: lg.season + years };
   addTx(p, lg.season, `Signed an in-season extension with ${lg.teams[tid].name}: ${years} yrs, ${(sal * 100).toFixed(1)}% of the cap per season`, lg.day);

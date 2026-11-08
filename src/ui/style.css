@@ -867,3 +867,18 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .offers .o-bar span { display: block; height: 100%; background: var(--accent); }
 .offers .o-why { grid-column: 1 / -1; font-size: 12.5px; }
 .offers-dlg { max-height: 86vh; overflow-y: auto; }
+.offer.ext { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.ext-interest { display: grid; grid-template-columns: 110px 1fr 70px; gap: 8px; align-items: center; font-size: 13px; }
+.ext-interest .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.ext-interest .bar span { display: block; height: 100%; background: var(--accent); }
+.ext-years td.on { background: var(--accent-soft); font-weight: 600; }
+.ext-adjust { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ext-amt { min-width: 150px; text-align: center; font-family: var(--font-mono); }
+.ext-chance { padding: 8px 10px; border-radius: 8px; background: var(--sunk); font-size: 13.5px; }
+.ext-chance.pos { border-left: 4px solid var(--real); }
+.ext-chance.mid { border-left: 4px solid var(--star); }
+.ext-chance.neg { border-left: 4px solid #c0392b; }
+.offer.ext > * { flex: none; width: 100%; }
+.offer.ext > button { width: auto; align-self: flex-start; }
+.ext-years { width: auto !important; }
+.ext-years th button { min-width: 34px; }

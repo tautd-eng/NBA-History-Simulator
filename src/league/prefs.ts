@@ -118,7 +118,7 @@ export const TRAIT_LABELS: [keyof Traits, string][] = [['money', 'Money'], ['win
  * Beyond money: how this season goes for him and the team, security for
  * veterans, and young players who expect to improve betting on themselves.
  */
-export function extensionNeed(lg: League, p: Player, tid: string, years: number): { need: number; why: string[] } {
+export function extensionNeed(lg: League, p: Player, tid: string, years: number): { need: number; why: string[]; interest: number } {
   const N = lg.season + 1;
   const tr = traits(p, lg.season);
   const age = ageIn(p, N);
@@ -136,13 +136,30 @@ export function extensionNeed(lg: League, p: Player, tid: string, years: number)
     if (wp < 0.35 && tr.win > 0.5) { d -= 0.06; why.push('team is losing this season'); }
     if (wp > 0.6) { d += 0.03; why.push('team is winning'); }
   }
-  // security for veterans, betting on himself for young risers
-  if (age >= 30) { d += years >= 3 ? 0.07 : 0.02; if (years >= 3) why.push('values a long contract'); }
-  if (age <= 25 && tr.money > 0.5) { d -= 0.06; why.push('expects to improve and earn more on the market'); }
+  // how much he wants to stay at all (before the length of the deal)
+  const interest = Math.round(Math.max(0, Math.min(100, 50 + 160 * d)));
+  // length: veterans value security (each extra year is worth something to them), young risers want to
+  // get back to the market soon (each year past two costs), a player in his prime does not much care
+  if (age >= 30) { d += 0.025 * (Math.min(years, 4) - 1); if (years >= 3) why.push('values a long contract'); }
+  else if (age <= 25) { if (years > 2) { d -= 0.03 * (years - 2); why.push('wants a shorter deal – he expects to be worth more'); } else if (tr.money > 0.5) { d -= 0.03; why.push('expects to improve and earn more on the market'); } }
   if (years > (age >= 32 ? 3 : 5)) d -= 0.1;
   // money-first stars want the full max or will test free agency
   const max = maxSalary(p, N);
   if (tr.money > 0.7 && ask >= max * 0.9) { d = Math.min(d, 0); why.push('wants a max contract'); }
   const need = Math.max(0.012, Math.min(max, ask * (1 - Math.max(-0.25, Math.min(0.3, d)))));
-  return { need, why };
+  return { need, why, interest };
+}
+
+/**
+ * Will he sign an extension at this salary? At his number (or above) yes. Below it, it is a gamble, and the
+ * room for a discount depends on how much he wants to stay: a player who is not sold on the team does not
+ * take less at all.
+ */
+export function extensionChance(lg: League, p: Player, tid: string, sal: number, years: number) {
+  const e = extensionNeed(lg, p, tid, years);
+  if (sal + 1e-9 >= e.need) return { ...e, chance: 1 };
+  const room = e.interest < 40 ? 0 : 0.02 + 0.13 * (e.interest - 40) / 60; // how far under his number he could go
+  const x = (e.need - sal) / e.need;
+  const chance = room <= 0 ? 0 : Math.max(0, Math.pow(1 - x / room, 1.5));
+  return { ...e, chance };
 }

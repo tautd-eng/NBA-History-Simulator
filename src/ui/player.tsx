@@ -8,7 +8,7 @@ import { todayIndex } from '../league/league';
 import { RATING_LABELS, ratingOf, shownOvr as ovrOf, shownFromRaw, histShown, shownFromBpm, perD, rimD, postD } from '../data';
 import { ageIn } from '../players';
 import { SortTable, f1, f0, pctf, div } from './sorttable';
-import { traits, TRAIT_LABELS, reasons, extensionNeed } from '../league/prefs';
+import { traits, TRAIT_LABELS, reasons, extensionNeed, extensionChance } from '../league/prefs';
 import { extendable, userExtend } from '../league/extensions';
 import { maxSalary } from '../ai/value';
 import { seasonInfo } from '../data';
@@ -144,8 +144,14 @@ function Priorities({ lg, p, onChange }: any) {
   const cap = seasonInfo(N).cap;
   const [years, setYears] = useState(3);
   const est = canExt ? extensionNeed(lg, p, lg.userTid, years) : null;
-  const [amount, setAmount] = useState(() => (est ? (Math.ceil(est.need * cap * 100) / 100).toFixed(2) : ''));
+  // the offer as a share of the cap (adjusted with the buttons); starts at what he asks for
+  const [sal, setSal] = useState<number | null>(null);
+  const offer = sal ?? (est ? est.need : 0);
   const [msg, setMsg] = useState<string | null>(null);
+  const max = canExt ? maxSalary(p, N) : 0;
+  const ch = canExt ? extensionChance(lg, p, lg.userTid, offer, years) : null;
+  const money = (x: number) => `$${(x * cap).toFixed(2)}M`;
+  const bump = (dx: number) => setSal(Math.max(0.012, Math.min(max, Math.round((offer + dx) * 10000) / 10000)));
   const why = lg.userTid && lg.userTid !== p.tid ? reasons(lg, p, lg.userTid) : [];
   return (
     <>
@@ -158,11 +164,33 @@ function Priorities({ lg, p, onChange }: any) {
       {why.length > 0 && <p className="note">If he were choosing your team: {why.map(w => w.t).join('; ')}.</p>}
       {p.ext && <p className="note"><b>Contract extended:</b> {(p.ext.sal * 100).toFixed(1)}% of the cap through {p.ext.exp}.</p>}
       {canExt && (
-        <div className="offer" role="group" aria-label="Contract extension">
-          <div><b>Extend contract</b> <span className="dim">His contract ends this season. Right now he wants ~{(est!.need * 100).toFixed(1)}% of the cap (${(est!.need * cap).toFixed(2)}M){est!.why.length ? ` · ${est!.why.join(', ')}` : ''}. Max contract – {(maxSalary(p, N) * 100).toFixed(0)}% of the cap.</span></div>
-          <label>Years <select value={years} onChange={e => setYears(+e.target.value)}>{[1, 2, 3, 4, 5].map(y => <option key={y} value={y}>{y}</option>)}</select></label>
-          <label>Salary per season, $M <input type="number" step="0.05" value={amount} onChange={e => setAmount(e.target.value)} /></label>
-          <button className="primary" onClick={() => { const r = userExtend(lg, p.id, (parseFloat(amount.replace(',', '.')) || 0) / cap, years); setMsg(r.msg); onChange?.(); }}>Offer</button>
+        <div className="offer ext" role="group" aria-label="Contract extension">
+          <div><b>Extend contract</b> <span className="dim">His contract ends this season. Max contract – {(max * 100).toFixed(0)}% of the cap.</span></div>
+          <div className="ext-interest">
+            <span className="rl">Wants to stay</span>
+            <span className="bar"><span style={{ width: `${est!.interest}%` }}></span></span>
+            <span className="rv">{est!.interest >= 70 ? 'keen' : est!.interest >= 40 ? 'open' : 'not sold'}</span>
+          </div>
+          {est!.why.length > 0 && <p className="note">{est!.why.join(' · ')}</p>}
+          <table className="tbl compact ext-years">
+            <thead><tr><th className="l">Years</th>{[1, 2, 3, 4, 5].map(y => <th key={y}><button className={`small ${y === years ? 'primary' : ''}`} onClick={() => { setYears(y); setSal(null); }}>{y}</button></th>)}</tr></thead>
+            <tbody><tr><td className="l dim">He signs for</td>{[1, 2, 3, 4, 5].map(y => { const n = extensionNeed(lg, p, lg.userTid, y).need; return <td key={y} className={y === years ? 'on' : ''}>{(n * 100).toFixed(1)}%<br /><span className="dim small-t">{money(n)}</span></td>; })}</tr></tbody>
+          </table>
+          <div className="ext-adjust">
+            <span>Your offer for <b>{years}</b> yr{years > 1 ? 's' : ''}:</span>
+            <button className="small" onClick={() => bump(-0.01)} aria-label="1% of the cap less">−1%</button>
+            <button className="small" onClick={() => bump(-0.0025)} aria-label="a quarter percent less">−¼</button>
+            <b className="ext-amt">{(offer * 100).toFixed(2)}% <span className="dim">· {money(offer)}</span></b>
+            <button className="small" onClick={() => bump(0.0025)} aria-label="a quarter percent more">+¼</button>
+            <button className="small" onClick={() => bump(0.01)} aria-label="1% of the cap more">+1%</button>
+            <button className="small ghost" onClick={() => setSal(null)}>His number</button>
+          </div>
+          <div className={`ext-chance ${ch!.chance >= 1 ? 'pos' : ch!.chance > 0.4 ? 'mid' : 'neg'}`}>
+            {ch!.chance >= 1 ? <>He signs – this is his number{offer > ch!.need + 1e-4 ? ` (you are paying ${((offer - ch!.need) * 100).toFixed(2)}% more than you need to)` : ''}.</>
+              : ch!.chance > 0 ? <>A gamble: <b>{Math.round(ch!.chance * 100)}%</b> he takes the discount. If he says no, he will not talk for 10 days.</>
+              : <>He will not take this – {est!.interest < 40 ? 'he is not sold on staying, so no discounts at all.' : 'too far under his number.'}</>}
+          </div>
+          <button className="primary" disabled={ch!.chance <= 0} onClick={() => { const r = userExtend(lg, p.id, offer, years); setMsg(r.msg); onChange?.(); }}>Offer {years} yr{years > 1 ? 's' : ''} at {money(offer)}</button>
           {msg && <span className="hint" role="status">{msg}</span>}
         </div>
       )}

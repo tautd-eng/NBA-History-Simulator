@@ -56,6 +56,7 @@ export interface Player {
   qo?: number;           // his qualifying offer (salary he gets from that team if nobody else signs him)
   noRfa?: boolean;       // option declined: unrestricted
   ext?: { sal: number; exp: number }; // extension signed: replaces the contract when it ends
+  extNo?: number;   // turned down an extension offer: no talks before this day
   tradeLock?: { s: number; f: number }; // newly signed: not tradeable until this share of season s's regular season
   tx?: { s: number; t: string; d?: number }[]; // career transactions; d orders them within the season (-1 summer before it, game day, 999 after it)
 }
