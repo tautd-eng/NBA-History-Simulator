@@ -119,6 +119,12 @@ export interface Tactics { pace: number; three: number; crash: number; press: nu
   focus?: number;   // -1 ball movement (shots spread, a little more efficient, more passes to lose) … 1 feed the stars
   scheme?: number;  // -1 protect the paint (concede threes) … 1 run shooters off the line (concede twos)
   zone?: number;    // -1 never zone … 0 the coach's habit … 1 zone often (legal from 2001–02)
+  post?: number;    // 0 … 1 feed the post: the bigs get the ball inside
+  pnr?: number;     // 0 … 1 pick and roll: the guard and the big run it – more shots for both, easier twos, a few more turnovers
+  phys?: number;    // -1 conservative … 1 physical defense: contested shots, more fouls (foul trouble)
+  dreb?: number;    // -1 run in transition (leak out after a miss) … 1 everybody crashes the defensive glass
+  cover?: 'drop' | 'switch' | 'blitz';  // pick-and-roll coverage (undefined: the coach mixes it)
+  dbl?: number;     // -1 never double the star … 1 double him whenever he has it
 }
 interface Side { tid: string; gps: GP[]; on: GP[]; pts: number; q: number[]; home: boolean; paceZ: number; tac: Tactics; minutes?: Record<string, number>; depth?: number }
 
@@ -540,7 +546,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       // transition: a steal or a long rebound starts a break before the defence is set
       const pushes = offCall === 'quick' || offCall === 'two4one' ? 1.5 : offCall === 'milk' || offCall === 'hold' ? 0 : 1;
       // a team that crashes the offensive glass gives up more breaks after its misses
-      fastBreak = defCall !== 'foul' && rem > 4 && rng.chance((ended === 'stl' ? C.fbStl : ended === 'drb' ? C.fbDrb * (1 + 0.5 * def.tac.crash) : 0) * pushes * (1 + 0.15 * off.paceZ + 0.15 * off.tac.pace));
+      fastBreak = defCall !== 'foul' && rem > 4 && rng.chance((ended === 'stl' ? C.fbStl : ended === 'drb' ? C.fbDrb * (1 + 0.5 * def.tac.crash) * (1 - 0.4 * (off.tac.dreb ?? 0)) : 0) * pushes * (1 + 0.15 * off.paceZ + 0.15 * off.tac.pace));
       ended = 'dead';
       // --- one possession (may contain several plays through offensive rebounds)
       let first = true;
@@ -571,7 +577,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
         if (rem <= 0) possEnded = true;
       }
       // silent (non-shooting, non-bonus) fouls by the defence
-      if (rem > 0 && rng.chance(C.silentPf * E.pf * leaguePf * 10)) foulOn(def);
+      if (rem > 0 && rng.chance(C.silentPf * E.pf * leaguePf * 10 * (1 + 0.3 * (def.tac.phys ?? 0)))) foulOn(def);
       offense = def;
       // substitutions only on a dead ball: a whistle (free throws, a violation, a ball out of bounds, a timeout)
       // or a made basket in the last two minutes, when the clock stops – never on a live rebound or a steal.
@@ -682,8 +688,18 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const guard = (g: GP) => dS[oS.indexOf(g)] ?? dS[0];
     // the offence looks for the weak spot: a soft or much smaller defender draws more shots
     const edge = (g: GP) => { const d = guard(g); return C.mmUsg * (defZ - d.def) + C.mmSize * Math.max(-6, Math.min(6, g.p.ht - d.p.ht)) * (g.posNum >= 3.5 ? 1 : 0.4); };
-    const fo = off.tac.focus ?? 0;
-    let actor = on[rng.weighted(on.map(g => Math.pow(g.usg / 0.2, 1 + 0.6 * fo) * (0.6 + 0.4 * g.e) * Math.exp(edge(g)) * (offCall === 'three' ? Math.max(0.03, g.tpr) ** 1.5 * 6 : 1)))];
+    const fo = off.tac.focus ?? 0, OT = off.tac, DT = def.tac;
+    const postW = (g: GP) => 1 + 0.7 * (OT.post ?? 0) * (g.posNum >= 4 ? 1 : -0.15);
+    const pnrW = (g: GP) => 1 + 0.4 * (OT.pnr ?? 0) * (g.posNum <= 2 || g.posNum >= 4.5 ? 1 : -0.3);
+    let actor = on[rng.weighted(on.map(g => Math.pow(g.usg / 0.2, 1 + 0.6 * fo) * postW(g) * pnrW(g) * (0.6 + 0.4 * g.e) * Math.exp(edge(g)) * (offCall === 'three' ? Math.max(0.03, g.tpr) ** 1.5 * 6 : 1)))];
+    // doubling their star: the ball either stays with him in traffic (turnovers) or goes out to an open shooter
+    const star = on.reduce((a, g) => (g.usg > a.usg ? g : a), on[0]);
+    let kick = false, dblTov = 0;
+    if ((DT.dbl ?? 0) > 0 && actor === star && !fastBreak && !afterOrb && rng.chance(0.3 * DT.dbl!)) {
+      if (rng.chance(0.65)) { const rest = on.filter(g => g !== star); actor = rest[rng.weighted(rest.map(g => 0.05 + g.tpr))]; kick = true; }
+      else dblTov = 0.35;
+    }
+    const single = (DT.dbl ?? 0) < 0 && actor === star ? 0.04 * -DT.dbl! : 0;
     // the man who just grabbed the offensive rebound is under the basket: he goes right back up about half the time
     if (afterOrb && orbBy && on.includes(orbBy) && offCall !== 'three' && rng.chance(orbBy.posNum >= 3.5 ? 0.55 : 0.4)) actor = orbBy;
     if (offCall === 'iso' && isoPid && !afterOrb) {
@@ -727,7 +743,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
 
     // turnover
     // ball pressure: his own defender's hands count as much as the team's
-    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + 0.12 * def.tac.press + 0.08 * Math.max(0, -(off.tac.focus ?? 0)) + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd) - eT);
+    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + 0.12 * def.tac.press + 0.08 * Math.max(0, -(off.tac.focus ?? 0)) + 0.05 * (off.tac.pnr ?? 0) + (def.tac.cover === 'blitz' ? 0.15 : 0) + dblTov + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd) - eT);
     if (rng.chance(pTov)) {
       inc(actor, 'tov');
       const sumStl = dOn.reduce((a, g) => a + g.stl, 0);
@@ -752,14 +768,15 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     // free-throw trip without a field-goal attempt (shooting foul / bonus)
     const defPf = dOn.reduce((a, g) => a + g.pf, 0) / 5;
     const r = Math.max(0, actor.drw - C.andOne * 0.5);
-    const qTrip = Math.min(0.45, (r / (2 + r)) * C.foulTrip * E.ftr * Math.sqrt(defPf / leaguePf) * (offCall === 'inside' ? 1.35 : 1) * (fb ? 1.2 : 1) * (1 + 0.25 * def.tac.press));
+    const qTrip = Math.min(0.45, (r / (2 + r)) * C.foulTrip * E.ftr * Math.sqrt(defPf / leaguePf) * (offCall === 'inside' ? 1.35 : 1) * (fb ? 1.2 : 1) * (1 + 0.25 * def.tac.press + 0.2 * (def.tac.phys ?? 0)) * (1 + 0.15 * (off.tac.post ?? 0)));
     if (rng.chance(qTrip)) {
       foulOn(def);
       return ftTrip(off, def, actor, 2);
     }
     // field-goal attempt
     const sch = def.tac.scheme ?? 0, mov = Math.max(0, -(off.tac.focus ?? 0));
-    let tprAdj = sigm(logit(Math.min(0.97, Math.max(0.003, actor.tpr))) + C.tpa + E.tpa + 0.45 * off.tac.three - 0.35 * sch);
+    let tprAdj = sigm(logit(Math.min(0.97, Math.max(0.003, actor.tpr))) + C.tpa + E.tpa + 0.45 * off.tac.three - 0.35 * sch
+      - 0.35 * (OT.post ?? 0) * (actor.posNum >= 4 ? 1 : 0) + (DT.cover === 'drop' && actor.posNum <= 2.5 ? 0.25 : 0) + (DT.cover === 'blitz' ? 0.2 : 0) + (kick ? 0.8 : 0));
     // down three late there is no point in a two: everybody hunts a three, also after an offensive rebound
     if (offCall === 'three') tprAdj = Math.max(tprAdj, def.pts - off.pts === 3 ? 0.97 : 0.88);
     if (offCall === 'inside') tprAdj *= 0.15;
@@ -791,12 +808,13 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     let made: boolean;
     let blocker: GP | null = null;
     if (three) {
-      made = rng.chance(zoneP(sigm(logit(actor.p3) + C.p3 + E.p3 + shift - 0.12 * sch + 0.05 * mov), zone));
+      made = rng.chance(zoneP(sigm(logit(actor.p3) + C.p3 + E.p3 + shift - 0.12 * sch + 0.05 * mov - 0.05 * (DT.phys ?? 0) + (DT.cover === 'blitz' ? 0.05 : 0) + (kick ? 0.1 : 0) + single), zone));
     } else {
       // shots at the rim get blocked far more often than jumpers (same total)
       const rimW = zone.mix[0][0], blkZ = zone.k === 'rim' ? 1.4 / (rimW * 1.4 + (1 - rimW) * 0.45) : zone.k === 'mid' ? 0.45 / (rimW * 1.4 + (1 - rimW) * 0.45) : 1;
       const pBlk = Math.min(0.3, dOn.reduce((a, g) => a + g.blk, 0) * C.blk * E.blk * blkZ);
-      const pMake = zoneP(sigm(logit(actor.p2) + C.p2 + E.p2 + shift + 0.12 * sch + 0.05 * mov), zone);
+      const cov = DT.cover === 'drop' ? -0.03 : DT.cover === 'switch' ? (actor.posNum >= 4 ? 0.06 : -0.02) : 0;
+      const pMake = zoneP(sigm(logit(actor.p2) + C.p2 + E.p2 + shift + 0.12 * sch + 0.05 * mov + 0.04 * (OT.pnr ?? 0) - 0.05 * (DT.phys ?? 0) + cov + single), zone);
       if (rng.chance(pBlk)) {
         lastBlocked = true;
         blocker = dOn[rng.weighted(dOn.map(g => g.blk * (g === md ? 2.5 : 1)))];
@@ -863,7 +881,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
 
   function rebound(off: Side, def: Side, ft: boolean): 'end' | 'orb' {
     const O = off.on.reduce((a, g) => a + g.orb, 0) * C.orb * E.orb * (ft ? C.orbFt : 1) * (1 + (off.tac.crash > 0 ? 0.14 : 0.07) * off.tac.crash);
-    const D = def.on.reduce((a, g) => a + g.drb, 0);
+    const D = def.on.reduce((a, g) => a + g.drb, 0) * (1 + 0.12 * (def.tac.dreb ?? 0));
     if (rng.chance(O / (O + D))) {
       const g = off.on[rng.weighted(off.on.map(g => g.orb))];
       inc(g, 'orb'); orbBy = g;
