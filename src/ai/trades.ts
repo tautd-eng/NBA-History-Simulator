@@ -1074,8 +1074,8 @@ export function findTrades(lg: League, me: string, give: TradeAsset[], want: Tra
       if (gap > 0) for (const c of combos(assetsOf(me, new Set(give.map(key))), gap, 14)) tryDeal(want, [...give, ...c.xs]);
       else for (const c of combos(assetsOf(tid, new Set(want.map(key))), -gap, 14)) tryDeal([...want, ...c.xs], give);
     }
-    found.sort((a, b) => b.gain - a.gain);
+    found.sort((a, b) => (b.getV - b.giveV) - (a.getV - a.giveV));
     out.push(...found.slice(0, partner || wantOwner ? limit : 2));
   }
-  return out.sort((a, b) => b.gain - a.gain).slice(0, limit);
+  return out.sort((a, b) => (b.getV - b.giveV) - (a.getV - a.giveV)).slice(0, limit);
 }

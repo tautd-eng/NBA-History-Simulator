@@ -210,13 +210,12 @@ export function Trades({ lg, openPlayer, onDone }: any) {
             <button className="primary" disabled={searching || (!aGives.length && !bGives.length)} onClick={find}>{searching ? 'Searching…' : 'Find trades'}</button>
           </div>
           {found && (found.length ? <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th className="l">Partner</th><th className="l">{lg.teams[a].abbr} get</th><th className="l">{lg.teams[a].abbr} give</th><th title="Market value received vs given">Value</th><th title="How much the deal helps your team, by your GM's estimate">Fit</th><th></th></tr></thead>
+            <thead><tr><th className="l">Partner</th><th className="l">{lg.teams[a].abbr} get</th><th className="l">{lg.teams[a].abbr} give</th><th title="Market value received vs given">Value</th><th></th></tr></thead>
             <tbody>{found.map((r: any, i: number) => <tr key={i}>
               <td className="l"><TL tid={r.tid} abbr /></td>
               <td className="l">{describeSide(lg, r.gets)}</td>
               <td className="l dim">{describeSide(lg, r.gives)}</td>
               <td>{r.getV.toFixed(1)} / {r.giveV.toFixed(1)}</td>
-              <td className={r.gain >= 0 ? 'pos' : 'neg'}>{r.gain >= 0 ? '+' : ''}{r.gain.toFixed(1)}</td>
               <td><button className="small" onClick={() => load(r)}>Load</button></td>
             </tr>)}</tbody>
           </table></div> : <p className="note">No team would accept a deal like that. Add more, pick something else, or widen the search to all teams.</p>)}
