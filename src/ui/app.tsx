@@ -1008,7 +1008,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
                     const ro = roleOf(p.z, p.pos);
                     const mpg = p.cur.gp ? p.cur.min / p.cur.gp : 0, gs = p.cur.gp ? p.cur.gs / p.cur.gp : 0;
                     const job = !p.cur.gp ? '' : gs >= 0.6 ? 'starter' : mpg >= 24 ? 'sixth man' : mpg >= 15 ? 'rotation' : mpg >= 8 ? 'spot minutes' : 'end of bench';
-                    return <><RoleBadge id={ro.arch.id} />{ro.second && <RoleBadge id={ro.second.id} small />}<br /><span className="dim small-t">{ro.arch.blurb}{job ? ` · ${job}` : ''}</span></>;
+                    return <span title={`${ro.arch.name} – ${ro.arch.blurb}${job ? ` (${job})` : ''}`}><RoleBadge id={ro.arch.id} />{ro.second && <RoleBadge id={ro.second.id} />}</span>;
                   })()}</td>
                   <td>{ageIn(p, lg.season)}</td>
                   <td><Ovr v={ovrOf(p.z)} small /></td>
