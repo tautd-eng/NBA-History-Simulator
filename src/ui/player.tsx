@@ -8,7 +8,7 @@ import { todayIndex } from '../league/league';
 import { RATING_LABELS, ratingOf, shownOvr as ovrOf, shownFromRaw, histShown, shownFromBpm, perD, rimD, postD } from '../data';
 import { ageIn } from '../players';
 import { SortTable, f1, f0, pctf, div } from './sorttable';
-import { traits, TRAIT_LABELS, reasons, extensionNeed, extensionChance } from '../league/prefs';
+import { traits, TRAIT_LABELS, reasons, extensionNeed, extensionChance, preferredYears } from '../league/prefs';
 import { extendable, userExtend } from '../league/extensions';
 import { maxSalary } from '../ai/value';
 import { seasonInfo } from '../data';
@@ -163,7 +163,7 @@ export function ExtensionBox({ lg, p, onChange, compact }: any) {
   const canExt = mine && extendable(lg, p);
   const N = lg.season + 1;
   const cap = seasonInfo(N).cap;
-  const [years, setYears] = useState(3);
+  const [years, setYears] = useState(() => preferredYears(p, lg.season + 1));
   const [sal, setSal] = useState<number | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   if (!canExt) return null;
@@ -171,7 +171,7 @@ export function ExtensionBox({ lg, p, onChange, compact }: any) {
   const offer = sal ?? est.need;
   const max = maxSalary(p, N);
   const ch = extensionChance(lg, p, lg.userTid, offer, years);
-  const money = (x: number) => `$${(x * cap).toFixed(2)}M`;
+  const money = (x: number) => { const m = x * cap; return m >= 1 ? `$${m.toFixed(2)}M` : `$${Math.round(m * 1000)}K`; };
   const pc = (x: number) => `${(x * 100).toFixed(1)}%`;
   const bump = (dx: number) => setSal(Math.max(0.012, Math.min(max, Math.round((offer + dx) * 10000) / 10000)));
   const cooling = (p.extNo ?? -1) > lg.day;

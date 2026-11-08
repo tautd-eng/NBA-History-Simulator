@@ -130,6 +130,8 @@ export interface Pick { season: number; round: number; orig: string; owner: stri
  *  'worse' – the receiver gets the less favourable of the giver's two picks (orig a, orig b). Settled after the lottery. */
 export interface PickRight { kind: 'swap' | 'worse'; season: number; round: number; a: string; b: string }
 export interface TradeAsset { pid?: string; pick?: { season: number; round: number; orig: string }; right?: PickRight }
+/** A person's contract offer to a free agent, waiting for his answer. */
+export interface FAOfferRec { pid: string; tid: string; sal: number; yrs: number; s: number; day: number; st?: number }
 /** A trade offer from one human-run team to another: from gives fromGives, to gives toGives. */
 export interface Proposal { id: number; from: string; to: string; fromGives: TradeAsset[]; toGives: TradeAsset[]; s: number; day: number; phase: string; note?: string }
 export interface TradeRec { s: number; day: number; phase: string; a: string; b: string; aGets: TradeAsset[]; bGets: TradeAsset[]; user?: boolean; desc: string; info?: Record<string, [number, number]>; mv?: [number, number] }
@@ -226,7 +228,8 @@ export interface League {
   previewOpen?: number | null;
   humans?: string[];                 // hot seat: every human-run team (userTid is the one being played now)
   proposals?: Proposal[];
-  commish?: boolean;                 // commissioner mode: any trade between any teams can be forced            // trade offers between human-run teams, waiting for the other side
+  commish?: boolean;
+  offers?: FAOfferRec[];             // contract offers people made to free agents – he decides at the end of the wave (or the day)                 // commissioner mode: any trade between any teams can be forced            // trade offers between human-run teams, waiting for the other side
   hofManual?: string[];
   jerseyManual?: { pid: string; tid: string }[]; // jerseys retired by hand              // players put into the Hall of Fame by hand
   /** awards screen after the regular season: which awards have been revealed (count of places shown) */

@@ -13,7 +13,7 @@ import { rookieContract } from './contracts';
 import { nextCal, fatigueAt, addLoad, fatigueExcess, calDay } from './fatigue';
 import { rollGameInjury, injure, refreshInjuries, offDayInjuries } from './injuries';
 import { aiExtensions } from './extensions';
-import { aiRecallStash, announceClass, lateMarket } from './offseason';
+import { aiRecallStash, announceClass, lateMarket, resolveOffersInSeason } from './offseason';
 import { refreshPlans } from '../ai/plan';
 import { makeSchedule } from './schedule';
 import { recordHealth } from './health';
@@ -518,6 +518,7 @@ function applyDeferred(lg: League, d: Deferred, res: GameResult, rng: Rng) {
 /** End of a regular-season day once all its games are played. */
 function regularDayEnd(lg: League, day: number, rng: Rng) {
   if (lg.schedule.some(g => !g.done && g.day === day)) return;
+  resolveOffersInSeason(lg, rng); // free agents answer the offers people made them
   if (day % 4 === 3 && !pastDeadline(lg)) aiTradeRound(lg, rng, 0.75);
   if (day % 10 === 5) aiExtensions(lg, rng);
   // GMs settle on a plan early and take a last look three weeks before the deadline, so buyers and sellers are set for the rush

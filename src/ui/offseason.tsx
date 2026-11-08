@@ -6,11 +6,11 @@ import { useMemo, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, RATING_LABELS, ratingOf, seasonInfo } from '../data';
 import { ageIn } from '../players';
 import { peakBpm, payroll, askingSalary, MIN_SAL, maxSalary, hardCap } from '../ai/value';
-import { discount, reasons } from '../league/prefs';
+import { discount, reasons, preferredYears, lengthPrice, offerUtility } from '../league/prefs';
 import { isFreeAgent } from '../ai/trades';
 import {
   initDraft, draftOnClock, draftAdvance, draftPick, draftSuggest, finishDraft,
-  enterFreeAgency, faStage, startSeason, faOffer, faDemand, faRenounce, faRelease, faDecide, faMatch, prevTeam, faOffersFor,
+  enterFreeAgency, faStage, startSeason, faOffer, faDemand, offersOn, withdrawOffer, faRenounce, faRelease, faDecide, faMatch, prevTeam, faOffersFor,
 } from '../league/offseason';
 import { DecisionsBoard } from './offsteps';
 import { isHuman } from '../league/humans';
@@ -229,6 +229,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
   if (!fa) return null;
   if (fa.stage === 1 && !fa.sumSeen) return <OptionsSummary lg={lg} openPlayer={openPlayer} onOpen={() => { fa.sumSeen = true; onChange(); try { window.scrollTo({ top: 0 }); } catch { /* */ } }} />;
   const act = (fn: () => any) => { const r = fn(); if (r?.msg) setMsg(r.msg); onChange(); };
+  const [neg, setNeg] = useState<string | null>(null);
   const N = lg.season;
   const u = lg.userTid ? lg.teams[lg.userTid] : null;
   const pay = u ? payroll(lg, u.tid) : 0;
@@ -347,17 +348,18 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
             <h2>Your players with expired contracts</h2>
             <p className="note">In this wave only you can negotiate with them, and you can go over the cap (up to the hard cap). If you do nothing, the GM decides at the end of the wave.</p>
             <div className="tbl-wrap"><table className="tbl">
-              <thead><tr><th className="l">Player</th><th>Age</th><th>OVR</th><th>Pot</th><th>Asks</th><th></th></tr></thead>
+              <thead><tr><th className="l">Player</th><th>Age</th><th>OVR</th><th>Pot</th><th title="For the length he would pick himself">Asks</th><th></th></tr></thead>
               <tbody>{pending.map((p: any) => {
-                const need = faDemand(lg, p, u.tid);
+                const need = faDemand(lg, p, u.tid, preferredYears(p, N));
                 return <tr key={p.id}>
                   <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">{p.pos}</span></td>
                   <td>{ageIn(p, N)}</td><td><Ovr v={ovrOf(p.z)} /></td><td>{potOf(p, N)}</td>
                   <td>{moneyOf(need, N)}</td>
-                  <td className="l"><button className="small primary" onClick={() => act(() => faOffer(lg, p.id, need))}>Re-sign</button> <button className="small" onClick={() => act(() => faRenounce(lg, p.id))}>Let go</button></td>
+                  <td className="l"><button className={`small ${neg === p.id ? '' : 'primary'}`} onClick={() => setNeg(neg === p.id ? null : p.id)}>{neg === p.id ? 'Close' : 'Negotiate'}</button> <button className="small" onClick={() => act(() => faRenounce(lg, p.id))}>Let go</button></td>
                 </tr>;
               })}</tbody>
             </table></div>
+            {neg && pending.some((p: any) => p.id === neg) && <FAOfferBox key={neg} lg={lg} p={lg.players[neg]} onDone={(r: any) => { setMsg(r.msg); if (r.ok) setNeg(null); onChange(); }} onCancel={() => setNeg(null)} />}
           </div>
         )}
       </section>
@@ -446,8 +448,11 @@ function OptionsSummary({ lg, openPlayer, onOpen }: any) {
 }
 
 /** Every offer a free agent has on the table right now, and how much he likes each one. */
-function OffersDialog({ lg, p, offers, close, openPlayer }: any) {
+function OffersDialog({ lg, p, offers: ai, close, openPlayer }: any) {
   const N = lg.season, u = lg.userTid;
+  const ask0 = ai[0]?.ask ?? askingSalary(p, N);
+  const offers = [...ai, ...offersOn(lg, p.id).map((o: any) => ({ tid: o.tid, sal: o.sal, yrs: o.yrs, score: offerUtility(lg, p, o.tid, o.sal, ask0, o.yrs), human: true, short: o.sal + 1e-9 < faDemand(lg, p, o.tid, o.yrs) }))]
+    .sort((a: any, b: any) => (a.short ? 1 : 0) - (b.short ? 1 : 0) || b.score - a.score);
   const best = Math.max(0.01, ...offers.map((o: any) => o.score));
   return (
     <div className="overlay center" onClick={close}>
@@ -458,14 +463,14 @@ function OffersDialog({ lg, p, offers, close, openPlayer }: any) {
           {offers.map((o: any, i: number) => {
             const why = reasons(lg, p, o.tid).slice(0, 2).map((x: any) => x.t).join('; ');
             return <li key={o.tid} className={i === 0 ? 'lead' : ''}>
-              <span className="o-team"><TL tid={o.tid} />{i === 0 ? <span className="chip tiny on-clock">leaning</span> : null}{o.mle ? <span className="chip tiny" title="Mid-level exception">MLE</span> : null}{o.needRoom ? <span className="chip tiny" title="His own team – would clear room to keep him">Bird rights</span> : null}</span>
+              <span className="o-team"><TL tid={o.tid} />{i === 0 ? <span className="chip tiny on-clock">leaning</span> : null}{o.mle ? <span className="chip tiny" title="Mid-level exception">MLE</span> : null}{o.needRoom ? <span className="chip tiny" title="His own team – would clear room to keep him">Bird rights</span> : null}{o.human ? <span className="chip tiny">{o.tid === u ? 'your offer' : 'person'}</span> : null}{o.short ? <span className="chip tiny" title="Under what he asks from this team">under his number</span> : null}</span>
               <span className="o-money"><b>{moneyOf(o.sal, N)}</b> × {o.yrs} yrs</span>
               <span className="o-bar" title={`His interest: ${Math.round(100 * o.score / best)}% of his favourite offer`}><span style={{ width: `${Math.max(4, Math.min(100, 100 * o.score / best))}%` }}></span></span>
               {why && <span className="o-why dim">{why}</span>}
             </li>;
           })}
         </ul> : <p className="note">No AI team would make him an offer right now.</p>}
-        {u && <p className="note">From your team he asks {moneyOf(faDemand(lg, p, u), N)}{reasons(lg, p, u).length ? ` (${reasons(lg, p, u).slice(0, 2).map((x: any) => x.t).join('; ')})` : ''}. Make your offer under “Free agents”.</p>}
+        {u && <p className="note">From your team he asks {moneyOf(faDemand(lg, p, u), N)}{reasons(lg, p, u).length ? ` (${reasons(lg, p, u).slice(0, 2).map((x: any) => x.t).join('; ')})` : ''}. Make or change your offer under “Free agents” – he answers at the end of the wave.</p>}
       </div>
     </div>
   );
@@ -475,7 +480,6 @@ function OffersDialog({ lg, p, offers, close, openPlayer }: any) {
 export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
   const [pos, setPos] = useState('all');
   const [sel, setSel] = useState<string | null>(null);
-  const [amount, setAmount] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [rel, setRel] = useState<string | null>(null);
   const N = lg.season;
@@ -483,10 +487,10 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
   const u = lg.userTid ? lg.teams[lg.userTid] : null;
   const canSign = u && (lg.phase === 'freeagency' || lg.phase === 'regular');
   const list = Object.values(lg.players).filter((p: any) => (isFreeAgent(lg, p) || (lg.fa?.stage === 1 && lg.fa.pending.includes(p.id))) && posOk(p, pos));
-  const rows = list.map((p: any) => ({ key: p.id, p, l: lastLine(p), need: u ? faDemand(lg, p, u.tid) : askingSalary(p, N) }));
-  const pick = (r: any) => { setSel(r.p.id); setAmount((Math.ceil(r.need * cap * 100) / 100).toFixed(2)); setMsg(null); };
+  const rows = list.map((p: any) => ({ key: p.id, p, l: lastLine(p), need: u ? faDemand(lg, p, u.tid, preferredYears(p, N)) : askingSalary(p, N) }));
+  const pick = (r: any) => { setSel(r.p.id); setMsg(null); };
   const cols = [
-    { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <><button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button>{r.p.bird && r.p.bird === lg.userTid ? <span className="chip tiny">yours</span> : null}{r.p.rfa ? <span className="chip tiny rfa" title={`Restricted free agent: the ${lg.teams[r.p.rfa]?.name} can match an offer`}>RFA {lg.teams[r.p.rfa]?.abbr}</span> : null}</> },
+    { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <><button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button>{r.p.bird && r.p.bird === lg.userTid ? <span className="chip tiny">yours</span> : null}{offersOn(lg, r.p.id).some((o: any) => o.tid === lg.userTid) ? <span className="chip tiny on-clock" title="You made him an offer">offer made</span> : null}{r.p.rfa ? <span className="chip tiny rfa" title={`Restricted free agent: the ${lg.teams[r.p.rfa]?.name} can match an offer`}>RFA {lg.teams[r.p.rfa]?.abbr}</span> : null}</> },
     { key: 'pos', label: 'Pos', get: (r: any) => posNum(r.p.pos), fmt: (_: any, r: any) => <span className="dim">{r.p.pos}</span> },
     { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, N) },
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
@@ -502,13 +506,6 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
   ];
   const sp = sel ? lg.players[sel] : null;
   const pay = u ? payroll(lg, u.tid) : 0;
-  const send = () => {
-    const sal = Math.max(MIN_SAL, (parseFloat(amount.replace(',', '.')) || 0) / cap);
-    const r = faOffer(lg, sel!, sal);
-    setMsg(r.msg);
-    if (r.ok) setSel(null);
-    onChange();
-  };
   const mine = u ? u.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z)) : [];
   return (
     <div className="grid-2 fa-grid">
@@ -526,16 +523,7 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
         <div className="def-row">
           <div className="seg" role="group" aria-label="Position">{POS.map(([k, l]) => <button key={k} className={pos === k ? 'on' : ''} onClick={() => setPos(k)}>{l}</button>)}</div>
         </div>
-        {sp && canSign && (
-          <div className="offer" role="group" aria-label="Offer">
-            <div><b>{sp.name}</b> <span className="dim">{sp.pos} · age {ageIn(sp, N)} · OVR {ovrOf(sp.z)} · asks {moneyOf(faDemand(lg, sp, u.tid), N)} · max contract {moneyOf(maxSalary(sp, N), N)}</span></div>
-            <div className="dim">{reasons(lg, sp, u.tid).length ? `About your team: ${reasons(lg, sp, u.tid).map(x => x.t).join('; ')}.` : 'He cares about the terms, not the team.'}{sp.rfa && sp.rfa !== u.tid ? ` Restricted free agent – the ${lg.teams[sp.rfa].name} can match your offer.` : ''}</div>
-            <label>Salary per season, $M <input type="number" step="0.05" min={(MIN_SAL * cap).toFixed(2)} value={amount} onChange={e => setAmount(e.target.value)} /></label>
-            <button className="primary" onClick={send}>Offer</button>
-            <button className="ghost" onClick={() => setSel(null)}>Cancel</button>
-            <span className="dim">Min {moneyOf(MIN_SAL, N)} · your payroll {Math.round(pay * 100)}% of the cap</span>
-          </div>
-        )}
+        {sp && canSign && <FAOfferBox key={sp.id} lg={lg} p={sp} onDone={(r: any) => { setMsg(r.msg); if (r.ok) setSel(null); onChange(); }} onCancel={() => setSel(null)} />}
         {msg && <p className="hint" role="status">{msg}</p>}
         <SortTable cols={cols} rows={rows} initial="ovr" limit={150} />
       </section>
@@ -554,8 +542,82 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
                 : <button className="small" onClick={() => setRel(p.id)}>Release</button>)}</td>
             </tr>)}</tbody>
           </table></div>
+          {offersOn && (lg.offers ?? []).some((o: any) => o.tid === u.tid) && <>
+            <h3>Your open offers</h3>
+            <ul className="news">{(lg.offers ?? []).filter((o: any) => o.tid === u.tid).map((o: any) => { const q = lg.players[o.pid]; return <li key={o.pid}><span className="yr">{o.yrs} yr</span><span><button className="link" onClick={() => setSel(o.pid)}>{q.name}</button> <span className="dim">{moneyOf(o.sal, N)} per season · answers {lg.phase === 'freeagency' ? 'at the end of the wave' : 'tomorrow'}</span> <button className="small ghost" onClick={() => { withdrawOffer(lg, o.pid); setMsg('Offer withdrawn.'); onChange(); }}>Withdraw</button></span></li>; })}</ul>
+          </>}
         </section>
       )}
+    </div>
+  );
+}
+
+/**
+ * Contract talks with a free agent (or one of your own): length and salary. Each length has its own price –
+ * a young player wants paying for the free agency he gives up, a veteran takes less for security.
+ */
+export function FAOfferBox({ lg, p, onDone, onCancel }: any) {
+  const N = lg.season;
+  const cap = seasonInfo(N).cap;
+  const tid = lg.userTid;
+  const [years, setYears] = useState(() => preferredYears(p, N));
+  const [sal, setSal] = useState<number | null>(null);
+  const need = (y: number) => faDemand(lg, p, tid, y);
+  const n = need(years);
+  const offer = sal ?? n;
+  const max = maxSalary(p, N);
+  const money = (x: number) => { const m = x * cap; return m >= 1 ? `$${m.toFixed(2)}M` : `$${Math.round(m * 1000)}K`; };
+  const pc = (x: number) => `${(x * 100).toFixed(1)}%`;
+  const bump = (dx: number) => setSal(Math.max(MIN_SAL, Math.min(max, Math.round((offer + dx) * 10000) / 10000)));
+  const why = reasons(lg, p, tid);
+  const L = lengthPrice(p, N, years, Math.min(max, askingSalary(p, N)));
+  const pay = payroll(lg, tid);
+  const pref = preferredYears(p, N);
+  // every offer on the table – the AI teams' (what they would bid now) and people's – by how much he likes it
+  const ask0 = askingSalary(p, N) * (lg.phase === 'freeagency' ? [1, 1, 0.85, 0.7, 0.7][Math.max(1, Math.min(3, lg.fa?.stage ?? 3))] : 0.7);
+  const mineNow = offersOn(lg, p.id).find((o: any) => o.tid === tid);
+  const rows = [
+    ...faOffersFor(lg, p).map((o: any) => ({ tid: o.tid, sal: o.sal, yrs: o.yrs, score: o.score })),
+    ...offersOn(lg, p.id).map((o: any) => ({ tid: o.tid, sal: o.sal, yrs: o.yrs, score: offerUtility(lg, p, o.tid, o.sal, ask0, o.yrs), human: true, mine: o.tid === tid, short: o.sal + 1e-9 < faDemand(lg, p, o.tid, o.yrs) })),
+  ].sort((a: any, b: any) => (a.short ? 1 : 0) - (b.short ? 1 : 0) || b.score - a.score);
+  const top = Math.max(1e-6, ...rows.map((r: any) => r.score));
+  const table = rows.slice(0, 8).map((r: any) => ({ ...r, rel: Math.max(0.05, Math.min(1, r.score / top)) }));
+  return (
+    <div className="offer ext" role="group" aria-label={`Offer to ${p.name}`}>
+      <div><b>{p.name}</b> <span className="dim">{p.pos} · age {ageIn(p, N)} · OVR {ovrOf(p.z)} · max contract {pc(max)} ({money(max)}) · your payroll {Math.round(pay * 100)}% of the cap</span></div>
+      <p className="note">{why.length ? `About your team: ${why.map((x: any) => x.t).join('; ')}.` : 'He cares about the terms, not the team.'}{p.rfa && p.rfa !== tid ? ` Restricted free agent – the ${lg.teams[p.rfa].name} can match your offer.` : ''} He would pick {pref} year{pref > 1 ? 's' : ''} himself.{L.why ? ` For ${years} years: ${L.why}.` : ''}</p>
+      <table className="tbl compact ext-years">
+        <thead><tr><th className="l">Years</th>{[1, 2, 3, 4, 5].map(y => <th key={y}><button className={`small ${y === years ? 'primary' : ''}`} onClick={() => { setYears(y); setSal(null); }}>{y}</button></th>)}</tr></thead>
+        <tbody><tr><td className="l dim">He signs for</td>{[1, 2, 3, 4, 5].map(y => { const v = need(y); return <td key={y} className={y === years ? 'on' : ''}>{pc(v)}<br /><span className="dim small-t">{money(v)}</span></td>; })}</tr></tbody>
+      </table>
+      <div className="ext-adjust">
+        <span>Your offer for <b>{years}</b> yr{years > 1 ? 's' : ''}:</span>
+        <button className="small" onClick={() => bump(-0.01)} aria-label="1% of the cap less">−1%</button>
+        <button className="small" onClick={() => bump(-0.0025)} aria-label="a quarter percent less">−¼</button>
+        <b className="ext-amt">{(offer * 100).toFixed(2)}% <span className="dim">· {money(offer)}</span></b>
+        <button className="small" onClick={() => bump(0.0025)} aria-label="a quarter percent more">+¼</button>
+        <button className="small" onClick={() => bump(0.01)} aria-label="1% of the cap more">+1%</button>
+        <button className="small ghost" onClick={() => setSal(null)}>His number</button>
+      </div>
+      <div className={`ext-chance ${offer + 1e-9 >= n ? 'pos' : offer >= n * 0.93 ? 'mid' : 'neg'}`}>
+        {offer + 1e-9 >= n ? <>This meets his number{offer > n + 1e-4 ? ` (you are paying ${((offer - n) * 100).toFixed(2)}% more than you need to)` : ''}. He takes it unless another offer appeals to him more.</>
+          : offer >= n * 0.93 ? <>Close: about a <b>1 in 3</b> chance he takes {((1 - offer / n) * 100).toFixed(1)}% less than his number.</>
+          : <>Too far under his number ({pc(n)}) – he will say no.</>}
+        {' '}He answers {lg.phase === 'freeagency' ? 'at the end of this wave' : 'tomorrow'}.
+      </div>
+      {table.length > 0 && <div className="tbl-wrap"><table className="tbl compact">
+        <thead><tr><th className="l">On the table</th><th>Salary</th><th>Yrs</th><th className="l">He likes it</th><th></th></tr></thead>
+        <tbody>{table.map((r: any, i: number) => <tr key={i} className={r.tid === tid ? 'mine' : ''}>
+          <td className="l">{lg.teams[r.tid].name}{r.mine ? ' (you)' : r.human ? ' (person)' : ''}</td>
+          <td>{pc(r.sal)}</td><td>{r.yrs}</td>
+          <td className="l"><span className="o-bar inl"><span style={{ width: `${Math.round(100 * r.rel)}%` }}></span></span>{i === 0 ? <span className="chip tiny">leading</span> : null}{r.short ? <span className="chip tiny neg">under his number</span> : null}</td>
+          <td>{r.mine ? <button className="small ghost" onClick={() => { withdrawOffer(lg, p.id); onDone({ ok: false, msg: 'Offer withdrawn.' }); }}>Withdraw</button> : null}</td>
+        </tr>)}</tbody>
+      </table></div>}
+      <div className="def-row">
+        <button className="primary" onClick={() => onDone(faOffer(lg, p.id, offer, years))}>{mineNow ? 'Change offer' : 'Make offer'}: {years} yr{years > 1 ? 's' : ''} at {money(offer)}</button>
+        <button className="ghost" onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   );
 }

@@ -147,25 +147,10 @@ export function extensionNeed(lg: League, p: Player, tid: string, years: number)
   // a lot more – up to twice his market value
   const stay = d >= 0 ? Math.min(0.1, 0.45 * d) : -Math.min(1, 4 * -d);
   const interest = Math.round(Math.max(0, Math.min(100, 50 + 160 * d)));
-  // 2) length: a veteran pays for security (each year up to four is worth ~2.5% to him); a deal too long for his age
-  //    costs; a young player gives up his next free agency – every year past two compounds, the more so the more
-  //    he is expected to improve
-  let len = 0;
-  if (age >= 30) len += 0.025 * (Math.min(years, 4) - 1);
-  if (years > (age >= 32 ? 3 : 5)) len -= 0.1;
-  // a long deal for a young player is priced on what he is expected to become over the deal: his projected path
-  // from today toward his peak (around 27), year by year, averaged – the team buys some of the upside and takes
-  // the risk that he never gets there; the player gives a little of it back for the security
-  let young = 1;
-  if (age <= 25 && years >= 2) {
-    const now = bpmOf(p.z), peak = Math.max(now, peakBpm(p, N));
-    const toPeak = Math.max(1, 27 - age);
-    let sum = 0;
-    for (let y = 1; y <= years; y++) sum += askAtBpm(p, N, now + (peak - now) * Math.min(1, y / toPeak));
-    const price = (sum / years) * (1 - 0.02 * (years - 1));
-    young = Math.max(1, price / Math.max(ask, 1e-6));
-    if (young > 1.03) why.push(`a ${years}-year deal is priced on his expected growth (peak ~${peakShown(p, N)} OVR) – a bet that he gets there`);
-  } else if (age >= 30 && years >= 3) why.push('values a long contract');
+  // 2) length
+  const L = lengthPrice(p, N, years, ask);
+  const len = L.len, young = L.young;
+  if (L.why) why.push(L.why);
   const raw = ask * (1 - stay) * (1 - len) * young;
   const need = Math.max(0.012, Math.min(max, raw));
   const parts = [
@@ -190,4 +175,36 @@ export function extensionChance(lg: League, p: Player, tid: string, sal: number,
   const x = (e.need - sal) / e.need;
   const chance = room <= 0 ? 0 : Math.max(0, Math.pow(1 - x / room, 1.5));
   return { ...e, chance };
+}
+
+/**
+ * What the length of a deal does to his price (any contract: extension or free agency).
+ * A veteran pays for security (each year up to four is worth ~2.5% to him); a deal too long for his age costs;
+ * a long deal for a young player is priced on what he is expected to become over the deal: his projected path
+ * from today toward his peak (around 27), year by year, averaged – the team buys some of the upside and takes
+ * the risk that he never gets there; the player gives a little of it back for the security.
+ * Returns len (share off the price) and young (multiplier), price = ask × (1 − len) × young.
+ */
+export function lengthPrice(p: Player, N: number, years: number, ask: number) {
+  const age = ageIn(p, N);
+  let len = 0, why = '';
+  if (age >= 30) len += 0.025 * (Math.min(years, 4) - 1);
+  if (years > (age >= 32 ? 3 : 5)) len -= 0.1;
+  let young = 1;
+  if (age <= 25 && years >= 2) {
+    const now = bpmOf(p.z), peak = Math.max(now, peakBpm(p, N));
+    const toPeak = Math.max(1, 27 - age);
+    let sum = 0;
+    for (let y = 1; y <= years; y++) sum += askAtBpm(p, N, now + (peak - now) * Math.min(1, y / toPeak));
+    const price = (sum / years) * (1 - 0.02 * (years - 1));
+    young = Math.max(1, price / Math.max(ask, 1e-6));
+    if (young > 1.03) why = `a ${years}-year deal is priced on his expected growth (peak ~${peakShown(p, N)} OVR) – a bet that he gets there`;
+  } else if (age >= 30 && years >= 3) why = 'values a long contract';
+  return { len, young, mult: (1 - len) * young, why };
+}
+
+/** The length he would pick himself: young players keep their next free agency close, veterans want security. */
+export function preferredYears(p: Player, N: number) {
+  const a = ageIn(p, N);
+  return a <= 24 ? 2 : a <= 29 ? 3 : a <= 32 ? 3 : 2;
 }

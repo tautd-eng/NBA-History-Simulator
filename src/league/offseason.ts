@@ -6,7 +6,7 @@ import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, agingIndex, NK, shownOvr, sho
 import { rosterFit, GMFIT } from '../archetypes';
 import { Rng } from '../rng';
 import { posNum } from '../engine/game';
-import { League, Player, Team, emptyLine, ExpansionDraft, Lottery, FreeAgency, RetRow } from '../types';
+import { League, Player, Team, emptyLine, ExpansionDraft, Lottery, FreeAgency, RetRow, FAOfferRec } from '../types';
 import { newPlayer, prospectZ, realTarget, lastRealSeason, ageIn, firstRealSeason, snapRatings, tagOf, addTx } from '../players';
 import { activeTeams, makeTeam, rngOf, standings, updateStrategies, updateModes, playoffFormat, seasonGames, checkRosters } from './league';
 import { makeSchedule } from './schedule';
@@ -15,7 +15,7 @@ import { classFor, shiftFor, cloneBase } from './classes';
 import { resetFatigue } from './fatigue';
 import { carryInjuries } from './injuries';
 import { rookieContract, vetContract, rfaEligible, qoAmount, worthKeeping, optsOut, lockTrade } from './contracts';
-import { discount, offerUtility } from './prefs';
+import { discount, offerUtility, lengthPrice, preferredYears } from './prefs';
 import { pickOwner, ensurePicks, aiTradeRound, isFreeAgent, complyHardCap, aiDraftTrade, boardScore, settlePickRights, clearRoom, worthTo } from '../ai/trades';
 import { keeps, refreshPlans } from '../ai/plan';
 import {
@@ -442,6 +442,7 @@ const FLOOR = 0.9;
  * get an exclusive re-signing window during stage 1.
  */
 export function enterFreeAgency(lg: League) {
+  lg.offers = []; // last season's open offers are off the table
   offDevelop(lg); // (retirements and development, if the offseason steps were skipped)
   if (lg.draftDay && !lg.draftDay.done) { draftAdvance(lg, 'all'); finishDraft(lg); }
   const rng = rngOf(lg);
@@ -506,11 +507,13 @@ function archiveFa(lg: League, S: number) {
 const seasonLabelOf = (s: number) => `${s - 1}–${String(s).slice(2)}`;
 
 /** The salary a free agent wants from a team right now. */
-export function faDemand(lg: League, p: Player, tid: string) {
+/** What he asks from this team; with `years`, for a deal of that length (see lengthPrice). */
+export function faDemand(lg: League, p: Player, tid: string, years?: number) {
   const N = lg.season;
   const stage = lg.phase === 'freeagency' ? Math.max(1, Math.min(3, lg.fa?.stage ?? 3)) : 4;
   const ask = askingSalary(p, N) * STAGE_MULT[stage];
-  return Math.max(MIN_SAL, Math.min(maxSalary(p, N), ask * (1 - discount(lg, p, tid))));
+  const mult = years ? lengthPrice(p, N, years, Math.min(maxSalary(p, N), askingSalary(p, N))).mult : 1;
+  return Math.max(MIN_SAL, Math.min(maxSalary(p, N), ask * (1 - discount(lg, p, tid)) * mult));
 }
 
 /** Why the team cannot pay this salary, or null. Sets which exception is used. */
@@ -534,14 +537,15 @@ function capCheck(lg: League, tid: string, p: Player, sal: number): { err: strin
   return { err: parts.join(' ') };
 }
 
-/** The user offers a contract. Returns whether he signed and a message. */
-export function faOffer(lg: League, pid: string, sal: number): { ok: boolean; msg: string } {
+/** The user offers a contract. It goes on the table: he decides at the end of the wave (in the season: the next day). */
+export function faOffer(lg: League, pid: string, sal: number, years?: number): { ok: boolean; msg: string } {
   const tid = lg.userTid;
   const p = lg.players[pid];
   if (!tid || !p) return { ok: false, msg: 'You have no team.' };
   if (lg.phase !== 'freeagency' && lg.phase !== 'regular') return { ok: false, msg: 'You can sign players in free agency or during the regular season.' };
   if (p.tid || p.retired || p.prospect || (p as any).stash) return { ok: false, msg: `${p.name} is not a free agent.` };
   if (lg.fa?.stage === 0) return { ok: false, msg: 'Finish the contract decisions first – then the market opens.' };
+  if (lg.fa && lg.fa.stage > 3 && lg.phase === 'freeagency') return { ok: false, msg: 'Free agency is over – the season starts next.' };
   // another person's free agent in his exclusive window
   if (lg.fa?.stage === 1 && lg.fa.pending.includes(pid) && p.bird && p.bird !== tid) return { ok: false, msg: `${p.name} is negotiating with the ${lg.teams[p.bird]?.name} first.` };
   if (lg.fa?.sheets?.some(x => x.pid === pid)) return { ok: false, msg: `${p.name} already signed an offer sheet – waiting to see if it gets matched.` };
@@ -549,48 +553,89 @@ export function faOffer(lg: League, pid: string, sal: number): { ok: boolean; ms
   sal = Math.max(MIN_SAL, sal);
   const cc = capCheck(lg, tid, p, sal);
   if (cc.err) return { ok: false, msg: cc.err };
-  const need = faDemand(lg, p, tid);
-  if (sal + 1e-9 < need) {
-    const rng = rngOf(lg);
-    // close offers sometimes get through
-    const close = sal >= need * 0.93 && rng.chance(0.35);
-    save(lg, rng);
-    if (!close) return { ok: false, msg: `${p.name} declined: he wants at least ${(need * 100).toFixed(1)}% of the cap.` };
+  const yrs = Math.max(1, Math.min(5, Math.round(years ?? preferredYears(p, lg.season))));
+  lg.offers = (lg.offers ?? []).filter(o => !(o.pid === pid && o.tid === tid));
+  lg.offers.push({ pid, tid, sal, yrs, s: lg.season, day: lg.day, st: lg.fa?.stage });
+  const need = faDemand(lg, p, tid, yrs);
+  const when = lg.phase === 'freeagency' ? 'at the end of this wave' : 'tomorrow';
+  return { ok: true, msg: `Offer made: ${yrs} yr${yrs > 1 ? 's' : ''} at ${(sal * 100).toFixed(1)}% of the cap. ${p.name} decides ${when}${sal + 1e-9 < need ? ` – it is under his number (${(need * 100).toFixed(1)}%), so he may say no` : ''}.` };
+}
+
+export const offersOn = (lg: League, pid: string) => (lg.offers ?? []).filter(o => o.pid === pid);
+export function withdrawOffer(lg: League, pid: string, tid = lg.userTid) { lg.offers = (lg.offers ?? []).filter(o => !(o.pid === pid && o.tid === tid)); }
+
+/** People's offers to this player that he would take now, with how much he likes each (same scale as the AI offers). */
+function humanBids(lg: League, p: Player, rng: Rng, ask: number) {
+  const out: { o: FAOfferRec; score: number; mle: boolean }[] = [];
+  for (const o of offersOn(lg, p.id)) {
+    if (!lg.teams[o.tid]?.active) continue;
+    const cc = capCheck(lg, o.tid, p, o.sal);
+    if (cc.err) { lg.news.push({ s: lg.season, t: `${lg.teams[o.tid].name}: the offer to ${tagOf(p, lg.season)} no longer fits – ${cc.err}` }); withdrawOffer(lg, p.id, o.tid); continue; }
+    const need = faDemand(lg, p, o.tid, o.yrs);
+    if (o.sal + 1e-9 < need && !(o.sal >= need * 0.93 && rng.chance(0.35))) continue;
+    out.push({ o, score: offerUtility(lg, p, o.tid, o.sal, ask, o.yrs) + 0.06 * rng.normal(), mle: !!cc.mle });
   }
-  const rng = rngOf(lg);
-  const yrs = contractYears(p, lg.season, () => rng.next());
-  save(lg, rng);
-  const N = lg.season;
-  // another person's restricted free agent: an offer sheet that team decides on when it plays
+  return out.sort((a, b) => b.score - a.score);
+}
+
+/** A person's offer accepted: he signs (or, as another team's restricted free agent, signs the offer sheet). */
+function signOffer(lg: League, o: FAOfferRec, mle: boolean): boolean {
+  const p = lg.players[o.pid], tid = o.tid, sal = o.sal, yrs = o.yrs, N = lg.season;
+  const st = lg.fa?.stage ?? 4;
+  lg.offers = (lg.offers ?? []).filter(x => x.pid !== o.pid);
   if (p.rfa && p.rfa !== tid && isHuman(lg, p.rfa) && lg.fa) {
-    (lg.fa.sheets ??= []).push({ pid, tid, sal, exp: N - 1 + yrs });
+    (lg.fa.sheets ??= []).push({ pid: p.id, tid, sal, exp: N - 1 + yrs });
     lg.news.push({ s: N, t: `${tagOf(p, N)} signed an offer sheet with the ${lg.teams[tid].name} – the ${lg.teams[p.rfa].name} can match.` });
-    return { ok: true, msg: `${p.name} signed your offer sheet. The ${lg.teams[p.rfa].name} decide whether to match it.` };
+    return true;
   }
-  // another team's restricted free agent: they may match
-  if (p.rfa && p.rfa !== tid) {
+  if (p.rfa && p.rfa !== tid && aiMatches(lg, p, p.rfa, sal)) {
     const R = p.rfa;
-    if (aiMatches(lg, p, R, sal)) {
-      signWith(lg, p, R, sal, N - 1 + yrs);
-      lg.fa?.log.push({ st: lg.fa.stage, kind: 'match', pid, tid: R, sal, exp: N - 1 + yrs, desc: `matched your offer` });
-      lg.news.push({ s: N, t: `The ${lg.teams[R].name} matched the ${lg.teams[tid].abbr} offer and keep ${tagOf(p, N)}.` });
-      return { ok: false, msg: `${p.name} signed your offer sheet, but the ${lg.teams[R].name} matched it – he stays with them.` };
-    }
+    signWith(lg, p, R, sal, N - 1 + yrs);
+    lg.fa?.log.push({ st, kind: 'match', pid: p.id, tid: R, sal, exp: N - 1 + yrs, desc: `matched the ${lg.teams[tid].abbr} offer` });
+    lg.news.push({ s: N, t: `${tagOf(p, N)} signed the ${lg.teams[tid].name} offer sheet, but the ${lg.teams[R].name} matched it – he stays with them.` });
+    return true;
   }
   const from = prevTeam(p);
-  p.tid = tid; lg.teams[tid].roster.push(pid);
+  p.tid = tid; lg.teams[tid].roster.push(p.id);
   p.contract = { sal, exp: N - 1 + yrs };
   lockTrade(lg, p);
   delete p.rfa; delete p.qo;
-  if (cc.mle && lg.fa) lg.fa.mle.push(tid);
+  if (mle && lg.fa) lg.fa.mle.push(tid);
   const resign = p.bird === tid;
   delete p.bird;
   if (lg.fa) {
-    lg.fa.pending = lg.fa.pending.filter(x => x !== pid);
-    lg.fa.log.push({ st: lg.fa.stage, kind: resign ? 'resign' : 'sign', pid, tid, from, sal, exp: p.contract.exp, user: true });
+    lg.fa.pending = lg.fa.pending.filter(x => x !== p.id);
+    lg.fa.log.push({ st, kind: resign ? 'resign' : 'sign', pid: p.id, tid, from, sal, exp: p.contract.exp, user: true });
   }
-  lg.news.push({ s: N, t: `The ${lg.teams[tid].name} ${resign ? 're-signed' : 'signed'} ${tagOf(p, N)}: ${yrs}-year deal.` });
-  return { ok: true, msg: `${p.name} ${resign ? 're-signed' : 'signed'}: ${yrs} yrs, ${(sal * 100).toFixed(1)}% of the cap per season.` };
+  lg.news.push({ s: N, t: `The ${lg.teams[tid].name} ${resign ? 're-signed' : 'signed'} ${tagOf(p, N)}: ${yrs} yr${yrs > 1 ? 's' : ''}, ${(sal * 100).toFixed(1)}% of the cap.` });
+  return true;
+}
+
+/** Offers people made to players who went elsewhere (or retired): gone, with a line in the news. */
+function dropDeadOffers(lg: League) {
+  for (const o of [...(lg.offers ?? [])]) {
+    const p = lg.players[o.pid];
+    if (!p || p.tid || p.retired) {
+      lg.offers = lg.offers!.filter(x => x !== o);
+      if (p && p.tid && p.tid !== o.tid && isHuman(lg, o.tid)) lg.news.push({ s: lg.season, t: `${lg.teams[o.tid].name}: ${tagOf(p, lg.season)} turned down your offer and signed with the ${lg.teams[p.tid].name}.` });
+    }
+  }
+}
+
+/** In the season: each day, free agents answer the offers people made them. */
+export function resolveOffersInSeason(lg: League, rng: Rng) {
+  if (!lg.offers?.length) return;
+  for (const pid of [...new Set(lg.offers.map(o => o.pid))]) {
+    const p = lg.players[pid];
+    if (!p || p.tid || p.retired) continue;
+    const bids = humanBids(lg, p, rng, askingSalary(p, lg.season) * STAGE_MULT[4]);
+    if (bids.length) signOffer(lg, bids[0].o, bids[0].mle);
+    else for (const o of offersOn(lg, pid)) {
+      lg.news.push({ s: lg.season, t: `${lg.teams[o.tid].name}: ${tagOf(p, lg.season)} turned down your offer of ${(o.sal * 100).toFixed(1)}% of the cap for ${o.yrs} yr${o.yrs > 1 ? 's' : ''}.` });
+      withdrawOffer(lg, pid, o.tid);
+    }
+  }
+  dropDeadOffers(lg);
 }
 
 /** Give up the re-signing rights to one of the user's expiring players. */
@@ -828,6 +873,12 @@ export function faStage(lg: League) {
   // and decide again whether this is a year to go all in, to tank, or something in between
   updateModes(lg, true);
   aiSignings(lg, rng, st);
+  dropDeadOffers(lg);
+  for (const o of lg.offers ?? []) {
+    const p = lg.players[o.pid];
+    const need = faDemand(lg, p, o.tid, o.yrs);
+    lg.news.push({ s: lg.season, t: `${lg.teams[o.tid].name}: ${tagOf(p, lg.season)} has not taken your offer (${(o.sal * 100).toFixed(1)}% for ${o.yrs} yr${o.yrs > 1 ? 's' : ''})${o.sal + 1e-9 < need ? ` – he wants ${(need * 100).toFixed(1)}%` : ' yet – he is waiting to see the market'}. It stays on the table.` });
+  }
   if (st === 3) reachFloor(lg, rng);
   resolveSheets(lg);
   complyHardCap(lg, rng);
@@ -858,6 +909,17 @@ function resolvePendingFor(lg: League, rng: Rng, tid: string) {
   const ranked = [...t.roster, ...fa.pending].map(pid => lg.players[pid]).sort((a, b) => playerValue(b, N, t.strategy) - playerValue(a, N, t.strategy));
   for (const pid of [...fa.pending].sort((a, b) => playerValue(lg.players[b], N, t.strategy) - playerValue(lg.players[a], N, t.strategy))) {
     const p = lg.players[pid];
+    // the team made him an offer itself: his answer, not the GM's
+    if (offersOn(lg, pid).some(o => o.tid === tid)) {
+      const hb = humanBids(lg, p, rng, askingSalary(p, N) * STAGE_MULT[1]).filter(b => b.o.tid === tid);
+      if (hb.length) { signOffer(lg, hb[0].o, hb[0].mle); pay = payroll(lg, tid); continue; }
+      const o = offersOn(lg, pid).find(o => o.tid === tid)!;
+      withdrawOffer(lg, pid, tid);
+      fa.log.push({ st: 1, kind: 'leave', pid, tid, desc: 'turned down your offer' });
+      lg.news.push({ s: N, t: `${t.name}: ${tagOf(p, N)} turned down your offer (${(o.sal * 100).toFixed(1)}% for ${o.yrs} yr${o.yrs > 1 ? 's' : ''}) and goes to free agency.` });
+      delete p.bird;
+      continue;
+    }
     const ask = askingSalary(p, N);
     const rank = ranked.indexOf(p);
     const worth = playerValue(p, N, t.strategy) / Math.max(MIN_SAL, ask);
@@ -998,6 +1060,14 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
     const max = maxSalary(p, N);
     const yrsOffer = contractYears(p, N, () => rng.next());
     const offers = teamOffers(lg, p, stage, rng, ask, yrsOffer);
+    // offers people made him: he weighs them against the AI teams' and takes the one he likes best
+    const hb = humanBids(lg, p, rng, ask);
+    if (hb.length && hb[0].score >= Math.max(-Infinity, ...offers.map(o => o.score))) {
+      const o = hb[0].o;
+      signOffer(lg, o, hb[0].mle);
+      if (bpmOf(p.z) > NEWS_BPM && p.tid === o.tid) signed.push(`${tagOf(p, N)} → ${lg.teams[o.tid].abbr}`);
+      continue;
+    }
     if (!offers.length) continue;
     // early on, some players wait for a better market
     if (!rng.chance(STAGE_SIGN[stage] + (offers.length >= 3 ? 0.1 : 0))) continue;

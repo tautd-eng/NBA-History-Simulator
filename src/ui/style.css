@@ -907,3 +907,5 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .commish { display: flex; gap: 6px; align-items: center; font-size: 0.82rem; color: var(--muted); margin-top: 8px; }
 .finder { margin-top: 16px; border-top: 1px solid var(--line, rgba(0,0,0,.1)); padding-top: 10px; }
 .finder td.pos { color: var(--ok, #1a7f37); } .finder td.neg { color: var(--bad, #b42318); }
+.o-bar.inl { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; vertical-align: middle; margin-right: 6px; }
+.o-bar.inl span { display: block; height: 100%; background: var(--accent); }
