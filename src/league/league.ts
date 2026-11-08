@@ -14,6 +14,7 @@ import { nextCal, fatigueAt, addLoad, fatigueExcess, calDay } from './fatigue';
 import { rollGameInjury, injure, refreshInjuries, offDayInjuries } from './injuries';
 import { aiExtensions } from './extensions';
 import { aiRecallStash, announceClass, lateMarket } from './offseason';
+import { refreshPlans } from '../ai/plan';
 import { makeSchedule } from './schedule';
 import { recordHealth } from './health';
 import { computeAwards, applyAwardChips, finalsMvp } from './awards';
@@ -281,6 +282,8 @@ export function updateModes(lg: League, announce = true) {
   }));
   const order = [...teams].sort((a, b) => score.get(b.tid)! - score.get(a.tid)!);
   const n = teams.length;
+  // every front office first takes stock: its core, its young pieces, its picks and the coming draft
+  refreshPlans(lg, new Map(order.map((t, i) => [t.tid, n - i])));
   order.forEach((t, i) => {
     const top = t.roster.map(pid => lg.players[pid]).sort((a, b) => bpmOf(b.z) - bpmOf(a.z));
     const core = top.slice(0, 4).map(p => ageIn(p, lg.season));
@@ -295,10 +298,15 @@ export function updateModes(lg: League, announce = true) {
     const losing = t.mode === 'allin' ? inSeason && g >= 15 && wp < 0.42 : inSeason && g >= 10 && wp < 0.5;
     // a hot start convinces any front office that this is the year – whatever the plan was in the summer
     const hot = inSeason && !losing && i < Math.max(6, Math.round(n * 0.25)) && ((g >= 10 && wp >= 0.64) || (g >= 20 && wp >= 0.6) || (t.mode === 'allin' && g >= 10 && wp >= 0.55));
-    if ((t.strategy === 'contend' && !losing && (i < 3 || (i < 6 && coreAge >= 29) || (inSeason && g >= 20 && wp >= 0.62))) || hot) mode = 'allin';
-    else if (i >= n - Math.max(2, Math.round(n * 0.2)) && (young <= 1 || coreAge >= 27) && !winning) mode = 'tank';
+    const pl = t.plan!;
+    const bottom = i >= n - Math.max(2, Math.round(n * 0.2));
+    if ((t.strategy === 'contend' && !losing && pl.core.length >= 2 && (i < 3 || (i < 6 && coreAge >= 29) || (inSeason && g >= 20 && wp >= 0.62))) || hot) mode = 'allin';
+    // tanking only pays with its own pick: a strong class is worth losing for even with young players around
+    else if (bottom && pl.ownFirst !== null && (young <= 1 || coreAge >= 27 || (pl.tankOk && pl.classStrong > 0.25)) && !winning) mode = 'tank';
+    // a bad team whose pick belongs to someone else has nothing to lose for: it tries to get better
+    else if (bottom && pl.ownFirst === null && !winning) mode = young >= 2 || pl.stage === 'build' ? 'rising' : 'retool';
     else if (pay > hc - 0.02 && lg.capGrace !== lg.season) mode = 'capclear';
-    else if (young >= 2 && coreAge <= 25.5 && i >= 3) mode = 'rising';
+    else if ((young >= 2 && coreAge <= 25.5 && i >= 3) || (pl.stage === 'build' && i >= 3 && !(inSeason && g >= 20 && wp >= 0.6))) mode = 'rising';
     // stuck in the middle: not good enough to contend, too good to tank – the GM keeps making side moves
     else if (t.mode === 'retool' && inSeason ? (i >= Math.round(n * 0.15) && i < n - 2 && (!inSeason || g < 15 || (wp >= 0.33 && wp <= 0.67)))
       : (i >= Math.round(n * 0.25) && i < n - Math.max(2, Math.round(n * 0.2)) && (!inSeason || g < 15 || (wp >= 0.38 && wp <= 0.62)) && (t.gm.risk >= 0.35 || (inSeason && g >= 25 && Math.abs(wp - 0.5) < 0.07)))) mode = 'retool';
@@ -336,6 +344,10 @@ function availablePlayers(lg: League, tid: string, rng: Rng) {
     const vets = [...ps].sort((a, b) => bpmOf(b.z) - bpmOf(a.z)).slice(0, 6).filter(p => ageIn(p, lg.season) >= 27);
     for (const v of vets) if (ps.length > 9 && rng.chance(restP)) ps = ps.filter(p => p !== v);
   }
+  // minutes follow the plan: a team that is building gives its young pieces real minutes (in the regular season)
+  const pl = t.tid !== lg.userTid && lg.phase === 'regular' ? t.plan : null;
+  const devQ = !pl ? 1 : t.mode === 'allin' || pl.stage === 'contend' ? 1 : t.mode === 'tank' || pl.stage === 'rebuild' ? 1.35 : pl.stage === 'build' || t.mode === 'rising' ? 1.25 : 1.1;
+  for (const p of ps) (p as any).rotQ = pl && pl.rising.includes(p.id) ? devQ : 1;
   for (const p of ps) {
     p.fatNow = fatigueAt(lg, p, cal);
     rollGameInjury(lg, p, rng, fatigueExcess(p.fatNow));

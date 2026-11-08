@@ -148,6 +148,12 @@ function teamBlurb(lg: any, r: any, confRank: number, nConf: number, S: number) 
   if (r.mode === 'tank') out.push('The front office is playing for the draft – veterans could be moved before the deadline.');
   else if (r.mode === 'allin') out.push('Management has pushed its chips in: expect them to buy at the deadline.');
   else if (r.mode === 'rising') out.push('A young core is growing up – patience is the plan.');
+  const pl = lg.teams[r.tid]?.plan;
+  if (pl && pl.s === lg.season && r.tid !== lg.userTid) {
+    if (pl.ownFirst === null && (tier === 'lottery' || tier === 'playin')) out.push('Their own first-round pick belongs to someone else, so losing buys nothing – they will try to win now.');
+    else if (r.mode !== 'allin' && pl.stage === 'push' && pl.act) out.push('The front office thinks it is one piece away and is ready to spend picks to get it.');
+    else if (r.mode !== 'tank' && pl.tankOk && pl.classStrong > 0.25 && tier === 'lottery') out.push('A strong draft class is coming, and they own their pick – a lottery finish would not be the worst outcome.');
+  }
   if (r.xf && !c.some((p: any) => p.id === r.xf.id)) out.push(`X-factor: ${r.xf.n} (${r.xf.age}, ${r.xf.o}) – ${pickOf(key + 'x', r.xf.o >= 78
     ? ['already part of the rotation and still getting better', 'one more step from him and this team looks different', 'young, already useful, and nowhere near his ceiling']
     : ['a leap from him would change the outlook', 'worth watching: the minutes are there for him', 'raw, but the upside is real'])}.`);

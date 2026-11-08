@@ -72,6 +72,7 @@ export interface Team {
   strategy: 'contend' | 'middle' | 'rebuild';
   mode?: 'allin' | 'tank' | 'rising' | 'capclear' | 'retool'; // all-in, tanking, rising young team, clearing salary, stuck in the middle and retooling
   gm: { risk: number; patience: number; scouting: number };
+  plan?: import('./ai/plan').TeamPlan;   // the front office's read of its team (core, young pieces, picks, act or wait)
   paceZ: number;
   active: boolean;
   st?: StatLine; opp?: StatLine; gp?: number; // team season totals (own, opponents)

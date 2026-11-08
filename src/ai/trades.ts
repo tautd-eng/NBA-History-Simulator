@@ -7,11 +7,12 @@ import { H, seasonInfo, LAST_SEASON, ovrOf, bpmOf } from '../data';
 import { Rng, hash01 } from '../rng';
 import { League, Player, Team, Pick, TradeAsset, TradeRec, PickRight } from '../types';
 import { rosterFit, GMFIT } from '../archetypes';
-import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap, askingSalary, peakBpm, projectBpm, releaseDead, deadPay } from './value';
+import { playerValue, valueFromZ, payroll, teamStrength, MIN_SAL, hardCap, askingSalary, peakBpm, projectBpm, releaseDead, deadPay, DEAD_SHARE } from './value';
 import { playerParts, moneyWeight, prospectValue, tradeValue, horizonOf, Horizon, slotPeak } from './tradevalue';
 import { posNum } from '../engine/game';
 import { bucket, tagOf, ageIn } from '../players';
 import { shownOvr, K, OVR_VOLUME } from '../data';
+import { planOf, assessTeam, keeps } from './plan';
 
 export const ROSTER_MIN = 13, ROSTER_MAX = 15;
 
@@ -88,6 +89,22 @@ export function youngCore(lg: League, p: Player) {
   if (lg.season - (p.draft.year ?? 0) > 4 || ageIn(p, lg.season) > 24) return false;
   const t = p.tid ? lg.teams[p.tid] : null;
   return !!t && t.mode !== 'allin';
+}
+/** Young players a team will not shop: recent high picks and the young players its plan builds toward (all-in teams excepted). */
+export function protectedYoung(lg: League, p: Player) {
+  if (youngCore(lg, p)) return true;
+  const t = p.tid ? lg.teams[p.tid] : null;
+  if (!t || t.mode === 'allin' || t.tid === lg.userTid) return false;
+  return !!planOf(lg, t.tid)?.rising.includes(p.id);
+}
+/** Players the team's plan is built around, which it does not trade away for less than a lot. */
+function planKeeps(lg: League, t: Team) {
+  const pl = planOf(lg, t.tid);
+  if (!pl) return new Set<string>();
+  const S = lg.season;
+  // a rebuilding team still sells an older core player; everyone else keeps its core
+  const core = pl.core.filter(pid => !(pl.stage === 'rebuild' && ageIn(lg.players[pid], S) >= 28));
+  return new Set([...core, ...(t.mode === 'allin' ? [] : pl.rising)]);
 }
 /** Did this team trade him away this season? (nobody buys back the player it just sold) */
 export function soldBy(lg: League, p: Player, tid: string) {
@@ -209,7 +226,7 @@ function slotValue(slot: number, strategy: Team['strategy']) {
 }
 
 /** Expected slot of a pick from the original team's current strength. */
-function expectedSlot(lg: League, p: { season: number; round: number; orig: string }) {
+export function expectedSlot(lg: League, p: { season: number; round: number; orig: string }) {
   // during the draft the slot is known
   const d = lg.draftDay;
   if (d && !d.done && d.year === p.season && d.order.length) {
@@ -422,7 +439,13 @@ function coreReluctance(lg: League, tid: string, out: Player[]) {
   const h = horizonOf(t);
   const top = t.roster.map(pid => lg.players[pid]).sort((x, y) => pv(lg, y, h, tid) - pv(lg, x, h, tid)).slice(0, 3).map(p => p.id);
   const share = h === 'allin' || h === 'contend' ? 0.25 : h === 'middle' ? 0.15 : 0.05;
-  return out.filter(p => top.includes(p.id)).reduce((a, p) => a + share * Math.max(0, pv(lg, p, h, tid)), 0);
+  // the plan's core and young pieces cost more to pry loose than just being among the top three
+  const pl = tid !== lg.userTid ? planOf(lg, tid) : null;
+  const keep = pl ? planKeeps(lg, t) : new Set<string>();
+  return out.reduce((a, p) => {
+    const sh = keep.has(p.id) ? Math.max(share, pl!.rising.includes(p.id) ? 0.3 : pl!.stage === 'rebuild' ? 0.1 : 0.25) : top.includes(p.id) ? share : 0;
+    return a + sh * Math.max(0, pv(lg, p, h, tid));
+  }, 0);
 }
 const afterPay = (lg: League, tid: string, inc: Player[], out: Player[]) => payroll(lg, tid) + sal(lg, inc) - sal(lg, out);
 
@@ -499,6 +522,8 @@ export function executeTrade(lg: League, a: string, b: string, aGets: TradeAsset
   const rec: TradeRec = { s: lg.season, day: lg.day, phase: lg.phase, a, b, aGets, bGets, user, desc, info, mv };
   (lg.trades ??= []).push(rec);
   lg.news.push({ s: lg.season, t: `Trade: ${desc}` });
+  // both front offices take a fresh look at where they stand
+  for (const tid of [a, b]) lg.teams[tid].plan = assessTeam(lg, lg.teams[tid]);
   return rec;
 }
 
@@ -508,17 +533,21 @@ export function fillRoster(lg: League, tid: string) {
   faCache = null;
   while (t.roster.length > ROSTER_MAX && tid !== lg.userTid) {
     const cut = t.roster.map(pid => lg.players[pid])
-      // the least valuable player for his salary goes (half of it comes off the books)
-      .sort((x, y) => (playerValue(x, lg.season, t.strategy) - x.contract.sal * 10) - (playerValue(y, lg.season, t.strategy) - y.contract.sal * 10))[0];
+      // the least valuable player goes (a cheap one if it is close: half of a big salary would stay on the books anyway)
+      .sort((x, y) => (keeps(lg, tid, x) ? 1 : 0) - (keeps(lg, tid, y) ? 1 : 0) || (playerValue(x, lg.season, t.strategy) + x.contract.sal * 3) - (playerValue(y, lg.season, t.strategy) + y.contract.sal * 3))[0];
     t.roster = t.roster.filter(pid => pid !== cut.id);
     releaseDead(lg, tid, cut);
     cut.tid = null;
     cut.contract = { sal: MIN_SAL, exp: lg.season };
     lg.news.push({ s: lg.season, t: `The ${t.name} waived ${cut.name} to make room on the roster.` });
   }
-  while (t.roster.length < ROSTER_MIN) {
-    const fa = Object.values(lg.players).filter(p => isFreeAgent(lg, p) && !(p.cut?.tid === tid && p.cut.s === lg.season))
-      .sort((x, y) => playerValue(y, lg.season, t.strategy) - playerValue(x, lg.season, t.strategy))[0];
+  // in the summer the market fills rosters (and the season start fills the rest): no free agent is grabbed cheaply here
+  while (t.roster.length < ROSTER_MIN && lg.phase !== 'freeagency' && lg.phase !== 'draft') {
+    const room = hardCap(lg) - payroll(lg, tid);
+    const pool = Object.values(lg.players).filter(p => isFreeAgent(lg, p) && !(p.cut?.tid === tid && p.cut.s === lg.season))
+      .sort((x, y) => playerValue(y, lg.season, t.strategy) - playerValue(x, lg.season, t.strategy));
+    // the best one who would sign for what the team can pay (a good player waits for a real offer)
+    const fa = pool.find(p => askingSalary(p, lg.season) <= MIN_SAL * 2.5 || askingSalary(p, lg.season) * 0.5 <= room) ?? pool[0];
     if (!fa) break;
     // a good player signed late still costs most of his market value (within the hard cap)
     const sal = Math.max(MIN_SAL, Math.min(askingSalary(fa, lg.season) * 0.7, hardCap(lg) - payroll(lg, tid)));
@@ -549,7 +578,10 @@ export function aiTradeRound(lg: League, rng: Rng, intensity = 1): TradeRec[] {
   for (const A of teams) {
     if (busy.has(A.tid)) continue;
     const urge = A.mode === 'allin' ? 2.6 : A.mode === 'tank' ? 2.4 : A.mode === 'capclear' ? 2 : A.mode === 'retool' ? 1.9 : 1;
-    if (!rng.chance(Math.min(0.95, (0.1 + 0.2 * A.gm.risk) * intensity * urge))) continue;
+    // the plan says act (a piece away, a window closing) or wait (young players growing, own pick coming)
+    const pl = planOf(lg, A.tid);
+    const plUrge = !pl || A.mode === 'tank' ? 1 : pl.act ? 1.3 : pl.stage === 'build' ? 0.7 : 1;
+    if (!rng.chance(Math.min(0.95, (0.1 + 0.2 * A.gm.risk) * intensity * urge * plUrge))) continue;
     const others = teams.filter(t => t !== A && !busy.has(t.tid));
     // at the deadline every losing team is a seller
     const g = A.w + A.l, losing = lg.phase === 'regular' && g >= 20 && A.w / g < 0.42;
@@ -598,9 +630,12 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
   fresh(lg);
   const hA = horizonOf(A);
   const playerValue = (p: Player, _s: number, st: Horizon) => pv(lg, p, st, st === hA ? A.tid : undefined);
-  const myPlayers = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && !justTraded(lg, p) && !youngCore(lg, p));
-  const myPicks = (lg.picks ?? []).filter(p => p.owner === A.tid && !pickUsed(lg, p));
-  const myCore = new Set([...myPlayers].sort((x, y) => playerValue(y, S, hA) - playerValue(x, S, hA)).slice(0, hA === 'rebuild' || hA === 'tank' ? 1 : 2).map(p => p.id));
+  const myPlayers = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && !justTraded(lg, p) && !protectedYoung(lg, p));
+  const plA = planOf(lg, A.tid);
+  // a team that is waiting (building, or losing for its own high pick) keeps that pick
+  const ownHigh = (pk: { season: number; round: number; orig: string }) => !!plA && pk.round === 1 && pk.orig === A.tid && pk.season === S && plA.tankOk;
+  const myPicks = (lg.picks ?? []).filter(p => p.owner === A.tid && !pickUsed(lg, p) && !(hA !== 'allin' && ownHigh(p)));
+  const myCore = new Set([...[...myPlayers].sort((x, y) => playerValue(y, S, hA) - playerValue(x, S, hA)).slice(0, hA === 'rebuild' || hA === 'tank' ? 1 : 2).map(p => p.id), ...planKeeps(lg, A)]);
   // what adding a player does for A's roster as a whole (fills a hole, or just more of the same)
   const wA = moneyWeight(lg, A.tid);
   const baseSide = sideOf(lg, A.tid);
@@ -611,8 +646,10 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
   for (const B of others) {
     for (const pid of B.roster) {
       const p = lg.players[pid];
-      if (tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid) || youngCore(lg, p)) continue;
+      if (tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid) || protectedYoung(lg, p)) continue;
       const hB = horizonOf(B);
+      // a team that is waiting does not trade the future for a veteran
+      if (plA && !plA.act && hA !== 'allin' && ageIn(p, S) >= 29) continue;
       const va = playerValue(p, S, hA), vb = playerValue(p, S, hB);
       if (va < 2.5) continue;
       // tanking teams do not buy veterans for now; rising teams buy players who fit their timeline
@@ -653,10 +690,10 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
     }
     // B can balance too: a lesser player or a pick coming back to A
     const hB = horizonOf(B);
-    const bCore = new Set(B.roster.map(pid => lg.players[pid]).sort((x, y) => playerValue(y, S, hB) - playerValue(x, S, hB)).slice(0, 3).map(p => p.id));
+    const bCore = new Set([...B.roster.map(pid => lg.players[pid]).sort((x, y) => playerValue(y, S, hB) - playerValue(x, S, hB)).slice(0, 3).map(p => p.id), ...(B.tid !== lg.userTid ? planKeeps(lg, B) : [])]);
     for (const pid of B.roster) {
       const p = lg.players[pid];
-      if (pid === tgt.p.id || bCore.has(pid) || tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid) || youngCore(lg, p)) continue;
+      if (pid === tgt.p.id || bCore.has(pid) || tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid) || protectedYoung(lg, p)) continue;
       cands.push({ a: { pid }, edge: playerValue(p, S, hA) - playerValue(p, S, hB) - 0.5, sal: p.contract.sal, back: true });
     }
     for (const pk of (lg.picks ?? []).filter(p => p.owner === B.tid && p.round === 2 && !pickUsed(lg, p))) {
@@ -664,7 +701,8 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
     }
     cands.sort((x, y) => y.edge - x.edge);
     const bGets: TradeAsset[] = [];
-    const maxFirsts = hA === 'allin' ? 4 : 2;            // going all in: the future is for sale
+    // going all in: the future is for sale; a team that is waiting spends at most one first
+    const maxFirsts = hA === 'allin' ? 4 : plA && !plA.act ? 1 : plA?.act ? 3 : 2;
     for (let i = 0; i < (hA === 'allin' ? 6 : 4) && cands.length; i++) {
       // choose the candidate that brings B's gain closest to its threshold without wrecking A
       let best: typeof cands[0] | null = null, bestScore = -1e9;
@@ -699,7 +737,8 @@ function findSale(lg: League, A: Team, others: Team[], rng: Rng) {
   const minAge = A.mode === 'tank' ? 26 : 28;
   // ... but never the young cornerstone: a star under 30 (or the team's best player under 28) is who the rebuild is built around
   const S2 = S, best = Math.max(...A.roster.map(pid => bpmOf(lg.players[pid].z)));
-  const cornerstone = (p: Player) => (shownOvr(p.z) >= 86 && ageIn(p, S2) < 30) || (bpmOf(p.z) >= best && ageIn(p, S2) < 28);
+  const keepA = planKeeps(lg, A);
+  const cornerstone = (p: Player) => (shownOvr(p.z) >= 86 && ageIn(p, S2) < 30) || (bpmOf(p.z) >= best && ageIn(p, S2) < 28) || (keepA.has(p.id) && ageIn(p, S2) < 28);
   const vets = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && !justTraded(lg, p) && !cornerstone(p) && ageIn(p, S) >= minAge && bpmOf(p.z) > 0).sort((x, y) => bpmOf(y.z) - bpmOf(x.z)).slice(0, 5);
   for (const p of rng.shuffle([...vets])) {
     const buyers = others.filter(B => (B.mode === 'allin' || B.strategy === 'contend' || B.strategy === 'middle') && !soldBy(lg, p, B.tid))
@@ -709,8 +748,8 @@ function findSale(lg: League, A: Team, others: Team[], rng: Rng) {
       // B pays with picks and young players first, salary filler if needed
       const cands: TradeAsset[] = [
         ...(lg.picks ?? []).filter(pk => pk.owner === B.tid && !pickUsed(lg, pk)).sort((x, y) => x.round - y.round).map(pk => ({ pick: { season: pk.season, round: pk.round, orig: pk.orig } })),
-        ...B.roster.map(pid => lg.players[pid]).filter(q => ageIn(q, S) <= 24).sort((x, y) => pv(lg, y, 'tank', A.tid) - pv(lg, x, 'tank', A.tid)).map(q => ({ pid: q.id })),
-        ...B.roster.map(pid => lg.players[pid]).filter(q => ageIn(q, S) > 24).sort((x, y) => y.contract.sal - x.contract.sal).map(q => ({ pid: q.id })),
+        ...B.roster.map(pid => lg.players[pid]).filter(q => ageIn(q, S) <= 24 && !protectedYoung(lg, q) && !tradeLocked(lg, q)).sort((x, y) => pv(lg, y, 'tank', A.tid) - pv(lg, x, 'tank', A.tid)).map(q => ({ pid: q.id })),
+        ...B.roster.map(pid => lg.players[pid]).filter(q => ageIn(q, S) > 24 && !planKeeps(lg, B).has(q.id) && !tradeLocked(lg, q)).sort((x, y) => y.contract.sal - x.contract.sal).map(q => ({ pid: q.id })),
       ];
       const aGets: TradeAsset[] = [];
       for (let i = 0; i < 5 && cands.length; i++) {
@@ -736,15 +775,16 @@ function findSale(lg: League, A: Team, others: Team[], rng: Rng) {
  * Salary dump: a team over (or right at) the hard cap sends a contract to a
  * team with room, adding picks as a sweetener if the receiver wants them.
  */
-function findDump(lg: League, A: Team, others: Team[], force = false) {
+function findDump(lg: League, A: Team, others: Team[], force = false, minExp = lg.season) {
   const S = lg.season;
   fresh(lg);
   const hc = hardCap(lg);
   const hA = horizonOf(A);
   const over = payroll(lg, A.tid) - (hc - 0.03);
   if (over <= 0 && !force) return null;
-  const mine = A.roster.map(pid => lg.players[pid]).filter(p => p.contract.sal >= Math.min(0.04, Math.max(0.015, over)))
-    .sort((x, y) => (pv(lg, x, hA, A.tid) / x.contract.sal) - (pv(lg, y, hA, A.tid) / y.contract.sal)).slice(0, 5);
+  // the contracts it can best do without – never the players the team is built around
+  const mine = A.roster.map(pid => lg.players[pid]).filter(p => p.contract.sal >= Math.min(0.04, Math.max(0.015, over)) && p.contract.exp >= minExp && !keeps(lg, A.tid, p) && !tradeLocked(lg, p))
+    .sort((x, y) => (pv(lg, x, hA, A.tid) / x.contract.sal) - (pv(lg, y, hA, A.tid) / y.contract.sal)).slice(0, 6);
   const picks = (lg.picks ?? []).filter(pk => pk.owner === A.tid && !pickUsed(lg, pk)).sort((x, y) => y.round - x.round || y.season - x.season)
     .map(pk => ({ pick: { season: pk.season, round: pk.round, orig: pk.orig } }));
   for (const p of mine) {
@@ -752,7 +792,8 @@ function findDump(lg: League, A: Team, others: Team[], force = false) {
       .sort((x, y) => payroll(lg, x.tid) - payroll(lg, y.tid)).slice(0, 5);
     for (const B of takers) {
       const bGets: TradeAsset[] = [{ pid: p.id }];
-      for (let k = 0; k <= Math.min(3, picks.length); k++) {
+      // paying to get rid of a contract: as many sweeteners as it takes (up to four) before a good player goes
+      for (let k = 0; k <= Math.min(force ? 4 : 3, picks.length); k++) {
         const e = evaluateTrade(lg, A.tid, B.tid, [], bGets);
         if (e.ok && e.gainB >= threshold(lg, B.tid) && (e.gainA >= 0 || force) && looksFair(lg, [], bGets)) return { b: B.tid, aGets: [] as TradeAsset[], bGets };
         if (k < picks.length) bGets.push(picks[k]);
@@ -761,6 +802,50 @@ function findDump(lg: League, A: Team, others: Team[], force = false) {
   }
   return null;
 }
+
+/**
+ * Make room under the hard cap to keep a core player: first trade away contracts the team can do without
+ * (paying with picks if it has to), then release them (half stays on the books) – but never give up more
+ * than the player being kept is worth. `fits` says when there is enough room; only contracts running
+ * through `minExp` count (an expiring deal frees nothing).
+ */
+export function clearRoom(lg: League, A: Team, room: () => number, worth: number, minExp: number, why: string) {
+  if (room() >= -1e-9) return true;
+  if (A.tid === lg.userTid || hardCap(lg) === Infinity) return false;
+  fresh(lg);
+  const h = horizonOf(A);
+  const spare = () => A.roster.map(pid => lg.players[pid]).filter(x => x.contract.sal > MIN_SAL * 1.5 && x.contract.exp >= minExp && !keeps(lg, A.tid, x))
+    .sort((x, y) => pv(lg, x, h, A.tid) / x.contract.sal - pv(lg, y, h, A.tid) / y.contract.sal);
+  // what releases could free (half of each salary), within what the kept player is worth
+  const releasable = () => { let v = 0, f = 0; for (const x of spare()) { v += Math.max(0, pv(lg, x, h, A.tid)); if (v > worth) break; f += x.contract.sal * (1 - DEAD_SHARE); } return f; };
+  // nothing to do if even trading every spare contract away would not be enough
+  if (spare().reduce((a, x) => a + x.contract.sal, 0) < -room()) return false;
+  const others = Object.values(lg.teams).filter(t => t.active && t !== A && t.tid !== lg.userTid);
+  for (let tries = 0; tries < 4 && room() < -1e-9; tries++) {
+    const deal = findDump(lg, A, others, true, minExp);
+    if (!deal) break;
+    executeTrade(lg, A.tid, deal.b, deal.aGets, deal.bGets);
+    fillRoster(lg, deal.b);
+  }
+  if (room() >= -1e-9) return true;
+  if (releasable() < -room()) return false;   // releases would not get there: keep everyone
+  let lost = 0;
+  while (room() < -1e-9) {
+    const p = spare()[0];
+    if (!p) break;
+    const v = Math.max(0, pv(lg, p, h, A.tid));
+    if (lost + v > worth) break;
+    lost += v;
+    A.roster = A.roster.filter(x => x !== p.id);
+    releaseDead(lg, A.tid, p);
+    p.tid = null; p.cut = { tid: A.tid, s: lg.season };
+    p.contract = { sal: MIN_SAL, exp: lg.season };
+    lg.news.push({ s: lg.season, t: `${A.name} release ${tagOf(p, lg.season)} ${why} (half his salary stays on the books).` });
+  }
+  return room() >= -1e-9;
+}
+/** Value of a player to his team now (for clearRoom). */
+export function worthTo(lg: League, p: Player, tid: string) { fresh(lg); return Math.max(0, pv(lg, p, horizonOf(lg.teams[tid]), tid)); }
 
 /** AI teams over the hard cap get under it: salary dumps, and as a last resort buyouts. */
 export function complyHardCap(lg: League, rng: Rng, buyouts = false) {
@@ -781,8 +866,9 @@ export function complyHardCap(lg: League, rng: Rng, buyouts = false) {
     // last resort: the worst contract for the money is released (half of it stays on the books)
     while (buyouts && payroll(lg, A.tid) > hc + 1e-9) {
       const h = horizonOf(A);
+      // the worst contracts go first; the core only if nothing else is left
       const p = A.roster.map(pid => lg.players[pid]).filter(x => x.contract.sal > MIN_SAL * 1.5)
-        .sort((x, y) => pv(lg, x, h, A.tid) / x.contract.sal - pv(lg, y, h, A.tid) / y.contract.sal)[0];
+        .sort((x, y) => (keeps(lg, A.tid, x) ? 1 : 0) - (keeps(lg, A.tid, y) ? 1 : 0) || pv(lg, x, h, A.tid) / x.contract.sal - pv(lg, y, h, A.tid) / y.contract.sal)[0];
       if (!p) break;
       A.roster = A.roster.filter(x => x !== p.id);
       releaseDead(lg, A.tid, p);

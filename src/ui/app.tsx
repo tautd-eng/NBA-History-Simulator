@@ -14,6 +14,7 @@ import { loadHistory, H, RATING_LABELS, shownOvr as ovrOf, shownFromRaw, shownFr
 import { setEraCal } from '../engine/game';
 import { newLeague, standings, playoffFormat, realChampion, simDayWatching, watchableToday, playedToday, seasonGames, applySettings, startClutch, finishClutch, todayIndex } from '../league/league';
 import { ensurePicks, deadlineDay, boardScore } from '../ai/trades';
+import { planOf } from '../ai/plan';
 import { LiveGame } from './live';
 import { SortTable, f1 } from './sorttable';
 import { ClutchGame } from './clutch';
@@ -890,6 +891,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
   const pay = payroll(lg, t.tid);
   const strat = t.mode ? { allin: 'All-in', tank: 'Tanking', rising: 'Rising', capclear: 'Clearing salary', retool: 'Retooling' }[t.mode] : { contend: 'Contender', middle: 'Middle of the pack', rebuild: 'Rebuilding' }[t.strategy];
   const titles = lg.history.filter((s: any) => s.champion === t.tid).map((s: any) => s.season);
+  const plan = t.tid !== lg.userTid ? planOf(lg, t.tid) : null;
   const [view, setView] = useState<'stats' | 'attr' | 'hist' | 'rec'>('stats');
   const inSeason = lg.phase === 'regular' || lg.phase === 'playoffs';
   const calNow = inSeason ? nextCal(lg, todayIndex(lg)) : 0;
@@ -920,6 +922,14 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
           {titles.length > 0 && <span>Titles: <b>{titles.join(', ')}</b></span>}
         </div>
       </div>
+      {plan && t.tid !== lg.userTid && (
+        <div className="fo-plan">
+          <span className="fo-stage">Front office: <b>{({ contend: 'Contending', push: 'Pushing for more', build: 'Building around youth', rebuild: 'Rebuilding' } as any)[plan.stage]}</b> · {plan.act ? 'ready to spend future assets' : 'patient – keeping its picks and young players'}</span>
+          <span className="dim">{plan.why.join('; ')}.</span>
+          {plan.core.length > 0 && <span>Core: {plan.core.map((pid: string) => lg.players[pid]?.name).filter(Boolean).join(', ')}</span>}
+          {plan.rising.length > 0 && <span>Young pieces: {plan.rising.map((pid: string) => lg.players[pid]?.name).filter(Boolean).join(', ')}</span>}
+        </div>
+      )}
       <div className="def-row">
         <div className="seg view-toggle-l" role="group" aria-label="View">
           <button className={view === 'stats' ? 'on' : ''} onClick={() => setView('stats')}>Stats</button>
@@ -937,7 +947,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
             <tbody>
               {roster.map((p: any) => (
                 <tr key={p.id}>
-                  <td className="l"><PFace lg={lg} p={p} /><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button>{p.injury > 0 && <span className="inj" title={p.inj ? `${injName(p.inj.k)} – out ~${p.injury} more games` : 'Injured'}>+{p.injury}</span>}{p.entered === (lg.phase === 'regular' || lg.phase === 'playoffs' || lg.phase === 'freeagency' ? lg.season : lg.season + 1) && <span className="chip tiny">R</span>}</td>
+                  <td className="l"><PFace lg={lg} p={p} /><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button>{plan?.core.includes(p.id) && <span className="chip tiny" title="Core player – the team builds around him">core</span>}{plan?.rising.includes(p.id) && <span className="chip tiny" title="Young piece – he gets minutes and is not shopped">young</span>}{p.injury > 0 && <span className="inj" title={p.inj ? `${injName(p.inj.k)} – out ~${p.injury} more games` : 'Injured'}>+{p.injury}</span>}{p.entered === (lg.phase === 'regular' || lg.phase === 'playoffs' || lg.phase === 'freeagency' ? lg.season : lg.season + 1) && <span className="chip tiny">R</span>}</td>
                   <td className="dim">{p.pos} <RoleBadge id={roleOf(p.z, p.pos).arch.id} small /></td>
                   <td>{ageIn(p, lg.season)}</td>
                   <td><Ovr v={ovrOf(p.z)} small /></td>

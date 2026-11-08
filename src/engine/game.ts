@@ -89,7 +89,7 @@ export function prep(p: Player, season: number): GP {
   const z = tired(p.z, (p as any).fatNow ?? 0);
   const bpm = bpmOf(p.z);
   return {
-    p, bpm, q: Math.pow(Math.max(0.5, bpm + 6), C.star) * Math.max(0.6, 1 - FATIGUE.minutes * fat), posNum: posNum(p.pos),
+    p, bpm, q: Math.pow(Math.max(0.5, bpm + 6), C.star) * Math.max(0.6, 1 - FATIGUE.minutes * fat) * ((p as any).rotQ ?? 1), posNum: posNum(p.pos),
     usg: rate(K.usg, z[K.usg], season),
     // the rating is turnovers per action with the ball (assists included); as the man with the ball he loses it at that rate times (1 + his passes per own possession)
     tov: Math.min(0.5, rate(K.tov, C.tovAmp * z[K.tov], season) * (1 + 0.35 * rate(K.ast, z[K.ast], season) / Math.max(0.08, rate(K.usg, z[K.usg], season)))),

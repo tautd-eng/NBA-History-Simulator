@@ -800,3 +800,5 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .live-stage:fullscreen .pixel-court { width: min(100vw, calc(100vh * 16 / 9)); height: auto; border-radius: 0; }
 .stage-full { position: absolute; right: 8px; bottom: 8px; border: none; border-radius: 6px; background: rgba(0,0,0,.55); color: #fff; font-size: 18px; line-height: 1; padding: 6px 8px; cursor: pointer; opacity: .75; }
 .stage-full:hover { opacity: 1; }
+.fo-plan { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; margin: 6px 0 10px; padding: 8px 10px; border-radius: 8px; background: var(--panel2, rgba(127,127,127,.08)); }
+.fo-plan .fo-stage { flex-basis: 100%; }
