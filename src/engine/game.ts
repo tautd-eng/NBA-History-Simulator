@@ -36,7 +36,7 @@ export const C = {
   fbStl: 0.55, fbDrb: 0.15, fbMake: 0.45, fbThree: 0.6, lateClock: 0.2, // transition and shot-clock pressure
   star: 1.35, stay: 1.2, depth: 10, minAlpha: 1.0, maxMin: 40,
   poDepth: 8, poAlpha: 1.5, poMax: 44, // playoffs: coaches shorten the bench and ride their best players
-  mmDef: 0.5, mmHt: 0.01, mmUsg: 0.15, mmSize: 0.03, // matchups: own defender's weight, size edge inside, shot selection toward mismatches
+  mmDef: 0.31, mmHt: 0.01, mmUsg: 0.093, mmSize: 0.019, // matchups: own defender's weight, size edge inside, shot selection toward mismatches
   pass: 0.15, pass0: 0.11, hb: 0.022, hbOn: 1, split: 1, rimHelp: 0.65, rim0: 1.3, rimK: 0.7, postK: 0.5, // defence split into perimeter / rim protection (0 = the single rating)
    fitSp: 0.12, fitHd: 0.08, fitRim: 0, fitCk: 0.07, edge: 0.09, edgeMass: 0.3, // lineup fit: spacing (twos), a ball-handler (turnovers), rim protection (opponent twos), too many ball-dominant scorers
 };
