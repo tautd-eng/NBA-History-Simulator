@@ -1,7 +1,7 @@
 // Thin control layer between the UI and the league: advancing time in chunks
 // (so the page stays responsive) and saving to the browser.
 import { League } from './types';
-import { simDay, awaitingPlayoffs, currentRound } from './league/league';
+import { simDay, awaitingPlayoffs, currentRound, checkRosters } from './league/league';
 import { initDraft, draftAdvance, enterFreeAgency, faStage, startSeason, offStep, offRetire, offDevelop } from './league/offseason';
 import { fantasyAdvance } from './league/fantasy';
 import { registerClones } from './league/classes';
@@ -147,6 +147,7 @@ function migrate(lg: League) {
     if (!p.awards?.length) continue;
     p.awards = p.awards.map((a: string) => { const m = /^(\d{4}) (.*)$/.exec(a); if (!m) return a; if (AWARD_EN[m[2]]) return `${m[1]} ${AWARD_EN[m[2]]}`; return /[ąčęėįšųūž]/i.test(m[2]) ? `${m[1]} ${awardLabel(m[2])}` : a; });
   }
+  checkRosters(lg); // older saves: duplicate names, players on two rosters
 }
 export async function loadLeague(id = slot): Promise<League | null> {
   try { const lg = await get<League>(id); if (lg) migrate(lg); return lg; } catch { return null; }

@@ -229,6 +229,45 @@ export function makeTeam(tid: string, abbr: string, name: string, conf: 'E' | 'W
 
 export function activeTeams(lg: League) { return Object.values(lg.teams).filter(t => t.active); }
 
+/**
+ * Integrity check: every player on exactly one roster (the team his record says), nobody retired on a roster,
+ * and no two active players with the same name (a copy from a recycled draft class gets "II", "III").
+ * Returns how many problems it fixed.
+ */
+export function checkRosters(lg: League): number {
+  let fixed = 0;
+  const on = new Set<string>();
+  for (const t of Object.values(lg.teams)) {
+    const keep: string[] = [];
+    for (const pid of t.roster) {
+      const p = lg.players[pid];
+      if (!p || p.retired || on.has(pid) || p.tid !== t.tid) { fixed++; continue; }
+      on.add(pid); keep.push(pid);
+    }
+    if (keep.length !== t.roster.length) t.roster = keep;
+  }
+  for (const p of Object.values(lg.players)) {
+    if (!p.tid || on.has(p.id)) continue;
+    const t = lg.teams[p.tid];
+    if (t?.active && !p.retired) { t.roster.push(p.id); on.add(p.id); } else p.tid = null;
+    fixed++;
+  }
+  const byName = new Map<string, Player[]>();
+  for (const p of Object.values(lg.players)) {
+    if (p.retired) continue;
+    const k = p.name.replace(/ (II|III|IV|V)$/, '');
+    (byName.get(k) ?? byName.set(k, []).get(k)!).push(p);
+  }
+  const ROMAN = ['', 'II', 'III', 'IV', 'V', 'VI'];
+  for (const [base, ps] of byName) {
+    if (ps.length < 2 || new Set(ps.map(p => p.name)).size === ps.length) continue;
+    // the original (real id, earliest in the league) keeps the plain name
+    ps.sort((a, b) => Number(a.id.includes('~')) - Number(b.id.includes('~')) || a.entered - b.entered || a.id.localeCompare(b.id));
+    ps.forEach((p, i) => { const nm = i ? `${base} ${ROMAN[i] ?? i + 1}` : base; if (p.name !== nm) { p.name = nm; fixed++; } });
+  }
+  return fixed;
+}
+
 export function updateStrategies(lg: League) {
   const ts = activeTeams(lg).map(t => ({ t, s: teamStrength(lg, t.tid) })).sort((a, b) => b.s - a.s);
   ts.forEach(({ t }, i) => {
@@ -464,6 +503,7 @@ function regularDayEnd(lg: League, day: number, rng: Rng) {
   if (day % 30 === 20 && !pastDeadline(lg)) aiRecallStash(lg, rng, 0.25);
   if (day % 10 === 3 && !pastDeadline(lg)) complyHardCap(lg, rng);
   if (day % 7 === 2) lateMarket(lg, rng);
+  if (day % 10 === 6) checkRosters(lg);
   // the trade deadline rush: the last ten days before it bring more talks
   const dl = deadlineDay(lg);
   if (day >= dl - 14 && day <= dl) aiTradeRound(lg, rng, 1.2);

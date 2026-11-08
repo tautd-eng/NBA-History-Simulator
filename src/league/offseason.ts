@@ -7,7 +7,7 @@ import { Rng } from '../rng';
 import { posNum } from '../engine/game';
 import { League, Player, Team, emptyLine, ExpansionDraft, Lottery, FreeAgency, RetRow } from '../types';
 import { newPlayer, prospectZ, realTarget, lastRealSeason, ageIn, firstRealSeason, snapRatings, tagOf, addTx } from '../players';
-import { activeTeams, makeTeam, rngOf, standings, updateStrategies, updateModes, playoffFormat, seasonGames } from './league';
+import { activeTeams, makeTeam, rngOf, standings, updateStrategies, updateModes, playoffFormat, seasonGames, checkRosters } from './league';
 import { makeSchedule } from './schedule';
 import { develop, normalizeLeague, youngFloor } from './health';
 import { classFor, shiftFor, cloneBase } from './classes';
@@ -448,6 +448,7 @@ export function enterFreeAgency(lg: League) {
   archiveFa(lg, N - 1);
   lg.fa = { stage: 0, pending, mle: [], log: optLog, decisions, sheets: [] };
   ensurePicks(lg);
+  checkRosters(lg);
   lg.news.push({ s: N, t: `Free agency opens (for the ${seasonLabelOf(N)} season).` });
   const kept = optLog.filter(x => x.kind === 'resign' && !x.user && x.pid && bpmOf(lg.players[x.pid].z) > 1).sort((a, b) => bpmOf(lg.players[b.pid!].z) - bpmOf(lg.players[a.pid!].z));
   for (let i = 0; i < kept.length; i += 10) lg.news.push({ s: N, t: `Re-signed before free agency: ${kept.slice(i, i + 10).map(x => `${tagOf(lg.players[x.pid!], N)} (${lg.teams[x.tid!].abbr}, ${Math.round((x.exp! - N + 1))} yr)`).join(', ')}.` });
@@ -1067,6 +1068,7 @@ export function startSeason(lg: League) {
   ensurePicks(lg);
   // keep league-wide ratings in a realistic range (done in the development step; older saves here)
   if (!(lg.off?.y === N - 1 && lg.off.devDone)) { normalizeLeague(lg); youngFloor(lg); }
+  checkRosters(lg);
   lg.off = undefined;
   lg.previewOpen = N;
   if (lg.news.length > 400) lg.news.splice(0, lg.news.length - 400);
@@ -1113,8 +1115,9 @@ export function offDevelop(lg: League) {
   const rng = rngOf(lg);
   const Y = lg.season;
   develop(lg, rng);
-  normalizeLeague(lg, Y + 1);
+  normalizeLeague(lg, Y + 1, 1);
   youngFloor(lg, Y + 1);
+  checkRosters(lg);
   // the league-wide recalibration is a cause of its own
   for (const p of Object.values(lg.players)) {
     const w = p.devWhy;

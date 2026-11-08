@@ -227,6 +227,10 @@ export function develop(lg: League, rng: Rng) {
     const why: any = { s: Y + 1, inj: pre ? s0 - histShown(pre) : 0, perf: 0, trend: 0, luck: 0, cap: 0, destiny: 0, total: 0 };
     // 1) what he showed on the court
     const pf = perf.get(p.id);
+    // a player named to an All-League or All-Defensive team (or MVP / DPOY) had a good season by definition:
+    // no penalty for not matching an already sky-high rating
+    const honored = (p.awards ?? []).some(a => a.startsWith(`${Y} `) && /All-League|All-Defensive|MVP$|DPOY$/.test(a) && !/Finals/.test(a));
+    if (pf && honored && pf.ovrGain < 0) { pf.ovrGain = 0; pf.dz.fill(0); }
     const flop = !!pf && pf.ovrGain < YOUNG.flop;
     (dev as any).flop = flop;
     if (pf) {
@@ -405,11 +409,12 @@ export function youngFloor(lg: League, S = lg.season) {
   }
 }
 
-export function normalizeLeague(lg: League, S = lg.season) {
+export function normalizeLeague(lg: League, S = lg.season, maxStep = Infinity) {
   const real = realProfile(S);
   const before = simProfile(lg);
   const str = 0.8 * (1 - lg.destiny);
   const players = Object.values(lg.players).filter(p => !p.retired);
+  const z0 = new Map(players.map(p => [p.id, p.z.slice()]));
   let shiftSize = 0;
   if (str > 0) {
     const shift = before.mean.map((m, k) => {
@@ -428,6 +433,15 @@ export function normalizeLeague(lg: League, S = lg.season) {
   }
   for (const p of players) {
     zClamp(p.z);
+    // the recalibration drifts the whole league a little; it never moves one player more than maxStep in a summer
+    // (the rest of the correction comes in later years) – a star at his peak does not drop because of it
+    const a = z0.get(p.id)!, o0 = shownOvr(a);
+    if (Math.abs(shownOvr(p.z) - o0) > maxStep) {
+      const b = p.z.slice();
+      let lo = 0, hi = 1;
+      for (let it = 0; it < 12; it++) { const t = (lo + hi) / 2; if (Math.abs(shownOvr(a.map((v, i) => v + t * (b[i] - v))) - o0) <= maxStep) lo = t; else hi = t; }
+      for (let i = 0; i < NK; i++) p.z[i] = a[i] + lo * (b[i] - a[i]);
+    }
     if (p.ovrHist.length && p.ovrHist[p.ovrHist.length - 1][0] === S) snapRatings(p, S);
   }
   const rec: HealthRec = { s: S, sim: simProfile(lg), real, shift: Math.round(shiftSize * 1000) / 1000, spread: Math.round(spread * 1000) / 1000 };
