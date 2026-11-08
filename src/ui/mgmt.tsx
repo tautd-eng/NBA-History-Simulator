@@ -16,7 +16,10 @@ const TACS = [
   { k: 'pace', t: 'Pace', lo: 'Slow it down', hi: 'Run', d: 'Faster: more possessions and more fast breaks – more chances for the better team, more variance for the worse one.' },
   { k: 'three', t: 'Shot selection', lo: 'Attack inside', hi: 'Fire threes', d: 'More threes: more points per make, more variance; inside: more free throws and more reliable twos.' },
   { k: 'crash', t: 'Rebounding', lo: 'Get back', hi: 'Crash the glass', d: 'Crashing: more offensive rebounds and second chances – but more fast breaks against you.' },
-  { k: 'press', t: 'Defense', lo: 'Stay home', hi: 'Pressure', d: 'Pressure: more turnovers forced – and more fouls, more free throws for them.' },
+  { k: 'press', t: 'Defensive pressure', lo: 'Stay home', hi: 'Pressure', d: 'Pressure: more turnovers forced – and more fouls, more free throws for them.' },
+  { k: 'focus', t: 'Offensive focus', lo: 'Ball movement', hi: 'Feed the stars', d: 'Stars: your best scorers take more of the shots. Ball movement: shots spread out and come a little cleaner – but more passes, more turnovers.' },
+  { k: 'scheme', t: 'Defensive scheme', lo: 'Protect the paint', hi: 'Run shooters off the line', d: 'Chase shooters: fewer and harder threes for them, easier twos. Protect the paint: the reverse.' },
+  { k: 'zone', t: 'Zone defense', lo: 'Never', hi: 'Often', d: 'How often you play zone instead of man-to-man: a zone dares them to shoot from outside. Legal from 2001–02.', from: 2002 },
 ];
 const STEPS = [-1, -0.5, 0, 0.5, 1];
 
@@ -109,12 +112,12 @@ function TacticsPanel({ lg, onChange }: any) {
       <div className="team-head"><h2>Tactics</h2><button className="small ghost" onClick={() => { for (const x of TACS) m.tac[x.k] = 0; setT(x => x + 1); onChange(); }}>Balanced</button></div>
       <p className="note">How your team plays every game (your in-game calls in clutch mode still come on top). Each choice is a trade-off – none is free.</p>
       <div className="tac-list">
-        {TACS.map(x => (
+        {TACS.filter(x => !x.from || lg.season >= x.from).map(x => (
           <div key={x.k} className="tac">
             <div className="tac-head"><b>{x.t}</b><span className="dim small-t">{x.d}</span></div>
             <div className="tac-row">
               <span className="dim small-t">{x.lo}</span>
-              <span className="seg">{STEPS.map(v => <button key={v} className={m.tac[x.k] === v ? 'on' : ''} onClick={() => upd(x.k, v)} aria-label={`${x.t} ${v}`}>{v === 0 ? '·' : v < 0 ? (v === -1 ? '◀◀' : '◀') : v === 1 ? '▶▶' : '▶'}</button>)}</span>
+              <span className="seg">{STEPS.map(v => <button key={v} className={(m.tac[x.k] ?? 0) === v ? 'on' : ''} onClick={() => upd(x.k, v)} aria-label={`${x.t} ${v}`}>{v === 0 ? '·' : v < 0 ? (v === -1 ? '◀◀' : '◀') : v === 1 ? '▶▶' : '▶'}</button>)}</span>
               <span className="dim small-t">{x.hi}</span>
             </div>
           </div>

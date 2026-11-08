@@ -76,7 +76,7 @@ export interface Team {
   gm: { risk: number; patience: number; scouting: number };
   plan?: import('./ai/plan').TeamPlan;
   /** the user's team management: rotation (auto with a depth and a youth push, or minutes by hand) and tactics */
-  mgmt?: { mode: 'auto' | 'manual'; depth: number; youth: number; minutes: Record<string, number>; tac: { pace: number; three: number; crash: number; press: number } };   // the front office's read of its team (core, young pieces, picks, act or wait)
+  mgmt?: { mode: 'auto' | 'manual'; depth: number; youth: number; minutes: Record<string, number>; tac: { pace: number; three: number; crash: number; press: number; focus?: number; scheme?: number; zone?: number } };   // the front office's read of its team (core, young pieces, picks, act or wait)
   paceZ: number;
   active: boolean;
   st?: StatLine; opp?: StatLine; gp?: number; // team season totals (own, opponents)

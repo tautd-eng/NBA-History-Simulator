@@ -115,7 +115,11 @@ export function prep(p: Player, season: number): GP {
 
 /** A team's style, each from -1 to 1 (0 = neutral): pace, three-point shooting, crashing the offensive glass
  *  (against getting back in transition), defensive pressure (more turnovers, more fouls). */
-export interface Tactics { pace: number; three: number; crash: number; press: number }
+export interface Tactics { pace: number; three: number; crash: number; press: number;
+  focus?: number;   // -1 ball movement (shots spread, a little more efficient, more passes to lose) … 1 feed the stars
+  scheme?: number;  // -1 protect the paint (concede threes) … 1 run shooters off the line (concede twos)
+  zone?: number;    // -1 never zone … 0 the coach's habit … 1 zone often (legal from 2001–02)
+}
 interface Side { tid: string; gps: GP[]; on: GP[]; pts: number; q: number[]; home: boolean; paceZ: number; tac: Tactics; minutes?: Record<string, number>; depth?: number }
 
 export interface GameOpts { season: number; po: boolean; rng: Rng; pbp?: boolean; ctl?: Control }
@@ -644,7 +648,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     }
     // the defence's scheme on this trip (what the viewer sees, and a nudge toward threes against a zone)
     const id = dIdent(def.tid);
-    dsc = defCall === 'pressure' ? 'press' : cr.chance(id.zone) ? 'zone' : cr.chance(id.sw) ? 'switch' : 'man';
+    const zt = def.tac.zone ?? 0, zRate = season < 2002 ? 0 : zt < 0 ? id.zone * (1 + zt) : id.zone + zt * (0.4 - id.zone);
+    dsc = defCall === 'pressure' ? 'press' : cr.chance(zRate) ? 'zone' : cr.chance(id.sw) ? 'switch' : 'man';
   }
   function callDuration(dur: number, rem: number, trail = 0) {
     if (defCall === 'foul') return 1.5 + 2.5 * rng.next();
@@ -677,7 +682,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const guard = (g: GP) => dS[oS.indexOf(g)] ?? dS[0];
     // the offence looks for the weak spot: a soft or much smaller defender draws more shots
     const edge = (g: GP) => { const d = guard(g); return C.mmUsg * (defZ - d.def) + C.mmSize * Math.max(-6, Math.min(6, g.p.ht - d.p.ht)) * (g.posNum >= 3.5 ? 1 : 0.4); };
-    let actor = on[rng.weighted(on.map(g => g.usg * (0.6 + 0.4 * g.e) * Math.exp(edge(g)) * (offCall === 'three' ? Math.max(0.03, g.tpr) ** 1.5 * 6 : 1)))];
+    const fo = off.tac.focus ?? 0;
+    let actor = on[rng.weighted(on.map(g => Math.pow(g.usg / 0.2, 1 + 0.6 * fo) * (0.6 + 0.4 * g.e) * Math.exp(edge(g)) * (offCall === 'three' ? Math.max(0.03, g.tpr) ** 1.5 * 6 : 1)))];
     // the man who just grabbed the offensive rebound is under the basket: he goes right back up about half the time
     if (afterOrb && orbBy && on.includes(orbBy) && offCall !== 'three' && rng.chance(orbBy.posNum >= 3.5 ? 0.55 : 0.4)) actor = orbBy;
     if (offCall === 'iso' && isoPid && !afterOrb) {
@@ -721,7 +727,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
 
     // turnover
     // ball pressure: his own defender's hands count as much as the team's
-    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + 0.12 * def.tac.press + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd) - eT);
+    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + 0.12 * def.tac.press + 0.08 * Math.max(0, -(off.tac.focus ?? 0)) + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd) - eT);
     if (rng.chance(pTov)) {
       inc(actor, 'tov');
       const sumStl = dOn.reduce((a, g) => a + g.stl, 0);
@@ -752,7 +758,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       return ftTrip(off, def, actor, 2);
     }
     // field-goal attempt
-    let tprAdj = sigm(logit(Math.min(0.97, Math.max(0.003, actor.tpr))) + C.tpa + E.tpa + 0.45 * off.tac.three);
+    const sch = def.tac.scheme ?? 0, mov = Math.max(0, -(off.tac.focus ?? 0));
+    let tprAdj = sigm(logit(Math.min(0.97, Math.max(0.003, actor.tpr))) + C.tpa + E.tpa + 0.45 * off.tac.three - 0.35 * sch);
     // down three late there is no point in a two: everybody hunts a three, also after an offensive rebound
     if (offCall === 'three') tprAdj = Math.max(tprAdj, def.pts - off.pts === 3 ? 0.97 : 0.88);
     if (offCall === 'inside') tprAdj *= 0.15;
@@ -784,12 +791,12 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     let made: boolean;
     let blocker: GP | null = null;
     if (three) {
-      made = rng.chance(zoneP(sigm(logit(actor.p3) + C.p3 + E.p3 + shift), zone));
+      made = rng.chance(zoneP(sigm(logit(actor.p3) + C.p3 + E.p3 + shift - 0.12 * sch + 0.05 * mov), zone));
     } else {
       // shots at the rim get blocked far more often than jumpers (same total)
       const rimW = zone.mix[0][0], blkZ = zone.k === 'rim' ? 1.4 / (rimW * 1.4 + (1 - rimW) * 0.45) : zone.k === 'mid' ? 0.45 / (rimW * 1.4 + (1 - rimW) * 0.45) : 1;
       const pBlk = Math.min(0.3, dOn.reduce((a, g) => a + g.blk, 0) * C.blk * E.blk * blkZ);
-      const pMake = zoneP(sigm(logit(actor.p2) + C.p2 + E.p2 + shift), zone);
+      const pMake = zoneP(sigm(logit(actor.p2) + C.p2 + E.p2 + shift + 0.12 * sch + 0.05 * mov), zone);
       if (rng.chance(pBlk)) {
         lastBlocked = true;
         blocker = dOn[rng.weighted(dOn.map(g => g.blk * (g === md ? 2.5 : 1)))];

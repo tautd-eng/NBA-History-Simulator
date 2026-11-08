@@ -143,7 +143,8 @@ export function extensionNeed(lg: League, p: Player, tid: string, years: number)
   // money-first stars want the full max or will test free agency
   if (tr.money > 0.7 && ask >= max * 0.9) { d = Math.min(d, 0); why.push('wants a max contract'); }
   // 1) wanting to stay: the more he likes it here, the bigger the hometown discount (or the premium, if he does not)
-  const stay = Math.max(-0.25, Math.min(0.3, d));
+  // (it swings the price a lot: a player who does not want to stay asks up to half again his market value)
+  const stay = Math.max(-0.5, Math.min(0.35, 1.8 * d));
   const interest = Math.round(Math.max(0, Math.min(100, 50 + 160 * d)));
   // 2) length: a veteran pays for security (each year up to four is worth ~2.5% to him); a deal too long for his age
   //    costs; a young player gives up his next free agency – every year past two compounds, the more so the more
