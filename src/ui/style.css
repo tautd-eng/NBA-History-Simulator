@@ -904,3 +904,6 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .playing-as select { max-width: 190px; font-weight: 600; }
 .hum-list li label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 @media (max-width: 640px) { .playing-as { margin-left: 0; } .playing-as select { max-width: 150px; } }
+.commish { display: flex; gap: 6px; align-items: center; font-size: 0.82rem; color: var(--muted); margin-top: 8px; }
+.finder { margin-top: 16px; border-top: 1px solid var(--line, rgba(0,0,0,.1)); padding-top: 10px; }
+.finder td.pos { color: var(--ok, #1a7f37); } .finder td.neg { color: var(--bad, #b42318); }

@@ -8,7 +8,7 @@ import { aiResponse, executeTrade, fillRoster, ensurePicks, deadlineDay, pastDea
 import { payroll, hardCap } from '../ai/value';
 import { isHuman } from '../league/humans';
 import { propose as sendOffer, answer, withdraw, inbox, outbox, proposalProblem, describeSide } from '../league/proposals';
-import { tradeRules } from '../ai/trades';
+import { tradeRules, findTrades } from '../ai/trades';
 
 const money = (frac: number, s: number) => {
   const m = frac * seasonInfo(s).cap;
@@ -51,6 +51,30 @@ export function Trades({ lg, openPlayer, onDone }: any) {
   // a person runs the partner: no AI answer – the offer waits in their inbox
   const toHuman = isHuman(lg, b) && b !== a && a === lg.userTid;
   const rule = (aGives.length || bGives.length) && toHuman ? tradeRules(lg, a, b, bGives, aGives) : null;
+  const commish = !!lg.commish;
+  const ruleAny = (aGives.length || bGives.length) ? tradeRules(lg, a, b, bGives, aGives) : 'Select something first.';
+  const [found, setFound] = useState<any[] | null>(null);
+  const [scope, setScope] = useState<'all' | 'partner'>('all');
+  const [searching, setSearching] = useState(false);
+  const find = () => {
+    setSearching(true); setFound(null);
+    setTimeout(() => {
+      const partner = bGives.length || scope === 'partner' ? b : null;
+      setFound(findTrades(lg, a, aGives, bGives, partner, 12));
+      setSearching(false);
+    }, 30);
+  };
+  const keyOf = (x: any) => x.pid ? 'p:' + x.pid : 'k:' + pkKey(x.pick);
+  const load = (r: any) => { setB(r.tid); setSelA(new Set(r.gives.map(keyOf))); setSelB(new Set(r.gets.map(keyOf))); setMsg(null); };
+  const force = () => {
+    if (ruleAny) return;
+    const rec = executeTrade(lg, a, b, bGives, aGives, true);
+    rec.desc += ' (commissioner)';
+    fillRoster(lg, a); fillRoster(lg, b);
+    setSelA(new Set()); setSelB(new Set());
+    setMsg(`Trade forced: ${rec.desc}`);
+    onDone();
+  };
   const reply = (aGives.length || bGives.length) ? (toHuman
     ? { accept: !rule, text: rule ?? `The ${lg.teams[b].name} are run by a person: the offer goes to their inbox and they answer when their team is played.` }
     : aiResponse(lg, a, b, bGives, aGives)) : null;
@@ -169,7 +193,33 @@ export function Trades({ lg, openPlayer, onDone }: any) {
             <p><b>{reply.text}</b></p>
             <p className="dim">Salaries: {lg.teams[a].abbr} send {money(aGives.reduce((s: number, x: any) => s + (x.pid ? lg.players[x.pid].contract.sal : 0), 0), lg.season)}, receive {money(bGives.reduce((s: number, x: any) => s + (x.pid ? lg.players[x.pid].contract.sal : 0), 0), lg.season)}</p>
           </> : <p className="dim">Select players or picks on both sides – the AI's answer appears here. “Value” is how much the partner GM values an asset: on-court benefit over the next few years (a star is worth far more than two average players) minus salary cost; a cheap deal or rookie contract adds value, an overpay subtracts it. A pick is the expected rookie at that slot on a cheap deal.</p>}
-          <button className="primary" disabled={!reply?.accept || closed} onClick={propose}>{toHuman ? 'Send offer' : 'Propose trade'}</button>
+          <div className="def-row">
+            <button className="primary" disabled={!reply?.accept || closed} onClick={propose}>{toHuman ? 'Send offer' : 'Propose trade'}</button>
+            {commish && <button className="danger" disabled={!!ruleAny || closed} title={ruleAny ?? 'Execute this trade whatever the teams think'} onClick={force}>Force trade (commissioner)</button>}
+          </div>
+          <label className="commish"><input type="checkbox" checked={commish} onChange={e => { lg.commish = e.target.checked; onDone(); }} /> Commissioner mode – execute any trade between any two teams, accepted or not (cap and roster rules still apply)</label>
+        </div>
+        <div className="finder">
+          <h3>Trade finder</h3>
+          <p className="note">Tick what {lg.teams[a].abbr} would give, what {lg.teams[a].abbr} want, or both – the finder looks for deals the other GM accepts and that are worth about as much as what you put in. “Load” puts the deal into the proposal above.</p>
+          <div className="def-row">
+            <select aria-label="Where to look" value={scope} onChange={e => setScope(e.target.value as any)} disabled={bGives.length > 0}>
+              <option value="all">All teams</option>
+              <option value="partner">Only {lg.teams[b].name}</option>
+            </select>
+            <button className="primary" disabled={searching || (!aGives.length && !bGives.length)} onClick={find}>{searching ? 'Searching…' : 'Find trades'}</button>
+          </div>
+          {found && (found.length ? <div className="tbl-wrap"><table className="tbl">
+            <thead><tr><th className="l">Partner</th><th className="l">{lg.teams[a].abbr} get</th><th className="l">{lg.teams[a].abbr} give</th><th title="Market value received vs given">Value</th><th title="How much the deal helps your team, by your GM's estimate">Fit</th><th></th></tr></thead>
+            <tbody>{found.map((r: any, i: number) => <tr key={i}>
+              <td className="l"><TL tid={r.tid} abbr /></td>
+              <td className="l">{describeSide(lg, r.gets)}</td>
+              <td className="l dim">{describeSide(lg, r.gives)}</td>
+              <td>{r.getV.toFixed(1)} / {r.giveV.toFixed(1)}</td>
+              <td className={r.gain >= 0 ? 'pos' : 'neg'}>{r.gain >= 0 ? '+' : ''}{r.gain.toFixed(1)}</td>
+              <td><button className="small" onClick={() => load(r)}>Load</button></td>
+            </tr>)}</tbody>
+          </table></div> : <p className="note">No team would accept a deal like that. Add more, pick something else, or widen the search to all teams.</p>)}
         </div>
         {msg && <p className="ok-msg">{msg}</p>}
       </div>

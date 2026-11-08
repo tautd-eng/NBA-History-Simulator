@@ -225,7 +225,8 @@ export interface League {
   /** the season preview is shown before the first game of this season */
   previewOpen?: number | null;
   humans?: string[];                 // hot seat: every human-run team (userTid is the one being played now)
-  proposals?: Proposal[];            // trade offers between human-run teams, waiting for the other side
+  proposals?: Proposal[];
+  commish?: boolean;                 // commissioner mode: any trade between any teams can be forced            // trade offers between human-run teams, waiting for the other side
   hofManual?: string[];
   jerseyManual?: { pid: string; tid: string }[]; // jerseys retired by hand              // players put into the Hall of Fame by hand
   /** awards screen after the regular season: which awards have been revealed (count of places shown) */

@@ -1020,3 +1020,62 @@ export function aiDraftTrade(lg: League, rng: Rng): TradeRec | null {
   (d.trades ??= []).push({ at: i, up: best.Yt.tid, down: X.tid, from: best.j + 1, to: i + 1, text });
   return rec;
 }
+
+// ------------------------------------------------------------ trade finder
+export interface FoundTrade { tid: string; gets: TradeAsset[]; gives: TradeAsset[]; gain: number; getV: number; giveV: number; text: string }
+/**
+ * Deals an AI team would accept around what the user puts on the table: the user's offered assets (`give`)
+ * for something of similar worth from them, or what it takes to land `want`. Ranked by how much they
+ * help the user's team; at most a couple per partner so the list shows the market.
+ */
+export function findTrades(lg: League, me: string, give: TradeAsset[], want: TradeAsset[], partner: string | null, limit = 12): FoundTrade[] {
+  fresh(lg);
+  const mv = (x: TradeAsset) => neutralValue(lg, [x]);
+  const key = (x: TradeAsset) => x.pid ? 'p' + x.pid : 'k' + pkKey(x.pick!);
+  const assetsOf = (tid: string, skip: Set<string>) => {
+    const ps: TradeAsset[] = lg.teams[tid].roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p)).map(p => ({ pid: p.id }));
+    const ks: TradeAsset[] = (lg.picks ?? []).filter(p => p.owner === tid && !pickUsed(lg, p) && !pickTied(lg, p)).map(p => ({ pick: { season: p.season, round: p.round, orig: p.orig } }));
+    return [...ps, ...ks].filter(x => !skip.has(key(x))).map(x => ({ x, v: mv(x) }));
+  };
+  const wantOwner = want.length ? (want[0].pid ? lg.players[want[0].pid].tid : (lg.picks ?? []).find(p => pkKey(p) === pkKey(want[0].pick!))?.owner) : null;
+  const teams = (wantOwner ? [wantOwner] : partner ? [partner] : Object.values(lg.teams).filter(t => t.active && t.tid !== me).map(t => t.tid))
+    .filter((t): t is string => !!t && t !== me && !isHuman(lg, t));
+  const out: FoundTrade[] = [];
+  const combos = (pool: { x: TradeAsset; v: number }[], target: number, n: number) => {
+    const lo = target < 1 ? -Infinity : target * 0.6, hi = target < 1 ? target + 2 : target * 1.5;
+    const res: { xs: TradeAsset[]; v: number }[] = [];
+    for (const a of pool) if (a.v >= lo && a.v <= hi) res.push({ xs: [a.x], v: a.v });
+    const top = [...pool].sort((a, b) => b.v - a.v).slice(0, 14);
+    for (let i = 0; i < top.length; i++) for (let j = i + 1; j < top.length; j++) {
+      const v = top[i].v + top[j].v;
+      if (v >= lo && v <= hi && top[i].v > 0.3 && top[j].v > 0.1) res.push({ xs: [top[i].x, top[j].x], v });
+    }
+    return res.sort((a, b) => Math.abs(a.v - target) - Math.abs(b.v - target)).slice(0, n);
+  };
+  for (const tid of teams) {
+    const found: FoundTrade[] = [];
+    const tryDeal = (gets: TradeAsset[], gives: TradeAsset[]) => {
+      if (!gets.length && !gives.length) return;
+      const r = aiResponse(lg, me, tid, gets, gives);
+      if (!r.accept) return;
+      const getV = neutralValue(lg, gets), giveV = neutralValue(lg, gives);
+      // a fair deal for the user too: not giving clearly more than he gets
+      if (getV < giveV * 0.75 - 0.3) return;
+      found.push({ tid, gets, gives, gain: r.e.gainA, getV, giveV, text: `${lg.teams[me].abbr} get ${describeAssets(lg, gets)}; ${lg.teams[tid].abbr} get ${describeAssets(lg, gives)}` });
+    };
+    if (give.length && !want.length) {
+      for (const c of combos(assetsOf(tid, new Set()), neutralValue(lg, give), 24)) tryDeal(c.xs, give);
+    } else if (want.length && !give.length) {
+      for (const c of combos(assetsOf(me, new Set()), neutralValue(lg, want), 30)) tryDeal(want, c.xs);
+    } else {
+      tryDeal(want, give);
+      // sweeteners either way
+      const gap = neutralValue(lg, want) - neutralValue(lg, give);
+      if (gap > 0) for (const c of combos(assetsOf(me, new Set(give.map(key))), gap, 14)) tryDeal(want, [...give, ...c.xs]);
+      else for (const c of combos(assetsOf(tid, new Set(want.map(key))), -gap, 14)) tryDeal([...want, ...c.xs], give);
+    }
+    found.sort((a, b) => b.gain - a.gain);
+    out.push(...found.slice(0, partner || wantOwner ? limit : 2));
+  }
+  return out.sort((a, b) => b.gain - a.gain).slice(0, limit);
+}
