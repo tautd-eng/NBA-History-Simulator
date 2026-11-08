@@ -197,13 +197,16 @@ export function LotteryReveal({ lg, close }: any) {
   const n = res.length;
   const [shown, setShown] = useState(0); // how many slots revealed, from the bottom
   const [auto, setAuto] = useState(true);
+  // pace (remembered): the drawn picks take longer, No. 1 the longest
+  const [pace, setPace] = useState<number>(() => { try { return +(localStorage.getItem('lottoPace') ?? 1) || 1; } catch { return 1; } });
+  const setP = (v: number) => { setPace(v); try { localStorage.setItem('lottoPace', String(v)); } catch { /* */ } };
   useEffect(() => {
     if (!auto || shown >= n) return;
     const left = n - shown; // next slot to reveal (1-based)
-    const delay = left <= Math.max(2, L.draws) ? 1700 : 650;
+    const delay = pace * (left === 1 ? 5000 : left <= Math.max(2, L.draws) ? 3600 : 1700);
     const id = setTimeout(() => setShown(s => s + 1), delay);
     return () => clearTimeout(id);
-  }, [auto, shown, n]);
+  }, [auto, shown, n, pace]);
   const lottery = L.teams.map((t: any) => t.tid);
   const owner = (tid: string) => pickOwner(lg, d.year, 1, tid);
   // who is still waiting, and which picks each can still get
@@ -214,6 +217,7 @@ export function LotteryReveal({ lg, close }: any) {
       <div className="team-head">
         <h2>{d.year} lottery results</h2>
         <div className="def-row">
+          {shown < n && <span className="seg" role="group" aria-label="Speed">{[[1.6, 'Slow'], [1, 'Normal'], [0.45, 'Fast']].map(([v, t]: any) => <button key={t} className={pace === v ? 'on' : ''} onClick={() => setP(v)}>{t}</button>)}</span>}
           {shown < n && <button onClick={() => setAuto(!auto)}>{auto ? '⏸ Pause' : '▶ Play'}</button>}
           {shown < n && <button onClick={() => setShown(s => s + 1)}>Next spot</button>}
           {shown < n && <button onClick={() => setShown(n)}>Show all</button>}
