@@ -25,3 +25,31 @@ export function RoleCard({ p }: any) {
     </div>
   );
 }
+
+import { H, agingIndex } from '../data';
+import { ageIn } from '../players';
+/** His ratings at his peak if he develops like the average player (the league's aging curve, skill by skill). */
+export function projectedZ(p: any, S: number) {
+  const z = p.z.slice();
+  const off = p.dev?.peak ?? 0;
+  for (let a = Math.floor(ageIn(p, S)); a < 27 + off; a++) {
+    const ai = agingIndex(a - off);
+    H.keys.forEach((k: string, i: number) => { z[i] += H.aging[k]?.mean[ai] ?? 0; });
+  }
+  return z;
+}
+/** Role badges for a list: what he is – or, for a young player who has no clear role yet, what he projects to become. */
+export function RoleCell({ p, S }: any) {
+  const r = roleOf(p.z, p.pos);
+  const young = p.prospect || ageIn(p, S) <= 24;
+  if (r.arch.id !== 'role' || !young) return <>{<RoleBadge id={r.arch.id} />}{r.second && <RoleBadge id={r.second.id} small />}</>;
+  const pr = roleOf(projectedZ(p, S), p.pos);
+  if (pr.arch.id === 'role') return <RoleBadge id="role" />;
+  return <span className="proj-role" title={`No clear role yet – projected to become: ${pr.arch.name}${pr.second ? ` / ${pr.second.name}` : ''} (if he develops like an average player)`}><span className="dim small-t">proj.</span> <RoleBadge id={pr.arch.id} title={`Projected: ${pr.arch.name} – ${pr.arch.blurb}`} />{pr.second && <RoleBadge id={pr.second.id} small />}</span>;
+}
+export function roleSortKey(p: any, S: number) {
+  const r = roleOf(p.z, p.pos);
+  if (r.arch.id !== 'role' || !(p.prospect || ageIn(p, S) <= 24)) return r.arch.name;
+  const pr = roleOf(projectedZ(p, S), p.pos);
+  return pr.arch.id === 'role' ? 'Role Player' : pr.arch.name + ' (proj.)';
+}

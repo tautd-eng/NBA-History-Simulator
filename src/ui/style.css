@@ -912,3 +912,4 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 /* wide sortable lists: the player's name stays in view while the ratings scroll */
 .tbl.sortable th:first-child, .tbl.sortable td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
 .tbl.sortable tr.mine td:first-child { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
+.proj-role .role-badge { border-style: dashed; opacity: 0.85; }

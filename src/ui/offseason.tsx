@@ -2,6 +2,7 @@
 // Off-season screens: draft day (one pick at a time), the free-agency hub
 // (three stages) and the free-agent list where the user makes offers.
 import { Linkify, PL, TL, nav } from './nav';
+import { RoleCell, roleSortKey } from './roles';
 import { money, usd, showDollars, dollarsOf } from './money';
 import { useMemo, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, RATING_LABELS, ratingOf, seasonInfo } from '../data';
@@ -24,9 +25,10 @@ export const moneyOf = (frac: number, s: number) => money(frac, s);
 export const potOf = (p: any, s: number) => shownFromBpm(peakBpm(p, s));
 const R = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
 /** Height and every rating, for lists where you choose players without opening their cards. */
-export function attrCols(pOf: (r: any) => any) {
+export function attrCols(pOf: (r: any) => any, S: number) {
   return [
-    { key: 'ht', label: 'Ht', title: 'Height (m)', get: (r: any) => pOf(r).ht, fmt: (v: any) => <span className="dim">{(v * 0.0254).toFixed(2)}</span> },
+    { key: 'role', label: 'Role', left: true, asc: true, title: 'Archetype – for a young player without a clear role yet, what he projects to become (proj.)', get: (r: any) => roleSortKey(pOf(r), S), fmt: (_: any, r: any) => <RoleCell p={pOf(r)} S={S} /> },
+    { key: 'ht', label: 'Ht', title: 'Height, cm', get: (r: any) => Math.round(pOf(r).ht * 2.54) },
     ...RATING_LABELS.map((L, i) => ({ key: 'r' + i, label: L.short, title: L.name + (L.tendency ? ' (a tendency, not a skill)' : ''), get: (r: any) => R(pOf(r), i), fmt: (v: any) => L.tendency ? <span className="dim">{v}</span> : v })),
   ];
 }
@@ -89,7 +91,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
     { key: 'age', label: 'Age', asc: true, get: (p: any) => ageIn(p, d.year + 1) },
     { key: 'ovr', label: 'OVR', get: (p: any) => ovrOf(p.z), fmt: (v: any) => <Ovr v={v} /> },
     { key: 'pot', label: 'Pot.', title: 'Potential – the GM\'s estimate of how good he can become', get: (p: any) => potOf(p, d.year + 1) },
-    ...attrCols((p: any) => p),
+    ...attrCols((p: any) => p, d.year + 1),
     { key: 'act', label: '', get: () => 0, fmt: (_: any, p: any) => myTurn ? <button className={`small ${p.id === suggestion ? 'primary' : ''}`} onClick={() => act(() => draftPick(lg, p.id))}>Pick</button> : null },
   ];
   const recent = [...d.picks].reverse();
@@ -269,7 +271,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
     { key: 'int', label: 'Interest', title: 'AI teams that would make him an offer right now – the one he likes best first', left: true, get: (r: any) => market.get(r.p.id)?.length ?? -1,
       fmt: (_: any, r: any) => { const o = market.get(r.p.id); if (!o) return <span className="dim">–</span>; if (!o.length) return <span className="dim">no offers</span>;
         return <button className="link-btn" onClick={() => setOffersOf(r.p.id)} title={`${o.length} teams would offer – leaning towards ${lg.teams[o[0].tid].name}. Click for all offers.`}><b>{o.length}</b> <span className="dim">→</span> {lg.teams[o[0].tid].abbr} <span className="chip tiny">offers</span></button>; } },
-    ...attrCols((r: any) => r.p),
+    ...attrCols((r: any) => r.p, N),
   ];
   const signedCols = [
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (_: any, r: any) => nm(r.p) },
@@ -500,7 +502,7 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
     { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, N) },
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
     { key: 'pot', label: 'Pot.', get: (r: any) => potOf(r.p, N) },
-    ...attrCols((r: any) => r.p),
+    ...attrCols((r: any) => r.p, N),
     { key: 'ls', label: 'Last season', title: 'Last season played', get: (r: any) => r.l?.s ?? null, fmt: (v: any) => v ?? '–' },
     { key: 'pts', label: 'Pts', get: (r: any) => (r.l?.gp ? r.l.pts / r.l.gp : null), fmt: f1 },
     { key: 'reb', label: 'Reb', get: (r: any) => (r.l?.gp ? (r.l.orb + r.l.drb) / r.l.gp : null), fmt: f1 },
