@@ -631,6 +631,13 @@ function applyDecisions(lg: League) {
   for (const d of fa.decisions ?? []) {
     const p = lg.players[d.pid];
     const keep = d.choice ?? d.rec;
+    // traded away before the decisions were confirmed: the option went with him, and his new team decides
+    if (d.kind === 'team' && p.tid && p.tid !== tid) {
+      const t = lg.teams[p.tid];
+      aiTeamOption(lg, t, p, N - 1, fa.log, () => payroll(lg, t.tid));
+      if (p.contract.exp === N - 1) { t.roster = t.roster.filter(x => x !== p.id); p.tid = null; }
+      continue;
+    }
     if (d.kind === 'team') {
       if (keep) {
         p.contract.opts = (p.contract.opts ?? []).filter(o => o.s !== N);
@@ -1153,16 +1160,32 @@ function processOptions(lg: League, rng: Rng, log: FreeAgency['log'], decisions:
       }
     } else if (t.tid === lg.userTid) {
       decisions.push({ pid, kind: 'team', rec: worthKeeping(lg, p, p.contract.sal, N, t.strategy), sal: p.contract.sal });
-    } else if (worthKeeping(lg, p, p.contract.sal, N, t.strategy) && (nextPayroll(lg, t.tid) <= hardCap(lg) || (ageIn(p, N) <= 25 && shownOvr(p.z) >= 76) || keeps(lg, t.tid, p))) {
-      // (next season's books decide, not this season's – and a good young player on a cheap option is always kept)
-      p.contract.opts = p.contract.opts!.filter(x => x !== o);
-      log.push({ st: 0, kind: 'option', pid, tid: t.tid, desc: 'team exercised the option' });
-    } else {
-      p.contract = { sal: p.contract.sal, exp: Y }; p.noRfa = true;
-      log.push({ st: 0, kind: 'option', pid, tid: t.tid, desc: 'team declined the option – free agent' });
-    }
+    } else aiTeamOption(lg, t, p, Y, log);
   }
 }
+
+/**
+ * An AI team decides on a team option for next season (N = Y + 1). Next season's books decide, not this
+ * season's. A player worth his option is not dropped just because the books are full: the team first tries
+ * to make room (trading or releasing contracts it can do without, never more than he is worth).
+ */
+function aiTeamOption(lg: League, t: Team, p: Player, Y: number, log: FreeAgency['log'], pay = () => nextPayroll(lg, t.tid)) {
+  const N = Y + 1;
+  const o = p.contract.opts?.find(x => x.s === N && x.k === 'team');
+  if (!o) return;
+  const worth = worthKeeping(lg, p, p.contract.sal, N, t.strategy);
+  const mustKeep = (ageIn(p, N) <= 25 && shownOvr(p.z) >= 76) || keeps(lg, t.tid, p);
+  const fits = () => hardCap(lg) - pay();
+  const keep = worth && (fits() >= 0 || clearRoom(lg, t, fits, worthTo(lg, p, t.tid) * (mustKeep ? 1.5 : 1), N, `to keep ${p.name} (team option)`) || mustKeep);
+  if (keep) {
+    p.contract.opts = p.contract.opts!.filter(x => x !== o);
+    log.push({ st: 0, kind: 'option', pid: p.id, tid: t.tid, desc: 'team exercised the option' });
+  } else {
+    p.contract = { sal: p.contract.sal, exp: Y }; p.noRfa = true;
+    log.push({ st: 0, kind: 'option', pid: p.id, tid: t.tid, desc: 'team declined the option – free agent' });
+  }
+}
+
 
 /** AI teams decide on their expiring contracts; the user's expiring players are returned (re-signing window). */
 function contracts(lg: League, rng: Rng, log: FreeAgency['log'], decisions: NonNullable<FreeAgency['decisions']>): string[] {

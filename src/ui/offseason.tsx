@@ -177,7 +177,7 @@ function DraftSummary({ lg, d, openPlayer, openTeam, onNext }: any) {
 
 // ---------------------------------------------------------------- free agency hub
 const STAGE_TXT = [
-  'Contract decisions before the market opens: players decide on their player options, teams on team options and qualifying offers for younger players (restricted free agents, RFA). Other teams can make offers to an RFA, but his team can match and keep him.',
+  'Contract decisions before the market opens: players decide on their player options, teams on team options and qualifying offers for younger players (restricted free agents, RFA). Other teams can make offers to an RFA, but his team can match and keep him. Trading is open before you confirm: clear salary first if you need room to keep an option – a player traded with an open option takes it with him, and his new team decides.',
   'First wave: the top free agents ask for full price and some wait for better offers. Only you can make offers to your own players whose contracts ended.',
   'Second wave: asking prices drop (~15%) and most players with offers sign. Teams are actively looking for trades.',
   'Final wave: the remaining players accept ~70% of their original ask. After it, teams fill their rosters to the minimum and the season begins.',
@@ -229,12 +229,20 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
         {decisions.length > 0 && (
           <div className="panel">
             <h2>Your contract decisions</h2>
+            {(() => {
+              const u = lg.userTid, hc = hardCap(lg);
+              if (!u || hc === Infinity) return null;
+              const off = decisions.filter((d: any) => d.kind === 'team' && lg.players[d.pid].tid === u && (d.choice ?? d.rec) === false).reduce((a: number, d: any) => a + d.sal, 0);
+              const pay = payroll(lg, u) - off;
+              return <p className={pay > hc ? 'hint warn-t' : 'note'}>Payroll with these choices: <b>{Math.round(pay * 100)}%</b> of the cap (hard cap {Math.round(hc * 100)}%).{pay > hc ? ' Over the hard cap – trade salary away or decline an option before you confirm.' : ''}</p>;
+            })()}
             <p className="note">Team option – whether to keep the player next season at the salary in his contract. Qualifying offer – if you tender it, the player becomes a restricted free agent: you can match other teams' offers, and if nobody offers, he plays for you for one year at this amount. If you don't choose, the GM decides (his recommendation is marked).</p>
             <div className="tbl-wrap"><table className="tbl">
               <thead><tr><th className="l">Player</th><th>Age</th><th>OVR</th><th className="l">Decision</th><th>Salary</th><th className="l">GM suggests</th><th></th></tr></thead>
               <tbody>{decisions.map((d: any) => {
                 const p = lg.players[d.pid];
                 const yes = d.choice ?? null;
+                if (d.kind === 'team' && p.tid !== lg.userTid) return <tr key={d.pid}><td className="l">{p.name}</td><td colSpan={6} className="l dim">Traded – the option went with him; {p.tid ? lg.teams[p.tid].name : 'his new team'} decide{p.tid ? '' : 's'}.</td></tr>;
                 return <tr key={d.pid}>
                   <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">{p.pos}</span></td>
                   <td>{ageIn(p, N)}</td><td><Ovr v={ovrOf(p.z)} /></td>
