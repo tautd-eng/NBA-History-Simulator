@@ -117,7 +117,9 @@ export function zeros() { return new Array(NK).fill(0); }
 export function snapRatings(p: Player, season: number) {
   const ovr = ovrOf(p.z);
   const last = p.ovrHist[p.ovrHist.length - 1];
-  if (last && last[0] === season) last[1] = ovr; else p.ovrHist.push([season, ovr]);
+  // [season, simulation overall, displayed overall]
+  const sh = shownOvr(p.z);
+  if (last && last[0] === season) { last[1] = ovr; (last as any)[2] = sh; } else p.ovrHist.push([season, ovr, sh] as any);
   const row = [season, ...RATING_LABELS.map(r => ratingOf(p.z[r.k], r.inv))];
   p.rh ??= [];
   const lr = p.rh[p.rh.length - 1];

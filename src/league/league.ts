@@ -902,6 +902,7 @@ function finishSeason(lg: League, rng: Rng) {
   }
   lg.news.push({ s: S, t: `${lg.teams[champ].name} are the ${S} champions! They beat the ${lg.teams[runner].name} in the Finals (${Math.max(finals.hw, finals.lw)}–${Math.min(finals.hw, finals.lw)}).` });
   lg.phase = 'draft';
+  lg.off = { y: S, step: 'recap' }; // the offseason goes step by step: recap → retirements → development → draft
 }
 
 export function realChampion(season: number) { return H.champions[String(season)]; }

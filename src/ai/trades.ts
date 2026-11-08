@@ -1014,6 +1014,8 @@ export function aiDraftTrade(lg: League, rng: Rng): TradeRec | null {
   // a board can be wrong: no deal the market would call a giveaway
   if (!looksFair(lg, best.aGets, [{ pick: curPk }])) return null;
   const rec = executeTrade(lg, X.tid, best.Yt.tid, best.aGets, [{ pick: curPk }]);
-  lg.news.push({ s: Y, t: `Draft-day trade: ${best.Yt.name} move up to No. ${i + 1}; ${X.name} move down to No. ${best.j + 1}${best.aGets.length > 1 ? ` and add ${describeAssets(lg, best.aGets.slice(1))}` : ''}.` });
+  const text = `${best.Yt.name} move up to No. ${i + 1}; ${X.name} move down to No. ${best.j + 1}${best.aGets.length > 1 ? ` and add ${describeAssets(lg, best.aGets.slice(1))}` : ''}.`;
+  lg.news.push({ s: Y, t: `Draft-day trade: ${text}` });
+  (d.trades ??= []).push({ at: i, up: best.Yt.tid, down: X.tid, from: best.j + 1, to: i + 1, text });
   return rec;
 }

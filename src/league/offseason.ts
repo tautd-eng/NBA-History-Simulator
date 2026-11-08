@@ -1,10 +1,10 @@
 // Off-season: expansion, lottery and draft, retirements, development, contracts,
 // arrivals and free agency.
 import { nextPayroll } from './extensions';
-import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, agingIndex, NK, shownOvr, shownFromRaw } from '../data';
+import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, agingIndex, NK, shownOvr, shownFromRaw, histShown } from '../data';
 import { rosterFit, GMFIT } from '../archetypes';
 import { Rng } from '../rng';
-import { League, Player, Team, emptyLine, ExpansionDraft, Lottery, FreeAgency } from '../types';
+import { League, Player, Team, emptyLine, ExpansionDraft, Lottery, FreeAgency, RetRow } from '../types';
 import { newPlayer, prospectZ, realTarget, lastRealSeason, ageIn, firstRealSeason, snapRatings, tagOf, addTx } from '../players';
 import { activeTeams, makeTeam, rngOf, standings, updateStrategies, updateModes, playoffFormat, seasonGames } from './league';
 import { makeSchedule } from './schedule';
@@ -31,8 +31,10 @@ const ROSTER_MAX = 15, ROSTER_MIN = 13;
  * can be stepped through by the user or run automatically.
  */
 export function initDraft(lg: League) {
+  offDevelop(lg); // retirements and development come first (they run here if the steps were skipped)
   const rng = rngOf(lg);
   const Y = lg.season;
+  lg.off = { ...(lg.off ?? { y: Y }), y: Y, step: 'draft' } as any;
   const next = seasonInfo(Y + 1);
   const newTeams: string[] = [];
   if (Y + 1 <= LAST_SEASON) {
@@ -414,15 +416,11 @@ const FLOOR = 0.9;
  * get an exclusive re-signing window during stage 1.
  */
 export function enterFreeAgency(lg: League) {
+  offDevelop(lg); // (retirements and development, if the offseason steps were skipped)
+  if (lg.draftDay && !lg.draftDay.done) { draftAdvance(lg, 'all'); finishDraft(lg); }
   const rng = rngOf(lg);
   const Y = lg.season;
   const N = Y + 1;
-  if (lg.draftDay && !lg.draftDay.done) { draftAdvance(lg, 'all'); finishDraft(lg); }
-  const notes = lg.history[lg.history.length - 1].notes;
-  flushFaLog(lg); // in-season signings and releases of the season that just ended
-  carryInjuries(lg, lg.endCal ?? 0);
-  retirements(lg, rng, notes);
-  develop(lg, rng);
   // extensions signed during the season replace the old contracts now
   for (const p of Object.values(lg.players)) {
     if (p.ext && p.tid && p.contract.exp <= Y) { p.contract = { sal: p.ext.sal, exp: p.ext.exp }; addTx(p, N, `Extension with ${lg.teams[p.tid].name} kicks in: ${pct(p.ext.sal)} per season through ${p.ext.exp}`, -2); }
@@ -744,7 +742,7 @@ function aiMatches(lg: League, p: Player, tid: string, sal: number) {
   if (t.roster.length >= ROSTER_MAX || !worthKeeping(lg, p, sal, lg.season, t.strategy)) return false;
   if (payroll(lg, tid) + sal <= lim) return true;
   // his team builds around him: it makes room rather than lose him
-  return tid !== lg.userTid && keeps(lg, tid, p) && clearRoom(lg, t, () => lim - payroll(lg, tid) - sal, worthTo(lg, p, tid), lg.season, `to match the offer sheet for ${p.name}`);
+  return tid !== lg.userTid && keeps(lg, tid, p) && clearRoom(lg, t, () => lim - payroll(lg, tid) - sal, worthTo(lg, p, tid) * 1.5, lg.season, `to match the offer sheet for ${p.name}`);
 }
 
 /** The user answers an offer sheet for his restricted free agent. */
@@ -1066,9 +1064,10 @@ export function startSeason(lg: League) {
   lg.recent = [];
   lg.seasonAwards = undefined;
   ensurePicks(lg);
-  // keep league-wide ratings in a realistic range
-  normalizeLeague(lg);
-  youngFloor(lg);
+  // keep league-wide ratings in a realistic range (done in the development step; older saves here)
+  if (!(lg.off?.y === N - 1 && lg.off.devDone)) { normalizeLeague(lg); youngFloor(lg); }
+  lg.off = undefined;
+  lg.previewOpen = N;
   if (lg.news.length > 400) lg.news.splice(0, lg.news.length - 400);
   save(lg, rng);
 }
@@ -1081,6 +1080,70 @@ export function startNewSeason(lg: League) {
   startSeason(lg);
 }
 
+// ------------------------------------------------------------ offseason steps
+/** The step of the offseason after the season that just ended (older saves: worked out from the draft state). */
+export function offStep(lg: League): NonNullable<League['off']>['step'] {
+  if (lg.phase !== 'draft') return 'draft';
+  if (lg.off?.y === lg.season) return lg.off.step;
+  return lg.draftDay?.year === lg.season ? 'draft' : 'recap';
+}
+function offState(lg: League) {
+  if (lg.off?.y !== lg.season) lg.off = { y: lg.season, step: offStep(lg) };
+  return lg.off!;
+}
+/** Step 2: retirements (players who walk away this summer, with the option to talk some of them out of it). */
+export function offRetire(lg: League) {
+  const o = offState(lg);
+  if (o.retDone) return;
+  const rng = rngOf(lg);
+  const notes = lg.history[lg.history.length - 1].notes;
+  flushFaLog(lg); // in-season signings and releases of the season that just ended
+  carryInjuries(lg, lg.endCal ?? 0);
+  o.ret = retirements(lg, rng, notes);
+  o.retDone = true;
+  if (o.step === 'recap') o.step = 'retire';
+  save(lg, rng);
+}
+/** Step 3: development – every player gets better or worse over the summer (and the league is recalibrated). */
+export function offDevelop(lg: League) {
+  offRetire(lg);
+  const o = offState(lg);
+  if (o.devDone) return;
+  const rng = rngOf(lg);
+  const Y = lg.season;
+  develop(lg, rng);
+  normalizeLeague(lg, Y + 1);
+  youngFloor(lg, Y + 1);
+  // the league-wide recalibration is a cause of its own
+  for (const p of Object.values(lg.players)) {
+    const w = p.devWhy;
+    if (!w || w.s !== Y + 1 || p.retired) continue;
+    const h = p.ovrHist.find(x => x[0] === Y + 1), pre = p.ovrHist.find(x => x[0] === Y);
+    if (!h || !pre) continue;
+    const total = histShown(h) - histShown(pre);
+    w.league = total - w.total; w.total = total;
+  }
+  o.devDone = true;
+  if (o.step === 'recap' || o.step === 'retire') o.step = 'dev';
+  save(lg, rng);
+}
+/** A retired player who would come back: he returns to his team (or, if it has no room, to free agency). */
+export function unretire(lg: League, pid: string): { ok: boolean; msg: string } {
+  const o = lg.off, Y = lg.season;
+  const r = o?.y === Y ? o.ret?.find(x => x.pid === pid) : null;
+  const p = lg.players[pid];
+  if (!r || !p || p.retired !== Y || o!.devDone) return { ok: false, msg: 'Too late – only before development and the draft.' };
+  if (!r.back) return { ok: false, msg: `${p.name} has made up his mind.` };
+  delete p.retired; delete (p as any).retWhy;
+  p.tx = (p.tx ?? []).filter(x => !(x.s === Y && x.t.startsWith('Retired')));
+  const t = r.tid ? lg.teams[r.tid] : null;
+  if (t?.active && t.roster.length < ROSTER_MAX && p.contract.exp > Y) { p.tid = t.tid; t.roster.push(p.id); }
+  else { p.tid = null; p.contract = { sal: MIN_SAL, exp: Y }; }
+  r.undone = true;
+  lg.news.push({ s: Y, t: `${tagOf(p, Y)} changes his mind and comes back for another season${p.tid ? ` with the ${lg.teams[p.tid].name}` : ' – as a free agent'}.` });
+  return { ok: true, msg: `${p.name} is back${p.tid ? ` with the ${lg.teams[p.tid].name}` : ' as a free agent'}.` };
+}
+
 function retirePlayer(lg: League, p: Player, Y: number) {
   if (p.tid) lg.teams[p.tid].roster = lg.teams[p.tid].roster.filter(pid => pid !== p.id);
   if (p.tid) addTx(p, Y, `Retired (${lg.teams[p.tid]?.name ?? ''})`, 1000); else addTx(p, Y, 'Retired', 1000);
@@ -1088,11 +1151,12 @@ function retirePlayer(lg: League, p: Player, Y: number) {
   p.retired = Y;
 }
 
-function retirements(lg: League, rng: Rng, notes: string[]) {
+function retirements(lg: League, rng: Rng, notes: string[]): RetRow[] {
   const Y = lg.season, d = lg.destiny;
   const famous: string[] = [];
+  const rows: RetRow[] = [];
   for (const p of Object.values(lg.players)) {
-    if (p.retired || (p as any).stash) continue;
+    if (p.retired || (p as any).stash || p.prospect) continue;
     const age = ageIn(p, Y + 1);
     const ovr = ovrOf(p.z);
     // walking away while still employable: fitted to real rotation players (500+ minutes, 1980–2018) –
@@ -1130,6 +1194,10 @@ function retirements(lg: League, rng: Rng, notes: string[]) {
     if (rng.chance(pr)) {
       (p as any).retWhy = uns >= Math.max(hist, base) ? 'unsigned' : hist > base ? 'history' : 'age';
       if (bpmOf(p.z) > 3 || p.awards.some(a => a.includes('MVP'))) famous.push(tagOf(p, Y));
+      const why = (p as any).retWhy, o = shownOvr(p.z);
+      // would he come back if asked? a player who can still play and did not leave because nobody wanted him
+      const back = why !== 'unsigned' && p.injury < 40 && ((why === 'history' && o >= 70 && age <= 38) || (o >= 74 && age <= 37));
+      rows.push({ pid: p.id, tid: p.tid, age, ovr: o, why, back });
       retirePlayer(lg, p, Y);
     }
   }
@@ -1137,6 +1205,7 @@ function retirements(lg: League, rng: Rng, notes: string[]) {
     notes.push(`Retired: ${famous.slice(0, 8).join(', ')}.`);
     lg.news.push({ s: Y, t: `Retirements: ${famous.slice(0, 6).join(', ')}.` });
   }
+  return rows.sort((a, b) => b.ovr - a.ovr);
 }
 
 /**

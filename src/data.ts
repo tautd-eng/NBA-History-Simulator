@@ -161,6 +161,8 @@ export const OVR_VOLUME = 1.0;
 export function shownOvr(z: number[]): number { const x = bpmOf(z) + OVR_VOLUME * z[K.usg]; return shownFromBpm(-0.35 + (x + 0.35) * 0.753); }
 /** Converts a stored (simulation-scale) overall to the displayed scale. */
 export function shownFromRaw(raw: number): number { return shownFromBpm((raw - 48) / 5.5); }
+/** Displayed overall of an ovrHist entry (older saves only stored the simulation overall). */
+export function histShown(h: number[]): number { return h[2] ?? shownFromRaw(h[1]); }
 /** 0–100 display rating for a single skill */
 export function ratingOf(z: number, inv = false): number {
   const v = 50 + 14 * (inv ? -z : z);

@@ -41,7 +41,8 @@ export interface Player {
   entered: number;       // season the player joined the league universe
   scout: number;         // persistent scouting bias for draft (per player)
   dev?: { pot: number; peak: number; vol: number; e: number[] }; // hidden development traits
-  rh?: number[][];       // ratings history: [season, ...RATING_LABELS ratings]
+  rh?: number[][];
+  devWhy?: DevWhy;        // the last summer's change, by cause       // ratings history: [season, ...RATING_LABELS ratings]
   prospect?: boolean;    // on the draft board, not yet in the league
   cut?: { tid: string; s: number };   // released by this team this season (it cannot sign him back cheaply)
   bird?: string;         // team holding this free agent's re-signing rights
@@ -147,6 +148,7 @@ export interface DraftDay {
   picks: { pick: number; round: number; pid: string; tid: string; realPick: number; realTid: string; via?: string }[];
   lottery?: string; newTeams: string[]; done: boolean;
   stage?: 'expansion' | 'lottery' | 'draft';
+  trades?: { at: number; up: string; down: string; from: number; to: number; text: string }[]; // draft-day trades (for the pop-ups)
   exp?: ExpansionDraft;
   lotto?: Lottery;
 }
@@ -174,6 +176,10 @@ export interface FreeAgency {
   sheets?: { pid: string; tid: string; sal: number; exp: number }[];
   flushed?: number;                 // log entries already copied into the players' histories
 }
+/** A player who retired this summer: team, age, rating and why; `back` = he would come back if asked. */
+export interface RetRow { pid: string; tid: string | null; age: number; ovr: number; why: string; back: boolean; undone?: boolean }
+/** Why a player's rating changed this summer, in displayed OVR points by cause. */
+export interface DevWhy { s: number; inj: number; perf: number; trend: number; luck: number; cap: number; destiny: number; league?: number; total: number; flop?: boolean; dz?: boolean }
 export interface FantasyDraft { order: string[]; rounds: number; picks: { round: number; pick: number; tid: string; pid: string }[]; done: boolean }
 
 export interface League {
@@ -208,6 +214,10 @@ export interface League {
   draftClass?: { year: number; pool: string[] };
   pickRights?: (PickRight & { holder: string; from: string })[]; // outstanding swap / less-favourable rights // next draft's prospects, public from the start of the season
   fa?: FreeAgency;
+  /** the offseason after season y, step by step: season recap → retirements → development → draft day (then free agency) */
+  off?: { y: number; step: 'recap' | 'retire' | 'dev' | 'draft'; retDone?: boolean; devDone?: boolean; ret?: RetRow[] };
+  /** the season preview is shown before the first game of this season */
+  previewOpen?: number | null;
   /** season in which payrolls may stay over the hard cap (the first season after a fantasy draft) */
   capGrace?: number;
   dead?: { tid: string; sal: number; exp: number; pid: string }[]; // salaries of released players still on the books

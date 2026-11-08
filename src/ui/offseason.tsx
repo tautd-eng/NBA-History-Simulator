@@ -10,8 +10,9 @@ import { discount, reasons } from '../league/prefs';
 import { isFreeAgent } from '../ai/trades';
 import {
   initDraft, draftOnClock, draftAdvance, draftPick, draftSuggest, finishDraft,
-  enterFreeAgency, faStage, startSeason, faOffer, faDemand, faRenounce, faRelease, faDecide, faMatch,
+  enterFreeAgency, faStage, startSeason, faOffer, faDemand, faRenounce, faRelease, faDecide, faMatch, prevTeam,
 } from '../league/offseason';
+import { DecisionsBoard } from './offsteps';
 import { SortTable, f1 } from './sorttable';
 import { ExpansionRoom, LotteryRoom, LotteryReveal, AutoControls, useAutoPlay } from './draftday';
 import { posNum } from '../engine/game';
@@ -38,11 +39,16 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(600);
   const [reveal, setReveal] = useState(false);
+  // draft-day trades pop up as they happen (and stay in the pick list)
+  const nTrades = lg.draftDay?.trades?.length ?? 0;
+  const [seen, setSeen] = useState(nTrades);
   const act = (fn: () => void) => { fn(); onChange(); };
   useAutoPlay(playing, speed, () => {
     const c = draftOnClock(lg);
     if (!c || c.tid === lg.userTid) return false;
-    draftPick(lg); onTick();
+    const before = lg.draftDay?.trades?.length ?? 0;
+    draftAdvance(lg, 'one'); onTick();
+    if ((lg.draftDay?.trades?.length ?? 0) > before) return false; // a trade: stop so it can be seen
     const nx = draftOnClock(lg);
     return !!nx && nx.tid !== lg.userTid;
   }, () => { setPlaying(false); onChange(); });
@@ -80,7 +86,26 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
     { key: 'act', label: '', get: () => 0, fmt: (_: any, p: any) => myTurn ? <button className={`small ${p.id === suggestion ? 'primary' : ''}`} onClick={() => act(() => draftPick(lg, p.id))}>Pick</button> : null },
   ];
   const recent = [...d.picks].reverse();
+  const trades = d.trades ?? [];
+  const fresh = trades.slice(seen);
+  // picks and trades in one list, newest first (a trade at index i happened just before pick i + 1)
+  const feed = [...recent.map((x: any) => ({ k: 'p', at: x.pick - 1 + 0.5, x })), ...trades.map((t: any, i: number) => ({ k: 't', at: t.at, x: t, i }))].sort((a, b) => b.at - a.at);
   return (
+    <>
+    {fresh.length > 0 && (
+      <div className="overlay center" onClick={() => setSeen(trades.length)}>
+        <div className="dialog trade-pop" role="dialog" aria-label="Draft-day trade" onClick={e => e.stopPropagation()}>
+          <div className="eyebrow">Draft-day trade{fresh.length > 1 ? `s (${fresh.length})` : ''}</div>
+          {fresh.map((t: any, i: number) => (
+            <div key={i} className="trade-pop-row">
+              <h2>{lg.teams[t.up]?.name} trade up to No. {t.to}</h2>
+              <p><Linkify text={t.text} /></p>
+            </div>
+          ))}
+          <div className="dialog-actions"><button className="primary" onClick={() => setSeen(trades.length)}>OK</button></div>
+        </div>
+      </div>
+    )}
     <div className="grid-2">
       <section className="panel accent">
         <div className="team-head">
@@ -110,10 +135,12 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
           <h2>Picks</h2>
           {recent.length ? (
             <ul className="news">
-              {recent.slice(0, 40).map((x: any) => (
-                <li key={x.pick} className={`pop-in ${x.tid === lg.userTid ? 'mine' : ''}`}>
-                  <span className="yr">{x.pick}</span>
-                  <span><b>{lg.teams[x.tid].abbr}</b>{x.via ? <span className="dim"> (via {lg.teams[x.via].abbr})</span> : null} <button className="link" onClick={() => openPlayer(x.pid)}>{lg.players[x.pid].name}</button> <span className="dim">{lg.players[x.pid].pos} · OVR {ovrOf(lg.players[x.pid].z)} · pot {potOf(lg.players[x.pid], d.year + 1)}</span></span>
+              {feed.slice(0, 50).map((f: any) => f.k === 't' ? (
+                <li key={'t' + f.i} className="pop-in trade-li"><span className="yr">⇄</span><span><b>Trade:</b> <Linkify text={f.x.text} /></span></li>
+              ) : (
+                <li key={f.x.pick} className={`pop-in ${f.x.tid === lg.userTid ? 'mine' : ''}`}>
+                  <span className="yr">{f.x.pick}</span>
+                  <span><b>{lg.teams[f.x.tid].abbr}</b>{f.x.via ? <span className="dim"> (via {lg.teams[f.x.via].abbr})</span> : null} <button className="link" onClick={() => openPlayer(f.x.pid)}>{lg.players[f.x.pid].name}</button> <span className="dim">{lg.players[f.x.pid].pos} · OVR {ovrOf(lg.players[f.x.pid].z)} · pot {potOf(lg.players[f.x.pid], d.year + 1)}</span></span>
                 </li>
               ))}
             </ul>
@@ -130,6 +157,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
         </div>
       </section>
     </div>
+    </>
   );
 }
 
@@ -206,7 +234,33 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
     const k = { sign: 'signed', resign: 're-signed', release: 'released', leave: 'hit the market', option: 'option', qo: 'qualifying offer (RFA)', match: 'matched', sheet: 'offer sheet to an RFA' }[x.kind];
     return <li key={i} className={x.tid === lg.userTid ? 'mine' : ''}><span className="yr">{x.tid ? <TL tid={x.tid} abbr /> : team}</span><span>{who} <span className="dim">OVR {ovrOf(p.z)}, age {ageIn(p, N)} · {k}{x.sal ? ` · ${moneyOf(x.sal, N)}${x.exp ? ` through ${x.exp}` : ''}` : ''}{x.desc ? <> · <Linkify text={x.desc} /></> : ''}</span></span></li>;
   };
+  const tradesAll = fa.log.filter((x: any) => x.kind === 'trade').reverse();
+  const signed = fa.log.filter((x: any) => x.pid && lg.players[x.pid] && x.st >= 1 && ['sign', 'resign', 'match', 'sheet', 'qo'].includes(x.kind) && !(x.kind === 'sheet' && (x.desc ?? '').includes('awaiting')))
+    .map((x: any, i: number) => ({ ...x, key: i, p: lg.players[x.pid] }));
+  const avail = Object.values(lg.players).filter((p: any) => isFreeAgent(lg, p) && ovrOf(p.z) >= 55).map((p: any) => ({ key: p.id, p, from: prevTeam(p) }));
+  const nm = (p: any) => <button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button>;
+  const tm = (tid: string) => tid && lg.teams[tid] ? <TL tid={tid} abbr /> : <span className="dim">–</span>;
+  const availCols = [
+    { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (_: any, r: any) => <>{nm(r.p)}{r.p.rfa ? <span className="chip tiny rfa" title={`Restricted: the ${lg.teams[r.p.rfa]?.name} can match`}>RFA</span> : null}</> },
+    { key: 'pos', label: 'Pos', get: (r: any) => posNum(r.p.pos), fmt: (_: any, r: any) => <span className="dim">{r.p.pos}</span> },
+    { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, N) },
+    { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
+    { key: 'pot', label: 'Pot.', get: (r: any) => potOf(r.p, N) },
+    { key: 'from', label: 'Last team', left: true, get: (r: any) => lg.teams[r.from]?.abbr ?? '', fmt: (_: any, r: any) => tm(r.from) },
+    { key: 'ask', label: 'Asks', get: (r: any) => (u ? faDemand(lg, r.p, u.tid) : askingSalary(r.p, N)), fmt: (v: any) => moneyOf(v, N) },
+  ];
+  const signedCols = [
+    { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (_: any, r: any) => nm(r.p) },
+    { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
+    { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, N) },
+    { key: 'from', label: 'From', left: true, get: (r: any) => lg.teams[r.from]?.abbr ?? '', fmt: (_: any, r: any) => tm(r.from) },
+    { key: 'to', label: 'To', left: true, get: (r: any) => lg.teams[r.tid]?.abbr ?? '', fmt: (_: any, r: any) => <b>{tm(r.tid)}</b> },
+    { key: 'sal', label: 'Salary', get: (r: any) => r.sal ?? 0, fmt: (v: any) => moneyOf(v, N) },
+    { key: 'yrs', label: 'Yrs', get: (r: any) => (r.exp ? r.exp - N + 1 : 1) },
+    { key: 'st', label: 'Wave', get: (r: any) => r.st, fmt: (v: any, r: any) => <span className="dim" title={r.desc ?? ''}>{v >= 4 ? 'late' : `W${v}`}{r.kind === 'match' ? ' ✓' : r.kind === 'qo' ? ' QO' : r.kind === 'resign' ? ' ↺' : ''}</span> },
+  ];
   return (
+    <div className="col">
     <div className="grid-2">
       <section className="col">
         <div className="panel accent">
@@ -221,7 +275,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
           <div className="def-row">
             {fa.stage <= 3
               ? <button className="primary" onClick={() => act(() => faStage(lg))}>{fa.stage === 0 ? 'Confirm decisions and open the market →' : `Finish wave ${fa.stage} →`}</button>
-              : <button className="primary" onClick={() => act(() => startSeason(lg))}>Start the {N - 1}–{String(N).slice(2)} season</button>}
+              : <button className="primary" onClick={() => act(() => startSeason(lg))}>To the season preview →</button>}
             <button onClick={goFA}>All free agents</button>
           </div>
           {msg && <p className="hint" role="status">{msg}</p>}
@@ -288,28 +342,42 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
             </table></div>
           </div>
         )}
-        <div className="panel">
-          <h2>Best remaining free agents</h2>
-          <ul className="news">{top.map((p: any) => <li key={p.id}><span className="yr">{ovrOf(p.z)}</span><span><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">{p.pos} · age {ageIn(p, N)} · asks {moneyOf(u ? faDemand(lg, p, u.tid) : askingSalary(p, N), N)}</span></span></li>)}</ul>
-          {!top.length && <p className="note">No players left on the market.</p>}
-        </div>
       </section>
       <section className="col">
-        {stages.filter(x => x.s <= fa.stage).reverse().map(({ s, log }) => (
-          <div className="panel" key={s}>
-            <h2>{s ? `Wave ${s}` : 'Contract decisions'} {s === fa.stage && s <= 3 ? '(in progress)' : ''}</h2>
-            {(() => {
-              // routine: AI teams exercising options – one summary line instead of dozens
-              const routine = log.filter((x: any) => x.kind === 'option' && !x.user && x.tid !== lg.userTid && (x.desc ?? '').includes('team exercised'));
-              const shown = log.filter((x: any) => !routine.includes(x));
-              return <>
-                {routine.length > 0 && <p className="note">Teams exercised {routine.length} options (players stay).</p>}
-                {shown.length ? <ul className="news">{shown.slice(0, 80).map(entry)}</ul> : !routine.length && <p className="note">{s === fa.stage ? 'Quiet so far – AI teams act at the end of the wave.' : 'Nothing happened.'}</p>}
-              </>;
-            })()}
+        {fa.stage === 0 ? <DecisionsBoard lg={lg} openPlayer={openPlayer} /> : (
+          <div className="panel fa-trades">
+            <h2>Trades this summer</h2>
+            {tradesAll.length ? <ul className="news">{tradesAll.slice(0, 30).map((x: any, i: number) => <li key={i}><span className="yr">{x.st ? `W${x.st}` : '⇄'}</span><span><Linkify text={x.desc} /></span></li>)}</ul> : <p className="note">No trades yet – AI teams talk at the end of each wave.</p>}
           </div>
-        ))}
+        )}
       </section>
+    </div>
+    {fa.stage >= 1 && (
+      <div className="grid-2">
+        <section className="panel">
+          <div className="team-head"><h2>Still available</h2><span className="dim">{avail.length} players (OVR 55+)</span><button className="small" onClick={goFA}>Make offers</button></div>
+          <SortTable cols={availCols} rows={avail} initial="ovr" limit={60} />
+        </section>
+        <section className="panel">
+          <div className="team-head"><h2>Signed</h2><span className="dim">{signed.length} deals · ✓ matched offer sheet · ↺ re-signed · QO played on the qualifying offer</span></div>
+          {signed.length ? <SortTable cols={signedCols} rows={signed} initial="ovr" limit={120} rowClass={(r: any) => (r.tid === lg.userTid ? 'mine' : '')} /> : <p className="note">Nobody has signed yet – deals are done at the end of each wave.</p>}
+        </section>
+      </div>
+    )}
+    {fa.stage >= 1 && (
+      <div className="panel">
+        <h2>All moves, wave by wave</h2>
+        {stages.filter(x => x.s <= fa.stage).reverse().map(({ s, log }) => {
+          const routine = log.filter((x: any) => x.kind === 'option' && !x.user && x.tid !== lg.userTid && (x.desc ?? '').includes('team exercised'));
+          const shown = log.filter((x: any) => !routine.includes(x));
+          return <div key={s}>
+            <h3>{s ? `Wave ${s}` : 'Contract decisions'} {s === fa.stage && s <= 3 ? '(in progress)' : ''}</h3>
+            {routine.length > 0 && <p className="note">Teams exercised {routine.length} options (players stay).</p>}
+            {shown.length ? <ul className="news">{shown.slice(0, 80).map(entry)}</ul> : !routine.length && <p className="note">{s === fa.stage ? 'Quiet so far – AI teams act at the end of the wave.' : 'Nothing happened.'}</p>}
+          </div>;
+        })}
+      </div>
+    )}
     </div>
   );
 }

@@ -3,7 +3,8 @@
 // and power rankings of the teams (roster strength plus how they actually play).
 import { TLogo, PFace } from './art';
 import { useMemo, useState } from 'react';
-import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, bpmOf, RATING_LABELS, ratingOf, perD, rimD } from '../data';
+import { devReason } from './offsteps';
+import { shownOvr as ovrOf, shownFromRaw, histShown, shownFromBpm, bpmOf, RATING_LABELS, ratingOf, perD, rimD } from '../data';
 import { ageIn } from '../players';
 import { teamStrength, payroll } from '../ai/value';
 import { isFreeAgent } from '../ai/trades';
@@ -198,8 +199,8 @@ function changes(lg: any, S: number) {
     if (!prev) {
       // a rookie: nothing to compare yet, but he is part of the picture
       if (p.entered !== S) continue;
-      const tid = S === lg.season ? p.tid : (p.career.find((c: any) => c.s === S && !c.po)?.tid ?? null);
-      out.push({ key: p.id, p, tid, age: ageIn(p, S), before: null, after: shownFromRaw(now[1]), d: null, attr: [], l: null, gms: null, rookie: true, retired: !!p.retired && p.retired < S });
+      const tid = S >= lg.season ? p.tid : (p.career.find((c: any) => c.s === S && !c.po)?.tid ?? null);
+      out.push({ key: p.id, p, tid, age: ageIn(p, S), before: null, after: histShown(now), d: null, attr: [], l: null, gms: null, rookie: true, retired: !!p.retired && p.retired < S });
       continue;
     }
     const rn = p.rh?.find((r: any) => r[0] === S), rp = p.rh?.find((r: any) => r[0] === S - 1);
@@ -208,14 +209,15 @@ function changes(lg: any, S: number) {
     const l = p.career.find((c: any) => c.s === S - 1 && !c.po);
     const gms = l && l.min > 0 ? ((l.pts + 0.4 * l.fgm - 0.7 * l.fga - 0.4 * (l.fta - l.ftm) + 0.7 * l.orb + 0.3 * l.drb + l.stl + 0.7 * l.ast + 0.7 * l.blk - 0.4 * l.pf - l.tov) / l.min) * 36 : null;
     // team: where he plays now (current season) or where he ended up
-    const tid = S === lg.season ? p.tid : (p.career.find((c: any) => c.s === S && !c.po)?.tid ?? null);
-    out.push({ key: p.id, p, tid, age: ageIn(p, S), before: shownFromRaw(prev[1]), after: shownFromRaw(now[1]), d: shownFromRaw(now[1]) - shownFromRaw(prev[1]), attr, l, gms, retired: !!p.retired && p.retired < S });
+    const tid = S >= lg.season ? p.tid : (p.career.find((c: any) => c.s === S && !c.po)?.tid ?? null);
+    out.push({ key: p.id, p, tid, age: ageIn(p, S), before: histShown(prev), after: histShown(now), d: histShown(now) - histShown(prev), attr, l, gms, retired: !!p.retired && p.retired < S });
   }
   return out;
 }
 
-function Progression({ lg, openPlayer, openTeam }: any) {
-  const last = lg.season; // changes for a season happen when free agency opens before it
+export function Progression({ lg, openPlayer, openTeam }: any) {
+  // changes for a season happen in the summer before it (the development step of the offseason)
+  const last = lg.phase === 'draft' && lg.off?.y === lg.season && lg.off.devDone ? lg.season + 1 : lg.season;
   const first = Math.min(...Object.values(lg.players).flatMap((p: any) => (p.ovrHist ?? []).map((h: any) => h[0]))) + 1;
   const seasons: number[] = [];
   for (let y = last; y >= first; y--) seasons.push(y);
@@ -232,6 +234,7 @@ function Progression({ lg, openPlayer, openTeam }: any) {
   const groups = AGE_GROUPS.map(([label, f]) => { const g = all.filter(r => !r.retired && !r.rookie && f(r.age)); return { label, n: g.length, avg: g.length ? g.reduce((a, r) => a + r.d, 0) / g.length : 0, up: g.filter(r => r.d >= 3).length, down: g.filter(r => r.d <= -3).length }; });
   const attrTxt = (r: any, n = 3) => r.attr.slice(0, n).map((x: any) => `${x.L.short} ${sgn(x.d)}`).join(', ');
   const nm = (r: any) => <><button className="link" onClick={() => openPlayer(r.p.id)}>{r.p.name}</button> <span className="dim">{r.tid ? lg.teams[r.tid]?.abbr : 'FA'} · age {r.age}</span></>;
+  const why = (r: any) => devReason(lg, r.p, S);
   const dCls = (d: number) => (d > 0 ? 'pos' : d < 0 ? 'neg' : 'dim');
   const cols = [
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <><PFace lg={lg} p={r.p} /><button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button></> },
@@ -245,6 +248,7 @@ function Progression({ lg, openPlayer, openTeam }: any) {
     { key: 'gp', label: 'GP', title: 'Games last season', get: (r: any) => r.l?.gp ?? null, fmt: (v: any) => v ?? '–' },
     { key: 'min', label: 'Min', title: 'Minutes per game last season', get: (r: any) => (r.l?.gp ? r.l.min / r.l.gp : null), fmt: f1 },
     { key: 'pts', label: 'Pts', title: 'Points per game last season', get: (r: any) => (r.l?.gp ? r.l.pts / r.l.gp : null), fmt: f1 },
+    { key: 'why', label: 'Why', left: true, get: (r: any) => devReason(lg, r.p, S), fmt: (v: any) => <span className="small-t why-t">{v}</span> },
     { key: 'gms', label: 'GmSc/36', title: 'Last season\'s Game Score per 36 min – a good season pushes progression up', get: (r: any) => r.gms, fmt: f1 },
   ];
   const rookCols = [
@@ -271,16 +275,16 @@ function Progression({ lg, openPlayer, openTeam }: any) {
             {[0, 70, 75, 80, 85].map(v => <option key={v} value={v}>{v ? `OVR ${v}+` : 'All players'}</option>)}
           </select>
         </div>
-        <p className="note">Players change once a year – in the summer, when free agency opens. The change depends on age, hidden talent, luck and how the player played last season: a great season pushes him up, a poor one pulls him down. Young players get leniency: a player 25 or younger who played roughly at his level loses at most 1 (22 and under), 2 (23–24) or 3 (25) OVR points over the summer, and a real flop costs him half as much as a veteran.</p>
+        <p className="note">Players change once a year – in the summer, right after the season (before the draft). The change depends on age, hidden talent, luck and how the player played last season: a great season pushes him up, a poor one pulls him down. Young players get leniency: a player 25 or younger who played roughly at his level loses at most 1 (22 and under), 2 (23–24) or 3 (25) OVR points over the summer, and a real flop costs him half as much as a veteran.</p>
         <div className="prog-grid">
           <div>
             <h3>Biggest jumps</h3>
-            <ol className="prog-list">{up.map(r => <li key={r.key}><span>{nm(r)}<br /><span className="dim small-t">{r.before} → {r.after} · {attrTxt(r)}</span></span><b className="pos">{sgn(r.d)}</b></li>)}</ol>
+            <ol className="prog-list">{up.map(r => <li key={r.key}><span>{nm(r)}<br /><span className="dim small-t">{r.before} → {r.after} · {attrTxt(r)}</span>{why(r) && <><br /><span className="small-t why-t">{why(r)}</span></>}</span><b className="pos">{sgn(r.d)}</b></li>)}</ol>
             {!up.length && <p className="note">None.</p>}
           </div>
           <div>
             <h3>Biggest drops</h3>
-            <ol className="prog-list">{down.map(r => <li key={r.key}><span>{nm(r)}<br /><span className="dim small-t">{r.before} → {r.after} · {attrTxt(r)}</span></span><b className="neg">{sgn(r.d)}</b></li>)}</ol>
+            <ol className="prog-list">{down.map(r => <li key={r.key}><span>{nm(r)}<br /><span className="dim small-t">{r.before} → {r.after} · {attrTxt(r)}</span>{why(r) && <><br /><span className="small-t why-t">{why(r)}</span></>}</span><b className="neg">{sgn(r.d)}</b></li>)}</ol>
             {!down.length && <p className="note">None.</p>}
           </div>
           <div>

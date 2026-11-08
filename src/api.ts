@@ -2,7 +2,7 @@
 // (so the page stays responsive) and saving to the browser.
 import { League } from './types';
 import { simDay } from './league/league';
-import { initDraft, draftAdvance, enterFreeAgency, faStage, startSeason } from './league/offseason';
+import { initDraft, draftAdvance, enterFreeAgency, faStage, startSeason, offStep, offRetire, offDevelop } from './league/offseason';
 import { fantasyAdvance } from './league/fantasy';
 import { registerClones } from './league/classes';
 import { registerNew2027 } from './rosters2027';
@@ -16,9 +16,12 @@ const tick = () => new Promise(r => setTimeout(r, 0));
 export function stepOnce(lg: League): boolean {
   if (lg.ended) return false;
   if (lg.phase === 'fantasy') { fantasyAdvance(lg, true); return true; }
-  if (lg.phase === 'regular' || lg.phase === 'playoffs') { simDay(lg); return true; }
+  if (lg.phase === 'regular' || lg.phase === 'playoffs') { lg.previewOpen = null; simDay(lg); return true; }
   if (lg.phase === 'draft') {
-    if (!lg.draftDay || lg.draftDay.year !== lg.season) initDraft(lg);
+    const st = offStep(lg);
+    if (st === 'recap') offRetire(lg);
+    else if (st === 'retire') offDevelop(lg);
+    else if (!lg.draftDay || lg.draftDay.year !== lg.season) initDraft(lg);
     else if (!lg.draftDay.done) draftAdvance(lg, 'all');
     else enterFreeAgency(lg);
     return !lg.ended;

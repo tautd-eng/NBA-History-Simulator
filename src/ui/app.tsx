@@ -6,6 +6,9 @@ import { StandingsHistory, TeamStatsExplorer, FaMoves } from './leaguehist';
 import { Logo, TLogo, PFace } from './art';
 import { RoleBadge } from './roles';
 import { SeasonPreview } from './seasonpreview';
+import { StepBar, RecapStep, RetireStep, DevStep, PreviewStep } from './offsteps';
+import { Progression } from './rankings';
+import { offStep } from '../league/offseason';
 import { Devices } from './devices';
 import { roleOf } from '../archetypes';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -298,6 +301,10 @@ function phaseLabel(lg: any) {
   if (lg.phase === 'fantasy') return 'fantasy draft';
   if (lg.phase === 'regular') { const dl = deadlineDay(lg); return `regular season, day ${lg.day + 1} · ${lg.day < dl ? `trade deadline in ${dl - lg.day} day${dl - lg.day === 1 ? '' : 's'}` : lg.day === dl ? 'trade deadline today' : 'past the trade deadline'}`; }
   if (lg.phase === 'playoffs') return 'playoffs';
+  if (lg.phase === 'draft' && offStep(lg) === 'recap') return 'season over';
+  if (lg.phase === 'draft' && offStep(lg) === 'retire') return 'offseason · retirements';
+  if (lg.phase === 'draft' && offStep(lg) === 'dev') return 'offseason · player development';
+  if (lg.phase === 'regular' && lg.previewOpen === lg.season && lg.day === 0) return 'season preview';
   if (lg.phase === 'draft') return lg.draftDay?.year === lg.season ? (lg.draftDay.done ? 'draft complete' : lg.draftDay.stage === 'expansion' ? 'expansion draft' : lg.draftDay.stage === 'lottery' ? 'draft lottery' : 'draft day') : 'season over, draft ahead';
   if (lg.phase === 'freeagency') return !lg.fa ? 'offseason' : lg.fa.stage === 0 ? 'contract decisions' : lg.fa.stage <= 3 ? `free agency, wave ${lg.fa.stage}` : 'free agency over';
   return 'offseason';
@@ -322,10 +329,13 @@ function Controls({ lg, busy, run, stop, saved }: any) {
         {lg.phase === 'regular' && b('playoffs', 'To playoffs')}
         {b('seasonEnd', 'To season end', true)}
       </>}
-      {lg.phase === 'draft' && (lg.draftDay?.year !== lg.season ? b('day', 'Start draft day', true)
+      {lg.phase === 'draft' && offStep(lg) === 'recap' && b('day', 'Start the offseason', true)}
+      {lg.phase === 'draft' && offStep(lg) === 'retire' && b('day', 'To player development', true)}
+      {lg.phase === 'draft' && offStep(lg) === 'dev' && b('day', 'To draft day', true)}
+      {lg.phase === 'draft' && offStep(lg) === 'draft' && (lg.draftDay?.year !== lg.season ? b('day', 'Start draft day', true)
         : !lg.draftDay.done ? b('day', 'Finish the draft') : b('day', 'To free agency', true))}
       {lg.phase === 'offseason' && b('day', 'To free agency', true)}
-      {lg.phase === 'freeagency' && (lg.fa && lg.fa.stage === 0 ? b('day', 'Open the market', true) : lg.fa && lg.fa.stage <= 3 ? b('day', `Finish FA wave ${lg.fa.stage}`, true) : b('day', 'Start the season', true))}
+      {lg.phase === 'freeagency' && (lg.fa && lg.fa.stage === 0 ? b('day', 'Open the market', true) : lg.fa && lg.fa.stage <= 3 ? b('day', `Finish FA wave ${lg.fa.stage}`, true) : b('day', 'To the season preview', true))}
       {b('nextSeason', 'Full year')}
       {b('years5', '5 years')}
       {saved === 'fail' && <span className="hint warn">This browser doesn't allow saving the league.</span>}
@@ -598,8 +608,35 @@ function Fold({ children }: any) { return children ?? null; }
 
 function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sampler, onSaved, goFA, onTick }: any) {
   const last = lg.history[lg.history.length - 1];
+  const step = lg.phase === 'draft' ? offStep(lg) : null;
+  if (step === 'recap') return (
+    <div className="col">
+      <StepBar lg={lg} />
+      <RecapStep lg={lg} onChange={onSaved}>
+        <div className="grid-2">
+          <section className="col">{last && <SeasonCard lg={lg} s={last} openPlayer={openPlayer} />}<Fold id="standings" title="Standings"><Standings lg={lg} openTeam={openTeam} /></Fold></section>
+          <section className="col">{lg.series.length ? <Bracket lg={lg} openTeam={openTeam} openGame={openGame} /> : null}<Fold id="news" title="League news"><News lg={lg} /></Fold></section>
+        </div>
+      </RecapStep>
+    </div>
+  );
+  if (step === 'retire') return <div className="col"><StepBar lg={lg} /><RetireStep lg={lg} onChange={onSaved} openPlayer={openPlayer} /></div>;
+  if (step === 'dev') return <div className="col"><StepBar lg={lg} /><DevStep lg={lg} onChange={onSaved}><Progression lg={lg} openPlayer={openPlayer} openTeam={openTeam} /></DevStep></div>;
+  if (lg.phase === 'regular' && lg.previewOpen === lg.season && !lg.schedule.some((g: any) => g.done)) return (
+    <div className="col">
+      <StepBar lg={lg} />
+      <PreviewStep lg={lg} onChange={onSaved}>
+        <SeasonPreview lg={lg} openTeam={openTeam} />
+        <div className="grid-2">
+          <section className="col"><Fold id="today" title="Opening night"><Today lg={lg} watch={watch} clutch={clutch} busy={busy} openGame={openGame} /></Fold></section>
+          <section className="col"><Fold id="news" title="League news"><News lg={lg} /></Fold></section>
+        </div>
+      </PreviewStep>
+    </div>
+  );
   if (lg.phase === 'draft') return (
     <div className="col">
+      <StepBar lg={lg} />
       <DraftRoom lg={lg} onChange={onSaved} onTick={onTick} openPlayer={openPlayer} openTeam={openTeam} />
       <div className="grid-2">
         <section className="col">{last && <Fold id="results" title="Season results"><SeasonCard lg={lg} s={last} openPlayer={openPlayer} /></Fold>}<Fold id="standings" title="Standings"><Standings lg={lg} openTeam={openTeam} /></Fold></section>
@@ -609,6 +646,7 @@ function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sam
   );
   if (lg.phase === 'freeagency' || lg.phase === 'offseason') return (
     <div className="col">
+      <StepBar lg={lg} />
       {lg.phase === 'freeagency' ? <FAHub lg={lg} onChange={onSaved} openPlayer={openPlayer} openTeam={openTeam} goFA={goFA} />
         : <div className="panel accent"><h2>Draft complete</h2><p className="note">Click “To free agency” at the top.</p></div>}
       <div className="grid-2">

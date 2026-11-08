@@ -10,7 +10,7 @@
 // in any skill, or a talent spread that is too wide or too flat, is pulled back
 // part of the way. With the destiny slider at 100% the sim already follows the
 // real careers, so the guard does almost nothing there.
-import { H, NK, K, agingIndex, bpmOf, ovrOf, LAST_SEASON, FIRST_SEASON, era, shownOvr } from '../data';
+import { H, NK, K, agingIndex, bpmOf, ovrOf, LAST_SEASON, FIRST_SEASON, era, shownOvr, shownFromRaw, histShown } from '../data';
 import { Rng } from '../rng';
 import { League, Player, StatLine, emptyLine, addLine } from '../types';
 import { ageIn, realTarget, snapRatings } from '../players';
@@ -220,6 +220,11 @@ export function develop(lg: League, rng: Rng) {
     const age = ageIn(p, Y);
     const ai = agingIndex(age - dev.peak);
     const z0 = p.z.slice();
+    // the summer's change by cause, in displayed OVR points (for the progression screen)
+    const sh = () => shownOvr(p.z);
+    const pre = p.ovrHist?.find(h => h[0] === Y);
+    const s0 = sh();
+    const why: any = { s: Y + 1, inj: pre ? s0 - histShown(pre) : 0, perf: 0, trend: 0, luck: 0, cap: 0, destiny: 0, total: 0 };
     // 1) what he showed on the court
     const pf = perf.get(p.id);
     const flop = !!pf && pf.ovrGain < YOUNG.flop;
@@ -228,13 +233,16 @@ export function develop(lg: League, rng: Rng) {
       const ageF = age <= 24 ? 1 : age <= 28 ? 0.85 : age <= 31 ? 0.6 : 0.4;
       // young players: playing close to their rating costs nothing, a real flop costs less than for veterans
       const young = age <= YOUNG.maxAge;
-      if (young && pf.ovrGain < 0 && pf.ovrGain > -YOUNG.deadZone) pf.dz.fill(0), pf.ovrGain = 0;
+      if (young && pf.ovrGain < 0 && pf.ovrGain > -YOUNG.deadZone) { pf.dz.fill(0); pf.ovrGain = 0; why.dz = true; }
       const neg = young ? YOUNG.negFactor : 0.7;
       const a = PERF.alpha * ageF * (pf.ovrGain < 0 ? neg : 1);
       const gain = pf.ovrGain * a;
       const cap = Math.abs(gain) > PERF.maxStep ? PERF.maxStep / Math.abs(gain) : 1;
       for (let i = 0; i < NK; i++) p.z[i] += pf.dz[i] * a * cap;
     }
+    why.flop = flop;
+    const s1 = sh();
+    why.perf = s1 - s0;
     // 2) age, potential and year-to-year noise
     const before = ovrOf(p.z);
     const potBoost = age <= 24 ? 0.05 : age <= 27 ? 0.025 : 0;
@@ -260,7 +268,13 @@ export function develop(lg: League, rng: Rng) {
     const trial = p.z.map((v, i) => v + nat[i]);
     const step = ovrOf(trial) - before;
     const scale = Math.abs(step) > DEV.maxOvrStep ? DEV.maxOvrStep / Math.abs(step) : 1;
-    for (let i = 0; i < NK; i++) p.z[i] += nat[i] * scale;
+    // split the age trend (and potential) from the summer's luck
+    const luckPart = eNew.map((v, i) => (v - dev.e[i]) * scale);
+    for (let i = 0; i < NK; i++) p.z[i] += nat[i] * scale - luckPart[i];
+    const s2 = sh();
+    for (let i = 0; i < NK; i++) p.z[i] += luckPart[i];
+    const s3 = sh();
+    why.trend = s2 - s1; why.luck = s3 - s2;
     dev.e = eNew;
     // young players who did not flop lose at most a little in one summer
     const maxDrop = age <= 22 ? YOUNG.maxDrop[0] : age <= 24 ? YOUNG.maxDrop[1] : age <= YOUNG.maxAge ? YOUNG.maxDrop[2] : Infinity;
@@ -295,9 +309,13 @@ export function develop(lg: League, rng: Rng) {
         for (let i = 0; i < NK; i++) p.z[i] = z0[i] + lo * (p.z[i] - z0[i]);
       }
     }
+    const s4 = sh();
+    why.cap = s4 - s3;
     // destiny: pull toward the real career
     const tgt = realTarget(p.id, Y + 1 - (p.shift ?? 0));
     if (tgt) for (let i = 0; i < NK; i++) p.z[i] += d * (tgt.z[i] - p.z[i]);
+    const s5 = sh();
+    why.destiny = s5 - s4;
     // soft ceiling on single skills (not applied to real values under full destiny)
     const s = 1 - (tgt ? d : 0);
     for (let i = 0; i < NK; i++) {
@@ -306,6 +324,9 @@ export function develop(lg: League, rng: Rng) {
       else if (v < -DEV.soft - 0.5) p.z[i] = v - s * 0.5 * (v + DEV.soft + 0.5);
     }
     zClamp(p.z);
+    why.cap += sh() - s5;   // the soft ceiling on single skills counts as a limit too
+    why.total = sh() - s0 + why.inj;
+    p.devWhy = why;
     snapRatings(p, Y + 1);
   }
 }
@@ -365,9 +386,8 @@ export interface HealthRec { s: number; sim: Profile; real: Profile; shift: numb
  * summer at most YOUNG.maxDrop below last season's rating (the recalibration
  * moves everyone and could otherwise undo the leniency).
  */
-export function youngFloor(lg: League) {
+export function youngFloor(lg: League, S = lg.season) {
   if (!OVR_DIR.length) initDev();
-  const S = lg.season;
   for (const p of Object.values(lg.players)) {
     if (p.retired || !p.dev || (p.dev as any).flop) continue;
     const age = ageIn(p, S - 1);
@@ -385,8 +405,7 @@ export function youngFloor(lg: League) {
   }
 }
 
-export function normalizeLeague(lg: League) {
-  const S = lg.season;
+export function normalizeLeague(lg: League, S = lg.season) {
   const real = realProfile(S);
   const before = simProfile(lg);
   const str = 0.8 * (1 - lg.destiny);

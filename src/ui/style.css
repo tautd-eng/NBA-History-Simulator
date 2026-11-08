@@ -802,3 +802,22 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .stage-full:hover { opacity: 1; }
 .fo-plan { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; margin: 6px 0 10px; padding: 8px 10px; border-radius: 8px; background: var(--panel2, rgba(127,127,127,.08)); }
 .fo-plan .fo-stage { flex-basis: 100%; }
+/* offseason steps */
+.stepbar { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 0; }
+.stepbar li { display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.stepbar li .n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--sunk); font-family: var(--font-mono); font-size: 11px; }
+.stepbar li.past { color: var(--ink); }
+.stepbar li.past .n { background: var(--real-soft); color: var(--real); }
+.stepbar li.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.stepbar li.on .n { background: rgba(255,255,255,.25); color: #fff; }
+@media (max-width: 700px) { .stepbar li:not(.on) { font-size: 0; padding-right: 4px; gap: 0; } .stepbar li:not(.on) .n { font-size: 11px; } }
+.step-head .team-head { justify-content: space-between; }
+.step-head .lead { font-size: 1.08rem; margin: 6px 0; }
+.why-t { color: var(--muted); font-style: italic; }
+.trade-li { background: var(--accent-soft); border-radius: 6px; }
+.trade-pop { max-width: 520px; border-top: 4px solid var(--accent); }
+.trade-pop .eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: 12px; color: var(--accent); font-weight: 700; }
+.trade-pop-row { margin: 8px 0 4px; }
+.trade-pop-row h2 { font-size: 1.5rem; }
+.chk { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.fa-trades ul.news { max-height: 420px; overflow-y: auto; }

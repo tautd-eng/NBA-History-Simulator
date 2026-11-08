@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fatigueAt, nextCal, fatigueLabel } from '../league/fatigue';
 import { injName } from '../league/injuries';
 import { todayIndex } from '../league/league';
-import { RATING_LABELS, ratingOf, shownOvr as ovrOf, shownFromRaw, shownFromBpm, perD, rimD, postD } from '../data';
+import { RATING_LABELS, ratingOf, shownOvr as ovrOf, shownFromRaw, histShown, shownFromBpm, perD, rimD, postD } from '../data';
 import { ageIn } from '../players';
 import { SortTable, f1, f0, pctf, div } from './sorttable';
 import { traits, TRAIT_LABELS, reasons, extensionNeed } from '../league/prefs';
@@ -230,7 +230,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
 
   // progression rows: ratings recorded each season
   const rh: number[][] = p.rh?.length ? p.rh : [[lg.season, ...RATING_LABELS.map(r => ratingOf(p.z[r.k], r.inv))]];
-  const ovrBy = Object.fromEntries(p.ovrHist.map((x: any) => [x[0], shownFromRaw(x[1])]));
+  const ovrBy = Object.fromEntries(p.ovrHist.map((x: any) => [x[0], histShown(x)]));
   const progRows = rh.map((row, i) => ({ key: row[0], s: row[0], ovr: ovrBy[row[0]] ?? null, r: row.slice(1), prev: i ? rh[i - 1].slice(1) : null, pOvr: i ? ovrBy[rh[i - 1][0]] ?? null : null }));
   const progCols = [
     { key: 's', label: 'Season', get: (x: any) => x.s, fmt: (s: any) => `${s - 1}–${String(s).slice(2)}` },
@@ -339,7 +339,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
 }
 
 function OvrChart({ p }: any) {
-  const sim: [number, number][] = p.ovrHist.map((h: any) => [h[0], shownFromRaw(h[1])]);
+  const sim: [number, number][] = p.ovrHist.map((h: any) => [h[0], histShown(h)]);
   if (sim.length < 2) return <p className="note">The progression chart appears after the first offseason.</p>;
   const x0 = sim[0][0], x1 = Math.max(sim[sim.length - 1][0], x0 + 1);
   const y0 = Math.max(35, Math.min(...sim.map(a => a[1])) - 5), y1 = Math.min(100, Math.max(...sim.map(a => a[1])) + 5);
