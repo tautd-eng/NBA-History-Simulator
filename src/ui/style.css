@@ -909,3 +909,6 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .finder td.pos { color: var(--ok, #1a7f37); } .finder td.neg { color: var(--bad, #b42318); }
 .o-bar.inl { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; vertical-align: middle; margin-right: 6px; }
 .o-bar.inl span { display: block; height: 100%; background: var(--accent); }
+/* wide sortable lists: the player's name stays in view while the ratings scroll */
+.tbl.sortable th:first-child, .tbl.sortable td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.tbl.sortable tr.mine td:first-child { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }

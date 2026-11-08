@@ -23,7 +23,13 @@ import { posNum } from '../engine/game';
 export const moneyOf = (frac: number, s: number) => money(frac, s);
 export const potOf = (p: any, s: number) => shownFromBpm(peakBpm(p, s));
 const R = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
-const SHOW = [0, 1, 4, 7, 10];
+/** Height and every rating, for lists where you choose players without opening their cards. */
+export function attrCols(pOf: (r: any) => any) {
+  return [
+    { key: 'ht', label: 'Ht', title: 'Height (m)', get: (r: any) => pOf(r).ht, fmt: (v: any) => <span className="dim">{(v * 0.0254).toFixed(2)}</span> },
+    ...RATING_LABELS.map((L, i) => ({ key: 'r' + i, label: L.short, title: L.name + (L.tendency ? ' (a tendency, not a skill)' : ''), get: (r: any) => R(pOf(r), i), fmt: (v: any) => L.tendency ? <span className="dim">{v}</span> : v })),
+  ];
+}
 const POS = [['all', 'All'], ['g', 'Guards'], ['f', 'Forwards'], ['c', 'Centers']] as const;
 const posOk = (p: any, pos: string) => pos === 'all' || (pos === 'g' ? posNum(p.pos) <= 2.5 : pos === 'c' ? posNum(p.pos) >= 4.5 : posNum(p.pos) > 2.5 && posNum(p.pos) < 4.5);
 function Ovr({ v }: any) {
@@ -83,7 +89,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
     { key: 'age', label: 'Age', asc: true, get: (p: any) => ageIn(p, d.year + 1) },
     { key: 'ovr', label: 'OVR', get: (p: any) => ovrOf(p.z), fmt: (v: any) => <Ovr v={v} /> },
     { key: 'pot', label: 'Pot.', title: 'Potential – the GM\'s estimate of how good he can become', get: (p: any) => potOf(p, d.year + 1) },
-    ...SHOW.map(i => ({ key: 'r' + i, label: RATING_LABELS[i].short, title: RATING_LABELS[i].name, get: (p: any) => R(p, i) })),
+    ...attrCols((p: any) => p),
     { key: 'act', label: '', get: () => 0, fmt: (_: any, p: any) => myTurn ? <button className={`small ${p.id === suggestion ? 'primary' : ''}`} onClick={() => act(() => draftPick(lg, p.id))}>Pick</button> : null },
   ];
   const recent = [...d.picks].reverse();
@@ -259,10 +265,11 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
     { key: 'pot', label: 'Pot.', get: (r: any) => potOf(r.p, N) },
     { key: 'from', label: 'Last team', left: true, get: (r: any) => lg.teams[r.from]?.abbr ?? '', fmt: (_: any, r: any) => tm(r.from) },
-    { key: 'ask', label: 'Asks', get: (r: any) => (u ? faDemand(lg, r.p, u.tid) : askingSalary(r.p, N)), fmt: (v: any) => moneyOf(v, N) },
+    { key: 'ask', label: 'Asks', get: (r: any) => (u ? faDemand(lg, r.p, u.tid, preferredYears(r.p, N)) : askingSalary(r.p, N)), fmt: (v: any) => moneyOf(v, N) },
     { key: 'int', label: 'Interest', title: 'AI teams that would make him an offer right now – the one he likes best first', left: true, get: (r: any) => market.get(r.p.id)?.length ?? -1,
       fmt: (_: any, r: any) => { const o = market.get(r.p.id); if (!o) return <span className="dim">–</span>; if (!o.length) return <span className="dim">no offers</span>;
         return <button className="link-btn" onClick={() => setOffersOf(r.p.id)} title={`${o.length} teams would offer – leaning towards ${lg.teams[o[0].tid].name}. Click for all offers.`}><b>{o.length}</b> <span className="dim">→</span> {lg.teams[o[0].tid].abbr} <span className="chip tiny">offers</span></button>; } },
+    ...attrCols((r: any) => r.p),
   ];
   const signedCols = [
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (_: any, r: any) => nm(r.p) },
@@ -493,7 +500,7 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
     { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, N) },
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
     { key: 'pot', label: 'Pot.', get: (r: any) => potOf(r.p, N) },
-    ...SHOW.map(i => ({ key: 'r' + i, label: RATING_LABELS[i].short, title: RATING_LABELS[i].name, get: (r: any) => R(r.p, i) })),
+    ...attrCols((r: any) => r.p),
     { key: 'ls', label: 'Last season', title: 'Last season played', get: (r: any) => r.l?.s ?? null, fmt: (v: any) => v ?? '–' },
     { key: 'pts', label: 'Pts', get: (r: any) => (r.l?.gp ? r.l.pts / r.l.gp : null), fmt: f1 },
     { key: 'reb', label: 'Reb', get: (r: any) => (r.l?.gp ? (r.l.orb + r.l.drb) / r.l.gp : null), fmt: f1 },

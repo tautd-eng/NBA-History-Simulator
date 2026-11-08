@@ -14,6 +14,7 @@ import { posNum } from '../engine/game';
 import { colorsOf } from './art';
 import { pickOwner } from '../ai/trades';
 import { isHuman } from '../league/humans';
+import { attrCols } from './offseason';
 
 function Ovr({ v }: any) {
   const tier = v >= 90 ? 'star' : v >= 80 ? 'good' : v >= 70 ? 'mid' : 'low';
@@ -75,6 +76,7 @@ export function ExpansionRoom({ lg, onChange, onTick, openPlayer, openTeam }: an
     { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, Y + 1) },
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
     { key: 'sal', label: 'Salary', title: 'Salary as a share of the cap', get: (r: any) => r.p.contract.sal, fmt: (v: any, r: any) => `${Math.round(v * 100)}% through ${r.p.contract.exp}` },
+    ...attrCols((r: any) => r.p),
     ...(myTurn ? [{ key: 'act', label: '', get: () => 0, fmt: (_: any, r: any) => <button className="small" onClick={() => act(() => expPick(lg, r.p.id))}>Pick</button> }] : []),
   ];
   return (

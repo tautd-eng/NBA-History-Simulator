@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react';
 
 export interface Col { key: string; label: string; title?: string; get: (r: any) => any; fmt?: (v: any, r: any) => any; left?: boolean; asc?: boolean; cls?: string }
 
-export function SortTable({ cols, rows, initial, initialAsc = false, footer, rowClass, limit, caption }: any) {
+export function SortTable({ cols: cols0, rows, initial, initialAsc = false, footer, rowClass, limit, caption }: any) {
+  // the action button (Pick, Negotiate…) sits right after the name, so wide tables never hide it
+  const cols = cols0.some((c: Col) => c.key === 'act') ? [cols0[0], ...cols0.filter((c: Col) => c.key === 'act'), ...cols0.slice(1).filter((c: Col) => c.key !== 'act')] : cols0;
   const [key, setKey] = useState(initial ?? cols[0].key);
   const [asc, setAsc] = useState(initialAsc);
   const col = cols.find((c: Col) => c.key === key) ?? cols[0];
