@@ -126,7 +126,7 @@ export interface Tactics { pace: number; three: number; crash: number; press: nu
   cover?: 'drop' | 'switch' | 'blitz';  // pick-and-roll coverage (undefined: the coach mixes it)
   dbl?: number;     // -1 never double the star … 1 double him whenever he has it
 }
-interface Side { tid: string; gps: GP[]; on: GP[]; pts: number; q: number[]; home: boolean; paceZ: number; tac: Tactics; minutes?: Record<string, number>; depth?: number }
+interface Side { tid: string; gps: GP[]; on: GP[]; pts: number; q: number[]; home: boolean; paceZ: number; tac: Tactics; minutes?: Record<string, number>; depth?: number; starters?: string[]; mm?: Record<string, string> }
 
 export interface GameOpts { season: number; po: boolean; rng: Rng; pbp?: boolean; ctl?: Control }
 
@@ -214,11 +214,20 @@ function planMinutes(side: Side, po = false) {
     }
   }
   avail.forEach((g, i) => (g.target = T[i]));
+  // the coach's starting five plays a starter's minutes (24+), taken from the bench
+  const st = side.gps.filter(g => side.starters?.includes(g.p.id));
+  if (st.length) {
+    let need = 0;
+    for (const g of st) if (g.target < 24) { need += 24 - g.target; g.target = 24; }
+    const bench = side.gps.filter(g => !st.includes(g) && g.target > 0);
+    const tot = bench.reduce((a, g) => a + g.target, 0);
+    if (tot > 0) for (const g of bench) g.target = Math.max(0, g.target - need * g.target / tot);
+  }
 }
 
 /** The minutes a coach would plan for these players (the same plan the game starts from). */
-export function planPreview(players: Player[], season: number, o: { minutes?: Record<string, number>; depth?: number; po?: boolean } = {}) {
-  const side = { tid: '', gps: players.map(p => prep(p, season)), on: [], pts: 0, q: [], home: true, paceZ: 0, tac: NO_TAC, minutes: o.minutes, depth: o.depth } as Side;
+export function planPreview(players: Player[], season: number, o: { minutes?: Record<string, number>; depth?: number; po?: boolean; starters?: string[] } = {}) {
+  const side = { tid: '', gps: players.map(p => prep(p, season)), on: [], pts: 0, q: [], home: true, paceZ: 0, tac: NO_TAC, minutes: o.minutes, depth: o.depth, starters: o.starters } as Side;
   planMinutes(side, o.po);
   return Object.fromEntries(side.gps.map(g => [g.p.id, g.target]));
 }
@@ -289,7 +298,10 @@ function chooseLineup(side: Side, period: number, rem: number, margin: number, s
   side.on = five;
 }
 
-type TeamIn = { tid: string; players: Player[]; paceZ: number; tac?: Tactics; minutes?: Record<string, number>; depth?: number };
+type TeamIn = { tid: string; players: Player[]; paceZ: number; tac?: Tactics; minutes?: Record<string, number>; depth?: number;
+  pos?: Record<string, number>;   // the coach's positions: who plays the 1 … 5 (decides matchups and the floor balance)
+  starters?: string[];            // the coach's starting five
+  mm?: Record<string, string> };  // defensive assignments against this opponent: their player → who guards him
 const NO_TAC: Tactics = { pace: 0, three: 0, crash: 0, press: 0 };
 export function simGame(home: TeamIn, away: TeamIn, o: GameOpts) {
   const g = gameGen(home, away, o);
@@ -303,7 +315,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   const seasonOf = season;
   const ctl = o.ctl;
   const mk = (t: typeof home, isHome: boolean): Side => ({
-    tid: t.tid, gps: t.players.map(p => prep(p, season)), on: [], pts: 0, q: [], home: isHome, paceZ: t.paceZ, tac: t.tac ?? NO_TAC, minutes: t.minutes, depth: t.depth,
+    tid: t.tid, gps: t.players.map(p => { const g = prep(p, season); if (t.pos?.[p.id]) g.posNum = t.pos[p.id]; return g; }), on: [], pts: 0, q: [], home: isHome, paceZ: t.paceZ, tac: t.tac ?? NO_TAC, minutes: t.minutes, depth: t.depth,
+    starters: t.starters?.filter(Boolean), mm: t.mm,
   });
   const H = mk(home, true), A = mk(away, false);
   const E = getEraCal(season);
@@ -320,6 +333,13 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     s.gps.forEach(g => (g.target = g.q));
     chooseLineup(s, 1, 720, 0, true, 2880);
     s.gps.forEach((g, i) => (g.target = save[i]));
+    // the coach named his five: those who can play start (the rest of the five as chosen)
+    const named = s.gps.filter(g => s.starters?.includes(g.p.id));
+    if (named.length) {
+      const five = [...named, ...s.on.filter(g => !named.includes(g))].slice(0, 5);
+      for (const g of s.gps) g.on = five.includes(g);
+      s.on = five;
+    }
     for (const g of s.on) { g.starter = true; g.st.gs = 1; }
   }
   let elapsed = 0;
@@ -685,7 +705,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     // matchups: defenders guard the offensive player at the same position slot
     const byPos = (a: GP, b: GP) => a.posNum - b.posNum;
     const oS = [...on].sort(byPos), dS = [...dOn].sort(byPos);
-    const guard = (g: GP) => dS[oS.indexOf(g)] ?? dS[0];
+    // (a coach can assign his man to their player – if both are on the floor)
+    const guard = (g: GP) => { const m = def.mm?.[g.p.id]; const d = m ? dOn.find(x => x.p.id === m) : undefined; return d ?? dS[oS.indexOf(g)] ?? dS[0]; };
     // the offence looks for the weak spot: a soft or much smaller defender draws more shots
     const edge = (g: GP) => { const d = guard(g); return C.mmUsg * (defZ - d.def) + C.mmSize * Math.max(-6, Math.min(6, g.p.ht - d.p.ht)) * (g.posNum >= 3.5 ? 1 : 0.4); };
     const fo = off.tac.focus ?? 0, OT = off.tac, DT = def.tac;

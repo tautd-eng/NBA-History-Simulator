@@ -8,6 +8,8 @@ import { ageIn } from '../players';
 import { rotationPreview } from '../league/league';
 import { extendable } from '../league/extensions';
 import { ExtensionBox } from './player';
+import { RoleCell } from './roles';
+import { posNum } from '../engine/game';
 
 const DEF = () => ({ mode: 'auto', depth: 10, youth: 0, minutes: {}, tac: { pace: 0, three: 0, crash: 0, press: 0 } });
 export const mgmtOf = (lg: any) => { const t = lg.teams[lg.userTid]; return (t.mgmt ??= DEF()); };
@@ -83,7 +85,7 @@ function tacFrom(ch: Record<string, string>) {
 const defaultChoice = (g: typeof GROUPS[number]) => (g.opts.find(o => !Object.keys(o.v).length) ?? g.opts[0]).k;
 
 export function TeamMgmt({ lg, openPlayer, onChange }: any) {
-  const [sec, setSec] = useState<'rot' | 'tac' | 'ext'>('rot');
+  const [sec, setSec] = useState<'rot' | 'pos' | 'mm' | 'tac' | 'ext'>('rot');
   if (!lg.userTid) return <div className="panel"><h2>Team management</h2><p className="note">Pick a team to run in the settings – then its rotation, tactics and contracts are yours to manage.</p></div>;
   const t = lg.teams[lg.userTid];
   const nExt = t.roster.filter((pid: string) => extendable(lg, lg.players[pid])).length;
@@ -92,10 +94,12 @@ export function TeamMgmt({ lg, openPlayer, onChange }: any) {
       <div className="panel accent">
         <div className="team-head"><h2>Team management · <TL tid={t.tid} /></h2></div>
         <div className="seg" role="tablist">
-          {[['rot', 'Rotation'], ['tac', 'Tactics'], ['ext', `Extensions${nExt ? ` (${nExt})` : ''}`]].map(([k, l]) => <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => setSec(k as any)}>{l}</button>)}
+          {[['rot', 'Rotation'], ['pos', 'Lineup & positions'], ['mm', 'Matchups'], ['tac', 'Tactics'], ['ext', `Extensions${nExt ? ` (${nExt})` : ''}`]].map(([k, l]) => <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => setSec(k as any)}>{l}</button>)}
         </div>
       </div>
       {sec === 'rot' && <Rotation lg={lg} openPlayer={openPlayer} onChange={onChange} />}
+      {sec === 'pos' && <Positions lg={lg} openPlayer={openPlayer} onChange={onChange} />}
+      {sec === 'mm' && <Matchups lg={lg} openPlayer={openPlayer} onChange={onChange} />}
       {sec === 'tac' && <TacticsPanel lg={lg} onChange={onChange} />}
       {sec === 'ext' && <Extensions lg={lg} openPlayer={openPlayer} onChange={onChange} />}
     </div>
@@ -213,6 +217,116 @@ function Extensions({ lg, openPlayer, onChange }: any) {
       </div>
       {ext.map((p: any) => <div key={p.id} className="panel"><ExtensionBox lg={lg} p={p} onChange={ch} compact /></div>)}
       {lg.phase === 'regular' && !ext.length && <div className="panel"><p className="note">Nobody on your roster has a contract ending this season (or everyone is already extended).</p></div>}
+    </div>
+  );
+}
+
+const SLOTS = ['PG', 'SG', 'SF', 'PF', 'C'];
+/** Natural slot (1 … 5) from his listed position. */
+const natural = (p: any) => Math.max(1, Math.min(5, Math.round(posNum(p.pos))));
+
+/** The starting five by position, and where everyone else plays. */
+function Positions({ lg, openPlayer, onChange }: any) {
+  const m = mgmtOf(lg);
+  const [, setT] = useState(0);
+  const upd = (f: (m: any) => void) => { f(m); setT(x => x + 1); onChange(); };
+  const t = lg.teams[lg.userTid];
+  const ps = t.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
+  const st: string[] = (m.starters ??= ['', '', '', '', '']);
+  const setStarter = (i: number, pid: string) => upd(m => { m.starters = m.starters.map((x: string, j: number) => (j === i ? pid : x === pid && pid ? '' : x)); });
+  const slotOf = (p: any) => { const i = st.indexOf(p.id); return i >= 0 ? i + 1 : m.pos?.[p.id] ?? 0; };
+  const setPos = (pid: string, v: number) => upd(m => { m.pos ??= {}; if (v) m.pos[pid] = v; else delete m.pos[pid]; });
+  const named = st.filter(Boolean).length;
+  return (
+    <div className="grid-2">
+      <div className="panel">
+        <h2>Starting five</h2>
+        <p className="note">Name a starter for each position – or leave it to the coach (Auto). A named starter opens the game at that position and plays at least a starter's minutes (24+). If he is out, the coach fills the spot.</p>
+        <table className="tbl compact"><tbody>{SLOTS.map((sl, i) => {
+          const p = st[i] ? lg.players[st[i]] : null;
+          return <tr key={sl}>
+            <td className="l"><b>{sl}</b></td>
+            <td className="l"><select aria-label={`Starter at ${sl}`} value={st[i] || ''} onChange={e => setStarter(i, e.target.value)}>
+              <option value="">Auto – the coach decides</option>
+              {ps.map((q: any) => <option key={q.id} value={q.id}>{q.name} ({q.pos}, {ovrOf(q.z)}){q.injury ? ' – injured' : ''}</option>)}
+            </select></td>
+            <td className="l">{p ? <><RoleCell p={p} S={lg.season} />{natural(p) !== i + 1 ? <span className="chip tiny" title={`Listed as ${p.pos}`}>out of position</span> : null}</> : null}</td>
+          </tr>;
+        })}</tbody></table>
+        <div className="def-row"><button className="small ghost" disabled={!named} onClick={() => upd(m => { m.starters = ['', '', '', '', '']; })}>Clear – all Auto</button></div>
+      </div>
+      <div className="panel">
+        <h2>Positions</h2>
+        <p className="note">Where each player plays when he is on the floor. Positions decide the matchups (your 1 guards their 1 unless you set matchups), the floor balance the coach keeps (about two guards and two bigs) and who runs the post-ups and pick and rolls. A small player at the 5 defends their center.</p>
+        <div className="tbl-wrap"><table className="tbl compact">
+          <thead><tr><th className="l">Player</th><th>Listed</th><th>OVR</th><th className="l">Plays</th></tr></thead>
+          <tbody>{ps.map((p: any) => {
+            const i = st.indexOf(p.id);
+            return <tr key={p.id}>
+              <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button></td>
+              <td className="dim">{p.pos}</td><td>{ovrOf(p.z)}</td>
+              <td className="l">{i >= 0 ? <span>{SLOTS[i]} <span className="dim small-t">(starter)</span></span> :
+                <select aria-label={`Position for ${p.name}`} value={m.pos?.[p.id] ?? 0} onChange={e => setPos(p.id, +e.target.value)}>
+                  <option value={0}>Auto ({SLOTS[natural(p) - 1]})</option>
+                  {SLOTS.map((sl, j) => <option key={sl} value={j + 1}>{sl}</option>)}
+                </select>}</td>
+            </tr>;
+          })}</tbody>
+        </table></div>
+      </div>
+    </div>
+  );
+}
+
+/** The opponent you meet next: your playoff series, or the next game on the schedule. */
+function nextOpponent(lg: any, tid: string) {
+  const s = (lg.series ?? []).find((x: any) => !x.winner && (x.hi === tid || x.lo === tid) && x.hi && x.lo);
+  if (s) return { tid: s.hi === tid ? s.lo : s.hi, why: 'your playoff series' };
+  const g = (lg.schedule ?? []).filter((x: any) => !x.done && (x.home === tid || x.away === tid)).sort((a: any, b: any) => a.day - b.day)[0];
+  if (g) return { tid: g.home === tid ? g.away : g.home, why: 'your next game' };
+  return null;
+}
+
+/** Defensive assignments against a given team: who guards their best players (used in every game against them). */
+function Matchups({ lg, openPlayer, onChange }: any) {
+  const m = mgmtOf(lg);
+  const [, setT] = useState(0);
+  const me = lg.userTid;
+  const nx = nextOpponent(lg, me);
+  const [opp, setOpp] = useState<string>(nx?.tid ?? Object.keys(lg.teams).find(t => t !== me && lg.teams[t].active));
+  const upd = (f: (m: any) => void) => { f(m); setT(x => x + 1); onChange(); };
+  const mine = lg.teams[me].roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
+  const theirs = lg.teams[opp].roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z)).slice(0, 9);
+  const set = (theirPid: string, myPid: string) => upd(m => { m.mm ??= {}; m.mm[opp] ??= {}; if (myPid) m.mm[opp][theirPid] = myPid; else delete m.mm[opp][theirPid]; });
+  const cur = m.mm?.[opp] ?? {};
+  const teams = Object.values(lg.teams).filter((t: any) => t.active && t.tid !== me).sort((a: any, b: any) => a.name.localeCompare(b.name));
+  const sets = Object.entries(m.mm ?? {}).filter(([, v]: any) => Object.keys(v).length);
+  return (
+    <div className="panel">
+      <div className="team-head">
+        <h2>Matchups</h2>
+        <select className="mm-opp" aria-label="Opponent" value={opp} onChange={e => setOpp(e.target.value)}>
+          {teams.map((t: any) => <option key={t.tid} value={t.tid}>{t.name}{nx?.tid === t.tid ? ` – ${nx.why}` : ''}</option>)}
+        </select>
+      </div>
+      <p className="note">Pick who guards their players – in every game against the {lg.teams[opp].name}, playoffs included. When both are on the floor your man takes him (his defense, size and hands against that player's shots and drives); otherwise it goes by position. Auto: the defender at the same position.</p>
+      <div className="tbl-wrap"><table className="tbl compact">
+        <thead><tr><th className="l">Their player</th><th>Pos</th><th>OVR</th><th className="l">Role</th><th className="l">Guarded by</th></tr></thead>
+        <tbody>{theirs.map((p: any) => {
+          const d = cur[p.id] ? lg.players[cur[p.id]] : null;
+          return <tr key={p.id}>
+            <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button></td>
+            <td className="dim">{p.pos}</td><td>{ovrOf(p.z)}</td>
+            <td className="l"><RoleCell p={p} S={lg.season} /></td>
+            <td className="l"><select aria-label={`Who guards ${p.name}`} value={cur[p.id] ?? ''} onChange={e => set(p.id, e.target.value)}>
+              <option value="">Auto – by position</option>
+              {mine.map((q: any) => <option key={q.id} value={q.id}>{q.name} ({q.pos}, {ovrOf(q.z)})</option>)}
+            </select>{d && Math.abs(d.ht - p.ht) >= 4 ? <span className={`chip tiny ${d.ht < p.ht ? 'neg' : ''}`} title="Height difference">{d.ht > p.ht ? '+' : ''}{Math.round((d.ht - p.ht) * 2.54)} cm</span> : null}</td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+      {Object.keys(cur).length > 0 && <div className="def-row"><button className="small ghost" onClick={() => upd(m => { delete m.mm[opp]; })}>Clear – all Auto</button></div>}
+      {sets.length > 0 && <p className="note">Matchups set against: {sets.map(([tid]: any) => lg.teams[tid]?.abbr).join(', ')}.</p>}
     </div>
   );
 }

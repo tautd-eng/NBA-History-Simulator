@@ -380,13 +380,13 @@ export function rotationPreview(lg: League, tid: string, m: NonNullable<Team['mg
   const players = lg.teams[tid].roster.map(pid => lg.players[pid]).filter(p => !p.injury);
   const save = players.map(p => (p as any).rotQ);
   for (const p of players) { const a = ageIn(p, lg.season); (p as any).rotQ = m.mode === 'auto' && !po ? 1 + m.youth * 0.7 * (a <= 21 ? 1 : a <= 23 ? 0.7 : a <= 25 ? 0.3 : 0) : 1; }
-  const r = planPreview(players, lg.season, { minutes: m.mode === 'manual' ? m.minutes : undefined, depth: m.mode === 'auto' && !po ? m.depth : undefined, po });
+  const r = planPreview(players, lg.season, { minutes: m.mode === 'manual' ? m.minutes : undefined, depth: m.mode === 'auto' && !po ? m.depth : undefined, po, starters: (m.starters ?? []).filter(Boolean) });
   players.forEach((p, i) => ((p as any).rotQ = save[i]));
   return r;
 }
 
 /** What the engine gets for a team: tonight's players, and – for the user's team – his rotation and tactics. */
-export function teamIn(lg: League, t: Team, rng: Rng) {
+export function teamIn(lg: League, t: Team, rng: Rng, opp?: string) {
   const players = availablePlayers(lg, t.tid, rng);
   const m = isHuman(lg, t.tid) ? t.mgmt : undefined;
   if (!m) return { tid: t.tid, players, paceZ: t.paceZ };
@@ -394,7 +394,12 @@ export function teamIn(lg: League, t: Team, rng: Rng) {
     // more minutes for the young: the younger, the bigger the push
     for (const p of players) { const a = ageIn(p, lg.season); (p as any).rotQ = 1 + m.youth * 0.7 * (a <= 21 ? 1 : a <= 23 ? 0.7 : a <= 25 ? 0.3 : 0); }
   }
-  return { tid: t.tid, players, paceZ: t.paceZ, tac: m.tac, minutes: m.mode === 'manual' ? m.minutes : undefined, depth: m.mode === 'auto' && lg.phase !== 'playoffs' ? m.depth : undefined };
+  const here = new Set(players.map(p => p.id));
+  const pos = Object.fromEntries(Object.entries(m.pos ?? {}).filter(([pid, v]) => here.has(pid) && v));
+  (m.starters ?? []).forEach((pid, i) => { if (pid && here.has(pid)) pos[pid] = i + 1; }); // a starter plays the slot he was named to
+  const mm = opp ? Object.fromEntries(Object.entries(m.mm?.[opp] ?? {}).filter(([, mine]) => here.has(mine))) : undefined;
+  return { tid: t.tid, players, paceZ: t.paceZ, tac: m.tac, minutes: m.mode === 'manual' ? m.minutes : undefined, depth: m.mode === 'auto' && lg.phase !== 'playoffs' ? m.depth : undefined,
+    pos, starters: (m.starters ?? []).filter(pid => pid && here.has(pid)), mm };
 }
 
 export function availablePlayers(lg: League, tid: string, rng: Rng) {
@@ -569,8 +574,8 @@ export function playSingle(lg: League, home: string, away: string, opts: { defer
   const po = lg.phase === 'playoffs';
   const h = lg.teams[home], a = lg.teams[away];
   const r = simGame(
-    teamIn(lg, h, rng),
-    teamIn(lg, a, rng),
+    teamIn(lg, h, rng, a.tid),
+    teamIn(lg, a, rng, h.tid),
     { season: lg.season, po, rng, pbp: true },
   );
   const res: GameResult = { id: lg.nextGameId++, season: lg.season, day: d.kind === 'reg' ? d.g.day : lg.day, po, home: r.home, away: r.away, ot: r.ot };
@@ -615,8 +620,8 @@ export function startClutch(lg: League, home: string, away: string, side: 'h' | 
   const h = lg.teams[home], a = lg.teams[away];
   const po = lg.phase === 'playoffs';
   const gen = gameGen(
-    teamIn(lg, h, rng),
-    teamIn(lg, a, rng),
+    teamIn(lg, h, rng, a.tid),
+    teamIn(lg, a, rng, h.tid),
     { season: lg.season, po, rng: new Rng(Math.floor(rng.next() * 2 ** 31)), ctl: { side, fromRem: CLUTCH_FROM, timeouts: 3 } },
   );
   saveRng(lg, rng);
@@ -674,8 +679,8 @@ function applySeries(lg: League, s: Series, home: string, res: GameResult) {
 export function playGame(lg: League, g: { home: string; away: string }, po: boolean, rng: Rng): GameResult {
   const h = lg.teams[g.home], a = lg.teams[g.away];
   const r = simGame(
-    teamIn(lg, h, rng),
-    teamIn(lg, a, rng),
+    teamIn(lg, h, rng, a.tid),
+    teamIn(lg, a, rng, h.tid),
     { season: lg.season, po, rng },
   );
   const res: GameResult = { id: lg.nextGameId++, season: lg.season, day: lg.day, po, home: r.home, away: r.away, ot: r.ot };

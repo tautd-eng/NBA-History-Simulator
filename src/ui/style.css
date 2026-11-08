@@ -915,3 +915,4 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .proj-role .role-badge { border-style: dashed; opacity: 0.85; }
 /* free agency and the draft: long player lists – use the whole screen */
 main.wide { max-width: 1920px; }
+.team-head select.mm-opp { font-size: 0.95rem; text-transform: none; letter-spacing: 0; font-weight: 600; }
