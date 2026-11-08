@@ -299,7 +299,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
         <button className="close ghost" onClick={close} aria-label="Close">✕</button>
         <div className="p-head">
           <button className="face-btn" title="Edit face" onClick={() => setEditFace(!editFace)}><PFace lg={lg} p={p} size={76} /></button>
-          <Ovr v={ovrOf(p.z)} />
+          {p.prospect ? <span className="ovr low" title="Overall stays hidden until he is drafted – judge him by his ratings">?</span> : <Ovr v={ovrOf(p.z)} />}
           <div>
             <h2>{p.name}</h2>
             <p className="dim">{p.pos} · {(p.ht * 0.0254).toFixed(2)} m · age {ageIn(p, lg.season)} · {p.tid ? <button className="link" onClick={() => openTeam(p.tid)}>{status}</button> : status}</p>

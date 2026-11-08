@@ -2,7 +2,7 @@
 // Off-season screens: draft day (one pick at a time), the free-agency hub
 // (three stages) and the free-agent list where the user makes offers.
 import { Linkify, PL, TL, nav } from './nav';
-import { RoleCell, roleSortKey } from './roles';
+import { RoleCell, roleSortKey, projectedZ } from './roles';
 import { money, usd, showDollars, dollarsOf } from './money';
 import { useMemo, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, RATING_LABELS, ratingOf, seasonInfo } from '../data';
@@ -24,13 +24,28 @@ import { posNum } from '../engine/game';
 export const moneyOf = (frac: number, s: number) => money(frac, s);
 export const potOf = (p: any, s: number) => shownFromBpm(peakBpm(p, s));
 const R = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
-/** Height and every rating, for lists where you choose players without opening their cards. */
-export function attrCols(pOf: (r: any) => any, S: number) {
+/** Height and every rating, for lists where you choose players without opening their cards.
+ *  `proj`: the ratings he projects to at his peak (the league's average development, skill by skill) instead of today's. */
+export function attrCols(pOf: (r: any) => any, S: number, proj = false) {
+  const cache = new Map<string, number[]>();
+  const zOf = (r: any) => { const p = pOf(r); if (!proj) return p.z; let z = cache.get(p.id); if (!z) { z = projectedZ(p, S); cache.set(p.id, z); } return z; };
   return [
     { key: 'role', label: 'Role', left: true, asc: true, title: 'Archetype – for a young player without a clear role yet, what he projects to become (proj.)', get: (r: any) => roleSortKey(pOf(r), S), fmt: (_: any, r: any) => <RoleCell p={pOf(r)} S={S} /> },
     { key: 'ht', label: 'Ht', title: 'Height, cm', get: (r: any) => Math.round(pOf(r).ht * 2.54) },
-    ...RATING_LABELS.map((L, i) => ({ key: 'r' + i, label: L.short, title: L.name + (L.tendency ? ' (a tendency, not a skill)' : ''), get: (r: any) => R(pOf(r), i), fmt: (v: any) => L.tendency ? <span className="dim">{v}</span> : v })),
+    ...RATING_LABELS.map((L, i) => ({ key: 'r' + i, label: L.short, title: L.name + (L.tendency ? ' (a tendency, not a skill)' : '') + (proj ? ' – projected at his peak' : ''), get: (r: any) => ratingOf(zOf(r)[L.k], L.inv), fmt: (v: any, r: any) => {
+      if (L.tendency) return <span className="dim">{v}</span>;
+      if (!proj) return v;
+      const d = v - ratingOf(pOf(r).z[L.k], L.inv);
+      return <span title={`Now ${v - d}`}>{v}{d >= 3 ? <span className="pos small-t"> +{d}</span> : d <= -3 ? <span className="neg small-t"> {d}</span> : null}</span>;
+    } })),
   ];
+}
+/** Today's ratings or the projected ones. */
+export function AttrMode({ proj, setProj }: any) {
+  return <div className="seg" role="group" aria-label="Ratings shown">
+    <button className={!proj ? 'on' : ''} onClick={() => setProj(false)}>Ratings now</button>
+    <button className={proj ? 'on' : ''} onClick={() => setProj(true)} title="What each rating projects to at his peak (around 27) if he develops like an average player – real players beat or miss it">Projected at peak</button>
+  </div>;
 }
 const POS = [['all', 'All'], ['g', 'Guards'], ['f', 'Forwards'], ['c', 'Centers']] as const;
 const posOk = (p: any, pos: string) => pos === 'all' || (pos === 'g' ? posNum(p.pos) <= 2.5 : pos === 'c' ? posNum(p.pos) >= 4.5 : posNum(p.pos) > 2.5 && posNum(p.pos) < 4.5);
@@ -44,6 +59,7 @@ const lastLine = (p: any) => [...p.career].reverse().find((c: any) => !c.po);
 export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTeam }: any) {
   const d = lg.draftDay && lg.draftDay.year === lg.season ? lg.draftDay : null;
   const [pos, setPos] = useState('all');
+  const [proj, setProj] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(600);
   const [reveal, setReveal] = useState(false);
@@ -89,9 +105,8 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
     { key: 'name', label: 'Player', left: true, get: (p: any) => p.name, fmt: (v: any, p: any) => <button className="link" onClick={() => openPlayer(p.id)}>{v}</button> },
     { key: 'pos', label: 'Pos', get: (p: any) => posNum(p.pos), fmt: (_: any, p: any) => <span className="dim">{p.pos}</span> },
     { key: 'age', label: 'Age', asc: true, get: (p: any) => ageIn(p, d.year + 1) },
-    { key: 'ovr', label: 'OVR', get: (p: any) => ovrOf(p.z), fmt: (v: any) => <Ovr v={v} /> },
-    { key: 'pot', label: 'Pot.', title: 'Potential – the GM\'s estimate of how good he can become', get: (p: any) => potOf(p, d.year + 1) },
-    ...attrCols((p: any) => p, d.year + 1),
+    { key: 'cons', label: 'Rank', title: 'Consensus rank of the scouts (overall and potential stay hidden until he is picked)', asc: true, get: (p: any) => p.draft?.realPick ?? 99 },
+    ...attrCols((p: any) => p, d.year + 1, proj),
     { key: 'act', label: '', get: () => 0, fmt: (_: any, p: any) => myTurn ? <button className={`small ${p.id === suggestion ? 'primary' : ''}`} onClick={() => act(() => draftPick(lg, p.id))}>Pick</button> : null },
   ];
   const recent = [...d.picks].reverse();
@@ -134,10 +149,11 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
         </div>
         <div className="def-row">
           <div className="seg" role="group" aria-label="Position">{POS.map(([k, l]) => <button key={k} className={pos === k ? 'on' : ''} onClick={() => setPos(k)}>{l}</button>)}</div>
+          <AttrMode proj={proj} setProj={setProj} />
           <span className="hint">{d.pool.length} players left on the board</span>
         </div>
-        <SortTable cols={cols} rows={board.map((p: any) => ({ ...p, key: p.id }))} initial="pot" limit={80} />
-        <p className="note">Pot – the scouts' estimate of how much a player can grow. It's imprecise: some rookies will surprise, some will disappoint.</p>
+        <SortTable cols={cols} rows={board.map((p: any) => ({ ...p, key: p.id }))} initial="cons" initialAsc limit={80} />
+        <p className="note">Overall and potential stay hidden until a player is drafted – judge him by his ratings, his role and the scouts' rank. “Projected at peak” shows where each rating heads if he develops like an average player; some rookies beat it, some never get there.</p>
       </section>
       <section className="col">
         <div className="panel">

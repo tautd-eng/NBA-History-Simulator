@@ -33,7 +33,7 @@ import { StatsView } from './stats';
 import { Reporter } from './reporter';
 import { fantasyAdvance } from '../league/fantasy';
 import { Trades } from './trades';
-import { DraftRoom, FAHub, FreeAgentsView, potOf } from './offseason';
+import { DraftRoom, FAHub, FreeAgentsView, potOf, attrCols, AttrMode } from './offseason';
 import { recallStash } from '../league/offseason';
 import { Rankings, offRating, defRating } from './rankings';
 import { fatigueAt, nextCal, fatigueExcess, fatigueLabel } from '../league/fatigue';
@@ -1125,6 +1125,7 @@ function FantasyResults({ lg, openPlayer }: any) {
 
 /** Next summer's class, public from the start of the season: consensus order and (with a team) your scouts' board. */
 function UpcomingClass({ lg, openPlayer }: any) {
+  const [proj, setProj] = useState(true);
   const c = lg.draftClass;
   if (!c) return null;
   const ps = c.pool.map((id: string) => lg.players[id]).filter((p: any) => p?.prospect);
@@ -1138,11 +1139,11 @@ function UpcomingClass({ lg, openPlayer }: any) {
     { key: 'name', label: 'Prospect', left: true, asc: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button> },
     { key: 'pos', label: 'Pos', left: true, get: (r: any) => r.p.pos },
     { key: 'age', label: 'Age', get: (r: any) => Math.floor(c.year + 1 - r.p.born) },
-    { key: 'ht', label: 'Height', get: (r: any) => r.p.ht, fmt: (v: any) => `${(v * 0.0254).toFixed(2)} m` },
+    ...attrCols((r: any) => r.p, c.year + 1, proj),
   ];
   return (
     <div className="panel">
-      <h2>{c.year} draft class</h2>
+      <div className="team-head"><h2>{c.year} draft class</h2><AttrMode proj={proj} setProj={setProj} /></div>
       <p className="dim">Announced at the start of the season – every front office scouts it all year and values this season's picks by how deep it is.{you ? ' Your board is your scouts\' view and your needs; other teams have their own, which you do not see.' : ''}</p>
       <SortTable cols={cols} rows={rows.slice(0, 60)} initial="cons" initialAsc={true} />
     </div>
