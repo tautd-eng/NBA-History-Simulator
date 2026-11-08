@@ -566,7 +566,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       // transition: a steal or a long rebound starts a break before the defence is set
       const pushes = offCall === 'quick' || offCall === 'two4one' ? 1.5 : offCall === 'milk' || offCall === 'hold' ? 0 : 1;
       // a team that crashes the offensive glass gives up more breaks after its misses
-      fastBreak = defCall !== 'foul' && rem > 4 && rng.chance((ended === 'stl' ? C.fbStl : ended === 'drb' ? C.fbDrb * (1 + 0.5 * def.tac.crash) * (1 - 0.4 * (off.tac.dreb ?? 0)) : 0) * pushes * (1 + 0.15 * off.paceZ + 0.15 * off.tac.pace));
+      fastBreak = defCall !== 'foul' && rem > 4 && rng.chance((ended === 'stl' ? C.fbStl : ended === 'drb' ? C.fbDrb * (1 + 1.1 * def.tac.crash) * (1 - ((off.tac.dreb ?? 0) < 0 ? 0.9 : 0.6) * (off.tac.dreb ?? 0)) : 0) * pushes * (1 + 0.15 * off.paceZ + 0.15 * off.tac.pace));
       ended = 'dead';
       // --- one possession (may contain several plays through offensive rebounds)
       let first = true;
@@ -764,7 +764,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
 
     // turnover
     // ball pressure: his own defender's hands count as much as the team's
-    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + 0.12 * def.tac.press + 0.08 * Math.max(0, -(off.tac.focus ?? 0)) + 0.05 * (off.tac.pnr ?? 0) + (def.tac.cover === 'blitz' ? 0.15 : 0) + dblTov + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd) - eT);
+    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + 0.12 * def.tac.press + 0.08 * Math.max(0, -(off.tac.focus ?? 0)) + 0.05 * (off.tac.pnr ?? 0) + (def.tac.cover === 'blitz' ? 0.12 : 0) + dblTov + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd) - eT);
     if (rng.chance(pTov)) {
       inc(actor, 'tov');
       const sumStl = dOn.reduce((a, g) => a + g.stl, 0);
@@ -789,13 +789,13 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     // free-throw trip without a field-goal attempt (shooting foul / bonus)
     const defPf = dOn.reduce((a, g) => a + g.pf, 0) / 5;
     const r = Math.max(0, actor.drw - C.andOne * 0.5);
-    const qTrip = Math.min(0.45, (r / (2 + r)) * C.foulTrip * E.ftr * Math.sqrt(defPf / leaguePf) * (offCall === 'inside' ? 1.35 : 1) * (fb ? 1.2 : 1) * (1 + 0.25 * def.tac.press + 0.2 * (def.tac.phys ?? 0)) * (1 + 0.15 * (off.tac.post ?? 0)));
+    const qTrip = Math.min(0.45, (r / (2 + r)) * C.foulTrip * E.ftr * Math.sqrt(defPf / leaguePf) * (offCall === 'inside' ? 1.35 : 1) * (fb ? 1.2 : 1) * (1 + 0.25 * def.tac.press + 0.32 * (def.tac.phys ?? 0)) * (1 + 0.07 * (off.tac.post ?? 0)));
     if (rng.chance(qTrip)) {
       foulOn(def);
       return ftTrip(off, def, actor, 2);
     }
     // field-goal attempt
-    const sch = def.tac.scheme ?? 0, mov = Math.max(0, -(off.tac.focus ?? 0));
+    const sch = (def.tac.scheme ?? 0) * (seasonOf < 2002 ? 0.3 : 1), mov = Math.max(0, -(off.tac.focus ?? 0));
     let tprAdj = sigm(logit(Math.min(0.97, Math.max(0.003, actor.tpr))) + C.tpa + E.tpa + 0.45 * off.tac.three - 0.35 * sch
       - 0.35 * (OT.post ?? 0) * (actor.posNum >= 4 ? 1 : 0) + (DT.cover === 'drop' && actor.posNum <= 2.5 ? 0.25 : 0) + (DT.cover === 'blitz' ? 0.2 : 0) + (kick ? 0.8 : 0));
     // down three late there is no point in a two: everybody hunts a three, also after an offensive rebound
@@ -829,13 +829,13 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     let made: boolean;
     let blocker: GP | null = null;
     if (three) {
-      made = rng.chance(zoneP(sigm(logit(actor.p3) + C.p3 + E.p3 + shift - 0.12 * sch + 0.05 * mov - 0.05 * (DT.phys ?? 0) + (DT.cover === 'blitz' ? 0.05 : 0) + (kick ? 0.1 : 0) + single), zone));
+      made = rng.chance(zoneP(sigm(logit(actor.p3) + C.p3 + E.p3 + shift - (sch < 0 ? 0.17 : 0.12) * sch + 0.05 * mov - 0.05 * (DT.phys ?? 0) + (DT.cover === 'blitz' ? 0.12 : DT.cover === 'drop' && actor.posNum <= 2.5 ? 0.08 : 0) + 0.04 * Math.max(0, DT.press) + (kick ? 0.1 : 0) + single), zone));
     } else {
       // shots at the rim get blocked far more often than jumpers (same total)
       const rimW = zone.mix[0][0], blkZ = zone.k === 'rim' ? 1.4 / (rimW * 1.4 + (1 - rimW) * 0.45) : zone.k === 'mid' ? 0.45 / (rimW * 1.4 + (1 - rimW) * 0.45) : 1;
       const pBlk = Math.min(0.3, dOn.reduce((a, g) => a + g.blk, 0) * C.blk * E.blk * blkZ);
       const cov = DT.cover === 'drop' ? -0.03 : DT.cover === 'switch' ? (actor.posNum >= 4 ? 0.06 : -0.02) : 0;
-      const pMake = zoneP(sigm(logit(actor.p2) + C.p2 + E.p2 + shift + 0.12 * sch + 0.05 * mov + 0.04 * (OT.pnr ?? 0) - 0.05 * (DT.phys ?? 0) + cov + single), zone);
+      const pMake = zoneP(sigm(logit(actor.p2) + C.p2 + E.p2 + shift + (sch > 0 ? 0.08 : 0.08) * sch + (DT.cover === 'blitz' ? 0.04 : 0) + 0.04 * Math.max(0, DT.press) + 0.05 * mov + 0.04 * (OT.pnr ?? 0) - 0.05 * (DT.phys ?? 0) + cov + single), zone);
       if (rng.chance(pBlk)) {
         lastBlocked = true;
         blocker = dOn[rng.weighted(dOn.map(g => g.blk * (g === md ? 2.5 : 1)))];
@@ -901,8 +901,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   }
 
   function rebound(off: Side, def: Side, ft: boolean): 'end' | 'orb' {
-    const O = off.on.reduce((a, g) => a + g.orb, 0) * C.orb * E.orb * (ft ? C.orbFt : 1) * (1 + (off.tac.crash > 0 ? 0.14 : 0.07) * off.tac.crash);
-    const D = def.on.reduce((a, g) => a + g.drb, 0) * (1 + 0.12 * (def.tac.dreb ?? 0));
+    const O = off.on.reduce((a, g) => a + g.orb, 0) * C.orb * E.orb * (ft ? C.orbFt : 1) * (1 + (off.tac.crash > 0 ? 0.11 : 0.07) * off.tac.crash);
+    const D = def.on.reduce((a, g) => a + g.drb, 0) * (1 + 0.09 * (def.tac.dreb ?? 0));
     if (rng.chance(O / (O + D))) {
       const g = off.on[rng.weighted(off.on.map(g => g.orb))];
       inc(g, 'orb'); orbBy = g;

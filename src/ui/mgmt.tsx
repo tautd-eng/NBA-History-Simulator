@@ -16,7 +16,7 @@ export const mgmtOf = (lg: any) => { const t = lg.teams[lg.userTid]; return (t.m
 
 // tactics as a coach sets them (NBA 2K-style points of emphasis), turned into the engine's numbers
 type Opt = { k: string; t: string; v: Record<string, any>; d?: string };
-const GROUPS: { k: string; t: string; side: 'o' | 'd'; d: string; opts: Opt[]; from?: number }[] = [
+export const GROUPS: { k: string; t: string; side: 'o' | 'd'; d: string; opts: Opt[]; from?: number }[] = [
   { k: 'of', t: 'Offensive focus', side: 'o', d: 'Who takes the shots and from where.', opts: [
     { k: 'neutral', t: 'Neutral', v: {} },
     { k: 'star', t: 'Play through star', v: { focus: 1 }, d: 'Your best scorers take more of the shots.' },
@@ -65,7 +65,7 @@ const GROUPS: { k: string; t: string; side: 'o' | 'd'; d: string; opts: Opt[]; f
     { k: 'never', t: 'Never', v: { zone: -1 } }, { k: 'auto', t: 'Auto', v: {} }, { k: 'often', t: 'Often', v: { zone: 1 } },
   ] },
 ];
-const SYSTEMS: { k: string; t: string; d: string; set: Record<string, string> }[] = [
+export const SYSTEMS: { k: string; t: string; d: string; set: Record<string, string> }[] = [
   { k: 'balanced', t: 'Balanced', d: 'Nothing forced.', set: {} },
   { k: 'grit', t: 'Grit and Grind', d: 'Slow, inside, physical, every board.', set: { of: 'post', tempo: 'patient', oreb: 'crash', df: 'paint', aggr: 'phys', dreb: 'crash' } },
   { k: 'space', t: 'Pace and Space', d: 'Push it, shooters open, get back.', set: { of: 'shooters', tempo: 'push', oreb: 'limit', df: 'perim', dreb: 'run' } },
@@ -77,7 +77,7 @@ const SYSTEMS: { k: string; t: string; d: string; set: Record<string, string> }[
   { k: 'defense', t: 'Defense first', d: 'Slow, physical, protect the rim, double the star.', set: { tempo: 'patient', df: 'paint', aggr: 'phys', dreb: 'crash', dbl: 'always' } },
 ];
 /** The engine's numbers from the coach's choices. */
-function tacFrom(ch: Record<string, string>) {
+export function tacFrom(ch: Record<string, string>) {
   const t: any = { pace: 0, three: 0, crash: 0, press: 0 };
   for (const g of GROUPS) Object.assign(t, (g.opts.find(o => o.k === ch[g.k]) ?? g.opts.find(o => !Object.keys(o.v).length) ?? g.opts[0]).v);
   return t;
