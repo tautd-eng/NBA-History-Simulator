@@ -137,7 +137,7 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
     expertPull(lg);
     realLastSeason(lg);
     // who starts the season injured
-    for (const [pid, [k, g]] of Object.entries(OUT_2027)) {
+    for (const [pid, [k, g]] of lg.settings?.noInjuries ? [] : Object.entries(OUT_2027)) {
       const p = lg.players[pid];
       if (!p) continue;
       p.injury = g; p.inj = { k, until: g * 2 };
@@ -1013,6 +1013,8 @@ export { LAST_SEASON };
  */
 export function applySettings(lg: League, st: Settings): 'now' | 'next' {
   lg.settings = { ...st };
+  // injuries off: everyone who is hurt is healthy again
+  if (st.noInjuries) for (const p of Object.values(lg.players)) if (p.injury || p.inj) { p.injury = 0; delete p.inj; delete (p as any).injAt; }
   if (lg.phase === 'regular' && !lg.schedule.some(g => g.done)) {
     const rng = rngOf(lg);
     lg.schedule = makeSchedule(activeTeams(lg), seasonGames(lg), rng, lg.nextGameId);

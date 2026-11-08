@@ -78,6 +78,7 @@ function gamesOut(rng: Rng, t: InjType, age: number, scale: number) {
 /** Before a game: may this player get hurt during it, and after how many of his minutes? */
 export function rollGameInjury(lg: League, p: Player, rng: Rng, fatigueExcess: number) {
   delete p.injAt;
+  if (lg.settings?.noInjuries) return;
   const gp = p.cur.gp + p.curPo.gp;
   const expMin = gp ? (p.cur.min + p.curPo.min) / gp : 18;
   if (expMin < 1) return;
@@ -87,6 +88,7 @@ export function rollGameInjury(lg: League, p: Player, rng: Rng, fatigueExcess: n
 
 /** Calendar day for injury bookkeeping (same calendar as fatigue). */
 export function injure(lg: League, p: Player, cal: number, rng: Rng, where: 'game' | 'off') {
+  if (lg.settings?.noInjuries) return;
   const age = ageIn(p, lg.season);
   const t = pickType(rng, age);
   const g = gamesOut(rng, t, age, seasonScale(lg));
@@ -127,7 +129,7 @@ export function offDayInjuries(lg: League, cal: number, rng: Rng) {
   const last = lg.injCal ?? cal;
   const days = Math.max(0, cal - last);
   lg.injCal = cal;
-  if (!days) return;
+  if (!days || lg.settings?.noInjuries) return;
   for (const t of Object.values(lg.teams)) {
     if (!t.active) continue;
     for (const pid of t.roster) {
