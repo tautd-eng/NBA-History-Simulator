@@ -59,7 +59,7 @@ const lastLine = (p: any) => [...p.career].reverse().find((c: any) => !c.po);
 export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTeam }: any) {
   const d = lg.draftDay && lg.draftDay.year === lg.season ? lg.draftDay : null;
   const [pos, setPos] = useState('all');
-  const [proj, setProj] = useState(false);
+  const proj = false;
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(600);
   const [reveal, setReveal] = useState(false);
@@ -149,11 +149,10 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
         </div>
         <div className="def-row">
           <div className="seg" role="group" aria-label="Position">{POS.map(([k, l]) => <button key={k} className={pos === k ? 'on' : ''} onClick={() => setPos(k)}>{l}</button>)}</div>
-          <AttrMode proj={proj} setProj={setProj} />
           <span className="hint">{d.pool.length} players left on the board</span>
         </div>
         <SortTable cols={cols} rows={board.map((p: any) => ({ ...p, key: p.id }))} initial="cons" initialAsc limit={80} />
-        <p className="note">Overall and potential stay hidden until a player is drafted – judge him by his ratings, his role and the scouts' rank. “Projected at peak” shows where each rating heads if he develops like an average player; some rookies beat it, some never get there.</p>
+        <p className="note">Overall and potential stay hidden until a player is drafted – judge him by his ratings, his role and the scouts' rank.</p>
       </section>
       <section className="col">
         <div className="panel">

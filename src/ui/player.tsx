@@ -221,7 +221,7 @@ function Ovr({ v, small }: any) {
   return <span className={`ovr ${tier}${small ? ' sm' : ''}`}>{v}</span>;
 }
 
-export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
+export function PlayerPanel({ lg, pid, close, openTeam, onChange, findTrades }: any) {
   const p = lg.players[pid];
   const [tab, setTab] = useState<'stats' | 'prog' | 'inj' | 'hist'>('stats');
   const [po, setPo] = useState(false);
@@ -307,6 +307,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange }: any) {
             {p.draft?.tid && <p className="dim">Draft {p.draft.year}: No. {p.draft.pick} ({lg.teams[p.draft.tid]?.abbr ?? p.draft.tid})</p>}
             {(p as any).stash && <p className="dim">Playing overseas – expected to come over for {(p as any).stash - 1}–{String((p as any).stash).slice(2)}.{(p as any).rights === lg.userTid && <> <button className="small primary" onClick={() => { const r = recallStash(lg, p.id); setRecallMsg(r.msg); onChange?.(); bump(x => x + 1); }}>Bring him over now</button></>}</p>}
             {recallMsg && <p className="hint">{recallMsg}</p>}
+            {findTrades && p.tid && lg.userTid && lg.teams[p.tid]?.active && lg.phase !== 'fantasy' && <p><button className="small" onClick={() => findTrades(p.id)} title={p.tid === lg.userTid ? 'Deals other teams would take for him' : 'What it would take to get him'}>{p.tid === lg.userTid ? 'Find trades for him' : 'Find a trade for him'}</button></p>}
           </div>
         </div>
         {editFace && <FaceEditor p={p} season={lg.season} onChange={() => bump(x => x + 1)} />}

@@ -2,7 +2,7 @@
 // Trade screen: build a proposal with another team and see the AI's answer before sending it.
 import { TL } from './nav';
 import { money, usd } from './money';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, seasonInfo } from '../data';
 import { ageIn } from '../players';
 import { aiResponse, executeTrade, fillRoster, ensurePicks, deadlineDay, pastDeadline, describeAssets, tradeableValue, pickTradeValue, pickUsed, rightOptions, describeRight, rightTradeValue, pickTied } from '../ai/trades';
@@ -26,13 +26,17 @@ function Assets({ lg, xs, openPlayer, info }: any) {
     : x.right ? describeRight(lg, x.right) : `${x.pick.season} ${x.pick.round === 1 ? '1st' : '2nd'}-round pick (${lg.teams[x.pick.orig]?.abbr ?? x.pick.orig})`}</span>)}</>;
 }
 
-export function Trades({ lg, openPlayer, onDone }: any) {
+export function Trades({ lg, openPlayer, onDone, seed }: any) {
   ensurePicks(lg);
   const teams = Object.values(lg.teams).filter((t: any) => t.active).sort((a: any, b: any) => a.name.localeCompare(b.name));
-  const [a, setA] = useState(lg.userTid ?? teams[0].tid);
-  const [b, setB] = useState(teams.find((t: any) => t.tid !== (lg.userTid ?? teams[0].tid)).tid);
-  const [selA, setSelA] = useState<Set<string>>(new Set());
-  const [selB, setSelB] = useState<Set<string>>(new Set());
+  // opened from a player's card: he is on the table – yours to offer, or theirs to get
+  const sp = seed ? lg.players[seed] : null;
+  const me0 = lg.userTid ?? teams[0].tid;
+  const mineSeed = sp && sp.tid === me0;
+  const [a, setA] = useState(me0);
+  const [b, setB] = useState(sp && !mineSeed && sp.tid ? sp.tid : teams.find((t: any) => t.tid !== me0).tid);
+  const [selA, setSelA] = useState<Set<string>>(new Set(mineSeed ? ['p:' + sp.id] : []));
+  const [selB, setSelB] = useState<Set<string>>(new Set(sp && !mineSeed && sp.tid ? ['p:' + sp.id] : []));
   const [msg, setMsg] = useState<string | null>(null);
 
   const assets = (sel: Set<string>, tid: string) => {
@@ -62,6 +66,7 @@ export function Trades({ lg, openPlayer, onDone }: any) {
     }, 30);
   };
   const keyOf = (x: any) => x.pid ? 'p:' + x.pid : 'k:' + pkKey(x.pick);
+  useEffect(() => { if (sp?.tid) { find(); setTimeout(() => document.querySelector('.finder')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80); } }, []);
   const load = (r: any) => { setB(r.tid); setSelA(new Set(r.gives.map(keyOf))); setSelB(new Set(r.gets.map(keyOf))); setMsg(null); };
   const force = () => {
     if (ruleAny) return;

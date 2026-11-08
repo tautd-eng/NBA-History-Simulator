@@ -207,6 +207,7 @@ function App() {
   }
 
   const [more, setMore] = useState(false);
+  const [tradeSeed, setTradeSeed] = useState<{ pid: string; n: number } | null>(null);
   if (!ready) return <div className="loading">Loading league…</div>;
   const switchTo = async (id: string) => {
     setSlot(id);
@@ -252,7 +253,7 @@ function App() {
         {lg.phase !== 'fantasy' && tab === 'valdymas' && <TeamMgmt key={lg.userTid ?? ''} lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'reitingai' && <Rankings lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'laisvieji' && <FreeAgentsView lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
-        {lg.phase !== 'fantasy' && tab === 'mainai' && <Trades key={lg.userTid ?? ''} lg={lg} openPlayer={openPlayer} onDone={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
+        {lg.phase !== 'fantasy' && tab === 'mainai' && <Trades key={(lg.userTid ?? '') + (tradeSeed?.n ?? '')} seed={tradeSeed?.pid} lg={lg} openPlayer={openPlayer} onDone={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'komandos' && <TeamView lg={lg} tid={team ?? 'LAL'} setTid={setTeam} openPlayer={openPlayer} openGame={openGame} />}
         {lg.phase !== 'fantasy' && tab === 'draftai' && <div className="col"><Drafts lg={lg} openPlayer={openPlayer} openTeam={openTeam} />{lg.fantasy?.done && <FantasyResults lg={lg} openPlayer={openPlayer} />}</div>}
         {lg.phase !== 'fantasy' && tab === 'istorija' && <HistoryView lg={lg} openPlayer={openPlayer} openTeam={openTeam} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
@@ -275,7 +276,7 @@ function App() {
         onFinish={async () => { finishClutch(lg, clutch); bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {gameView && <GameModal lg={lg} res={gameView} close={() => setGameView(null)} hold={!!player} openPlayer={(pid: string) => setPlayer(pid)} />}
       {live && <LiveGame lg={lg} data={live} close={closeLive} hold={!!player} openPlayer={(pid: string) => setPlayer(pid)} />}
-      {player && <PlayerPanel lg={lg} pid={player} close={() => setPlayer(null)} openTeam={(t) => { setPlayer(null); openTeam(t); }} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
+      {player && <PlayerPanel lg={lg} pid={player} findTrades={(pid: string) => { setPlayer(null); setTradeSeed({ pid, n: Date.now() }); go('mainai'); }} close={() => setPlayer(null)} openTeam={(t) => { setPlayer(null); openTeam(t); }} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
     </div>
   );
 }
@@ -1125,7 +1126,7 @@ function FantasyResults({ lg, openPlayer }: any) {
 
 /** Next summer's class, public from the start of the season: consensus order and (with a team) your scouts' board. */
 function UpcomingClass({ lg, openPlayer }: any) {
-  const [proj, setProj] = useState(true);
+  const proj = false;
   const c = lg.draftClass;
   if (!c) return null;
   const ps = c.pool.map((id: string) => lg.players[id]).filter((p: any) => p?.prospect);
@@ -1143,7 +1144,7 @@ function UpcomingClass({ lg, openPlayer }: any) {
   ];
   return (
     <div className="panel">
-      <div className="team-head"><h2>{c.year} draft class</h2><AttrMode proj={proj} setProj={setProj} /></div>
+      <h2>{c.year} draft class</h2>
       <p className="dim">Announced at the start of the season – every front office scouts it all year and values this season's picks by how deep it is.{you ? ' Your board is your scouts\' view and your needs; other teams have their own, which you do not see.' : ''}</p>
       <SortTable cols={cols} rows={rows.slice(0, 60)} initial="cons" initialAsc={true} />
     </div>
