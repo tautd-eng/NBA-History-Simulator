@@ -898,3 +898,5 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .tac-sys .sys.on { outline: 2px solid var(--accent); background: var(--accent-soft); }
 .tac > .why-t { display: block; margin-top: 4px; }
 .tac { display: flex; flex-direction: column; }
+.tbl.roster .role-col { min-width: 230px; max-width: 320px; white-space: normal; line-height: 1.3; }
+.tbl.roster .role-col .role-badge { margin-right: 4px; }

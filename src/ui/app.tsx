@@ -997,13 +997,19 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
       <div className="tbl-wrap">
           <table className="tbl roster">
             <thead><tr>
-              <th className="l">Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>GP</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>FG%</th><th>3P%</th><th title="Fatigue before the next game">Fat.</th><th className="l">Contract</th>
+              <th className="l">Player</th><th>Pos</th><th className="l role-col">Role</th><th>Age</th><th>OVR</th><th>GP</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>FG%</th><th>3P%</th><th title="Fatigue before the next game">Fat.</th><th className="l">Contract</th>
             </tr></thead>
             <tbody>
               {roster.map((p: any) => (
                 <tr key={p.id}>
                   <td className="l"><PFace lg={lg} p={p} /><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button>{plan?.core.includes(p.id) && <span className="chip tiny" title="Core player – the team builds around him">core</span>}{plan?.rising.includes(p.id) && <span className="chip tiny" title="Young piece – he gets minutes and is not shopped">young</span>}{p.injury > 0 && <span className="inj" title={p.inj ? `${injName(p.inj.k)} – out ~${p.injury} more games` : 'Injured'}>+{p.injury}</span>}{p.entered === (lg.phase === 'regular' || lg.phase === 'playoffs' || lg.phase === 'freeagency' ? lg.season : lg.season + 1) && <span className="chip tiny">R</span>}</td>
-                  <td className="dim">{p.pos} <RoleBadge id={roleOf(p.z, p.pos).arch.id} small /></td>
+                  <td className="dim">{p.pos}</td>
+                  <td className="l role-col">{(() => {
+                    const ro = roleOf(p.z, p.pos);
+                    const mpg = p.cur.gp ? p.cur.min / p.cur.gp : 0, gs = p.cur.gp ? p.cur.gs / p.cur.gp : 0;
+                    const job = !p.cur.gp ? '' : gs >= 0.6 ? 'starter' : mpg >= 24 ? 'sixth man' : mpg >= 15 ? 'rotation' : mpg >= 8 ? 'spot minutes' : 'end of bench';
+                    return <><RoleBadge id={ro.arch.id} />{ro.second && <RoleBadge id={ro.second.id} small />}<br /><span className="dim small-t">{ro.arch.blurb}{job ? ` · ${job}` : ''}</span></>;
+                  })()}</td>
                   <td>{ageIn(p, lg.season)}</td>
                   <td><Ovr v={ovrOf(p.z)} small /></td>
                   <td>{p.cur.gp || '–'}</td>
