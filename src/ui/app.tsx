@@ -246,7 +246,7 @@ function App() {
           <p className="more-ver">Version {BUILD}</p>
         </div>
       </div>}
-      <main>
+      <main className={tab === 'laisvieji' || (tab === 'apzvalga' && (lg.phase === 'freeagency' || lg.phase === 'draft')) ? 'wide' : ''}>
         {lg.phase === 'fantasy' && <FantasyRoom lg={lg} openPlayer={openPlayer} onTick={bump} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'apzvalga' && <Overview lg={lg} openTeam={openTeam} openPlayer={openPlayer} openGame={openGame} watch={watch} clutch={clutchStart} busy={!!busy || !!clutch} sampler={sampler} goFA={() => go('laisvieji')} onTick={bump} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'valdymas' && <TeamMgmt key={lg.userTid ?? ''} lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}

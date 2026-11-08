@@ -500,7 +500,7 @@ details.more[open] { display: flex; flex-direction: column; gap: 14px; }
 .offer { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
 .offer > div { flex: 1 1 100%; }
 .offer input { width: 7em; margin-left: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 4px 6px; color: var(--ink); }
-.fa-grid { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); }
+.fa-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, 440px); }
 .view-toggle { margin-left: auto; }
 .pr-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent); vertical-align: middle; margin-right: 6px; }
 @media (max-width: 760px) { .kv > div > .dim:first-child { display: block; min-width: 0; } }
@@ -913,3 +913,5 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .tbl.sortable th:first-child, .tbl.sortable td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
 .tbl.sortable tr.mine td:first-child { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
 .proj-role .role-badge { border-style: dashed; opacity: 0.85; }
+/* free agency and the draft: long player lists – use the whole screen */
+main.wide { max-width: 1920px; }

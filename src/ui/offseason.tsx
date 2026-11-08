@@ -262,12 +262,12 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
   const tm = (tid: string) => tid && lg.teams[tid] ? <TL tid={tid} abbr /> : <span className="dim">–</span>;
   const availCols = [
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (_: any, r: any) => <>{nm(r.p)}{r.p.rfa ? <span className="chip tiny rfa" title={`Restricted: the ${lg.teams[r.p.rfa]?.name} can match`}>RFA</span> : null}</> },
+    { key: 'ask', label: 'Asks', get: (r: any) => (u ? faDemand(lg, r.p, u.tid, preferredYears(r.p, N)) : askingSalary(r.p, N)), fmt: (v: any) => moneyOf(v, N) },
     { key: 'pos', label: 'Pos', get: (r: any) => posNum(r.p.pos), fmt: (_: any, r: any) => <span className="dim">{r.p.pos}</span> },
     { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, N) },
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
     { key: 'pot', label: 'Pot.', get: (r: any) => potOf(r.p, N) },
     { key: 'from', label: 'Last team', left: true, get: (r: any) => lg.teams[r.from]?.abbr ?? '', fmt: (_: any, r: any) => tm(r.from) },
-    { key: 'ask', label: 'Asks', get: (r: any) => (u ? faDemand(lg, r.p, u.tid, preferredYears(r.p, N)) : askingSalary(r.p, N)), fmt: (v: any) => moneyOf(v, N) },
     { key: 'int', label: 'Interest', title: 'AI teams that would make him an offer right now – the one he likes best first', left: true, get: (r: any) => market.get(r.p.id)?.length ?? -1,
       fmt: (_: any, r: any) => { const o = market.get(r.p.id); if (!o) return <span className="dim">–</span>; if (!o.length) return <span className="dim">no offers</span>;
         return <button className="link-btn" onClick={() => setOffersOf(r.p.id)} title={`${o.length} teams would offer – leaning towards ${lg.teams[o[0].tid].name}. Click for all offers.`}><b>{o.length}</b> <span className="dim">→</span> {lg.teams[o[0].tid].abbr} <span className="chip tiny">offers</span></button>; } },
@@ -380,7 +380,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
       </section>
     </div>
     {fa.stage >= 1 && (
-      <div className="grid-2">
+      <div className="grid-2 fa-grid">
         <section className="panel">
           <div className="team-head"><h2>Still available</h2><span className="dim">{avail.length} players (OVR 55+)</span><button className="small" onClick={goFA}>Make offers</button></div>
           <SortTable cols={availCols} rows={avail} initial="ovr" limit={60} />
@@ -498,6 +498,8 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
   const pick = (r: any) => { setSel(r.p.id); setMsg(null); };
   const cols = [
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <><button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button>{r.p.bird && r.p.bird === lg.userTid ? <span className="chip tiny">yours</span> : null}{offersOn(lg, r.p.id).some((o: any) => o.tid === lg.userTid) ? <span className="chip tiny on-clock" title="You made him an offer">offer made</span> : null}{r.p.rfa ? <span className="chip tiny rfa" title={`Restricted free agent: the ${lg.teams[r.p.rfa]?.name} can match an offer`}>RFA {lg.teams[r.p.rfa]?.abbr}</span> : null}</> },
+    { key: 'need', label: 'Asks', title: 'What he asks from your team (for the length he would pick himself)', get: (r: any) => r.need, fmt: (v: any) => moneyOf(v, N) },
+    ...(u ? [{ key: 'disc', label: 'For you', title: 'Discount he gives your team (+) or premium he wants (−) compared to his market price', get: (r: any) => discount(lg, r.p, u.tid), fmt: (v: any, r: any) => <span className={v > 0.02 ? 'pos' : v < -0.02 ? 'neg' : 'dim'} title={reasons(lg, r.p, u.tid).map(x => x.t).join('; ') || 'he doesn\'t mind either way'}>{v > 0 ? '+' : ''}{Math.round(v * 100)}%</span> }] : []),
     { key: 'pos', label: 'Pos', get: (r: any) => posNum(r.p.pos), fmt: (_: any, r: any) => <span className="dim">{r.p.pos}</span> },
     { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, N) },
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
@@ -507,8 +509,6 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
     { key: 'pts', label: 'Pts', get: (r: any) => (r.l?.gp ? r.l.pts / r.l.gp : null), fmt: f1 },
     { key: 'reb', label: 'Reb', get: (r: any) => (r.l?.gp ? (r.l.orb + r.l.drb) / r.l.gp : null), fmt: f1 },
     { key: 'ast', label: 'Ast', get: (r: any) => (r.l?.gp ? r.l.ast / r.l.gp : null), fmt: f1 },
-    { key: 'need', label: 'Asks', get: (r: any) => r.need, fmt: (v: any) => moneyOf(v, N) },
-    ...(u ? [{ key: 'disc', label: 'For you', title: 'Discount he gives your team (+) or premium he wants (−) compared to his market price', get: (r: any) => discount(lg, r.p, u.tid), fmt: (v: any, r: any) => <span className={v > 0.02 ? 'pos' : v < -0.02 ? 'neg' : 'dim'} title={reasons(lg, r.p, u.tid).map(x => x.t).join('; ') || 'he doesn\'t mind either way'}>{v > 0 ? '+' : ''}{Math.round(v * 100)}%</span> }] : []),
     ...(canSign ? [{ key: 'act', label: '', get: () => 0, fmt: (_: any, r: any) => <button className={`small ${sel === r.p.id ? 'primary' : ''}`} onClick={() => pick(r)}>Negotiate</button> }] : []),
   ];
   const sp = sel ? lg.players[sel] : null;
