@@ -10,7 +10,7 @@ import { discount, reasons } from '../league/prefs';
 import { isFreeAgent } from '../ai/trades';
 import {
   initDraft, draftOnClock, draftAdvance, draftPick, draftSuggest, finishDraft,
-  enterFreeAgency, faStage, startSeason, faOffer, faDemand, faRenounce, faRelease, faDecide, faMatch, prevTeam,
+  enterFreeAgency, faStage, startSeason, faOffer, faDemand, faRenounce, faRelease, faDecide, faMatch, prevTeam, faOffersFor,
 } from '../league/offseason';
 import { DecisionsBoard } from './offsteps';
 import { SortTable, f1 } from './sorttable';
@@ -214,7 +214,17 @@ const STAGE_TXT = [
 export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
   const fa = lg.fa;
   const [msg, setMsg] = useState<string | null>(null);
+  const [offersOf, setOffersOf] = useState<string | null>(null);
+  // the market right now: which teams would make each of the best free agents an offer
+  const market = useMemo(() => {
+    const m = new Map<string, any[]>();
+    if (!fa || fa.stage < 1 || fa.stage > 3) return m;
+    const top = Object.values(lg.players).filter((p: any) => isFreeAgent(lg, p)).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z)).slice(0, 80);
+    for (const p of top as any[]) m.set(p.id, faOffersFor(lg, p));
+    return m;
+  }, [fa?.stage, fa?.log.length, lg.trades?.length]);
   if (!fa) return null;
+  if (fa.stage === 1 && !fa.sumSeen) return <OptionsSummary lg={lg} openPlayer={openPlayer} onOpen={() => { fa.sumSeen = true; onChange(); try { window.scrollTo({ top: 0 }); } catch { /* */ } }} />;
   const act = (fn: () => any) => { const r = fn(); if (r?.msg) setMsg(r.msg); onChange(); };
   const N = lg.season;
   const u = lg.userTid ? lg.teams[lg.userTid] : null;
@@ -248,6 +258,9 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
     { key: 'pot', label: 'Pot.', get: (r: any) => potOf(r.p, N) },
     { key: 'from', label: 'Last team', left: true, get: (r: any) => lg.teams[r.from]?.abbr ?? '', fmt: (_: any, r: any) => tm(r.from) },
     { key: 'ask', label: 'Asks', get: (r: any) => (u ? faDemand(lg, r.p, u.tid) : askingSalary(r.p, N)), fmt: (v: any) => moneyOf(v, N) },
+    { key: 'int', label: 'Interest', title: 'AI teams that would make him an offer right now – the one he likes best first', left: true, get: (r: any) => market.get(r.p.id)?.length ?? -1,
+      fmt: (_: any, r: any) => { const o = market.get(r.p.id); if (!o) return <span className="dim">–</span>; if (!o.length) return <span className="dim">no offers</span>;
+        return <button className="link-btn" onClick={() => setOffersOf(r.p.id)} title={`${o.length} teams would offer – leaning towards ${lg.teams[o[0].tid].name}. Click for all offers.`}><b>{o.length}</b> <span className="dim">→</span> {lg.teams[o[0].tid].abbr} <span className="chip tiny">offers</span></button>; } },
   ];
   const signedCols = [
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (_: any, r: any) => nm(r.p) },
@@ -261,12 +274,13 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
   ];
   return (
     <div className="col">
+    {offersOf && <OffersDialog lg={lg} p={lg.players[offersOf]} offers={market.get(offersOf) ?? faOffersFor(lg, lg.players[offersOf])} close={() => setOffersOf(null)} openPlayer={openPlayer} />}
     <div className="grid-2">
       <section className="col">
         <div className="panel accent">
           <div className="team-head">
-            <h2>Free agency · {N - 1}–{String(N).slice(2)}</h2>
-            <div className="seg stage-seg" aria-label="Free agency stages">{[0, 1, 2, 3].map(s => <span key={s} className={`chip ${fa.stage === s ? 'on-clock' : fa.stage > s ? 'past' : ''}`}>{s ? `Wave ${s}` : 'Decisions'}</span>)}</div>
+            <h2>{fa.stage === 0 ? `Options & contract decisions · ${N - 1}–${String(N).slice(2)}` : `Free agency · ${N - 1}–${String(N).slice(2)}`}</h2>
+            {fa.stage > 0 && <div className="seg stage-seg" aria-label="Free agency stages">{[1, 2, 3].map(s => <span key={s} className={`chip ${fa.stage === s ? 'on-clock' : fa.stage > s ? 'past' : ''}`}>Wave {s}</span>)}</div>}
           </div>
           <p className="note">{fa.stage <= 3 ? STAGE_TXT[fa.stage] : 'Free agency is over. When the season starts, teams with fewer than 13 players will sign minimum deals, and teams with more than 15 will release their weakest.'}</p>
           {u && <div className="kv">
@@ -274,7 +288,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
           </div>}
           <div className="def-row">
             {fa.stage <= 3
-              ? <button className="primary" onClick={() => act(() => faStage(lg))}>{fa.stage === 0 ? 'Confirm decisions and open the market →' : `Finish wave ${fa.stage} →`}</button>
+              ? <button className="primary" onClick={() => act(() => faStage(lg))}>{fa.stage === 0 ? 'Confirm decisions →' : `Finish wave ${fa.stage} →`}</button>
               : <button className="primary" onClick={() => act(() => startSeason(lg))}>To the season preview →</button>}
             <button onClick={goFA}>All free agents</button>
           </div>
@@ -378,6 +392,77 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
         })}
       </div>
     )}
+    </div>
+  );
+}
+
+/** After the contract decisions: what happened, and who is on the market. */
+function OptionsSummary({ lg, openPlayer, onOpen }: any) {
+  const fa = lg.fa, N = lg.season;
+  const log = fa.log.filter((x: any) => x.st === 0 && x.pid && lg.players[x.pid]);
+  const d = (x: any) => x.desc ?? '';
+  const groups = [
+    ['Team options picked up', log.filter((x: any) => x.kind === 'option' && /exercised the option|you exercised/.test(d(x)))],
+    ['Team options declined', log.filter((x: any) => x.kind === 'option' && /team declined|you declined/.test(d(x)))],
+    ['Players opting out', log.filter((x: any) => x.kind === 'option' && /declined his player option/.test(d(x)))],
+    ['Players opting in', log.filter((x: any) => x.kind === 'option' && /exercised his player option/.test(d(x)))],
+    ['Re-signed before the market', log.filter((x: any) => x.kind === 'resign')],
+    ['Qualifying offers (restricted)', log.filter((x: any) => x.kind === 'qo')],
+  ] as const;
+  const market = Object.values(lg.players).filter((p: any) => isFreeAgent(lg, p) || fa.pending.includes(p.id)).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z)).slice(0, 15);
+  const row = (x: any, i: number) => { const p = lg.players[x.pid]; return <li key={i} className={x.tid === lg.userTid ? 'mine' : ''}><span className="yr">{x.tid ? <TL tid={x.tid} abbr /> : ''}</span><span><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">OVR {ovrOf(p.z)}, age {ageIn(p, N)}{x.sal && x.kind !== 'option' ? ` · ${moneyOf(x.sal, N)}${x.exp ? ` through ${x.exp}` : ''}` : ''}</span></span></li>; };
+  return (
+    <div className="col">
+      <div className="panel accent step-head">
+        <div className="team-head">
+          <h2>Contract decisions are in</h2>
+          <button className="primary" onClick={onOpen}>Open the market →</button>
+        </div>
+        <p className="note">What every team decided before free agency – and who is now on the market.</p>
+      </div>
+      <div className="grid-2">
+        <section className="col">
+          {groups.map(([t, xs]: any) => (
+            <div className="panel" key={t}>
+              <h2>{t} <span className="dim">({xs.length})</span></h2>
+              {xs.length ? <ul className="news">{[...xs].sort((a: any, b: any) => ovrOf(lg.players[b.pid].z) - ovrOf(lg.players[a.pid].z)).slice(0, 15).map(row)}</ul> : <p className="note">None.</p>}
+              {xs.length > 15 && <p className="note">…and {xs.length - 15} more.</p>}
+            </div>
+          ))}
+        </section>
+        <section className="col">
+          <div className="panel">
+            <h2>Best players on the market</h2>
+            <ul className="news">{market.map((p: any) => <li key={p.id}><span className="yr">{ovrOf(p.z)}</span><span><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">{p.pos} · age {ageIn(p, N)} · last with {lg.teams[prevTeam(p)]?.abbr ?? '–'}{p.rfa ? ` · restricted (${lg.teams[p.rfa]?.abbr} can match)` : ''}{fa.pending.includes(p.id) ? ' · your player – you negotiate first' : ''}</span></span></li>)}</ul>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/** Every offer a free agent has on the table right now, and how much he likes each one. */
+function OffersDialog({ lg, p, offers, close, openPlayer }: any) {
+  const N = lg.season, u = lg.userTid;
+  const best = Math.max(0.01, ...offers.map((o: any) => o.score));
+  return (
+    <div className="overlay center" onClick={close}>
+      <div className="dialog offers-dlg" role="dialog" aria-label={`Offers for ${p.name}`} onClick={e => e.stopPropagation()}>
+        <div className="team-head"><h2>Offers for {p.name}</h2><button className="ghost small" onClick={close}>Close</button></div>
+        <p className="note">OVR {ovrOf(p.z)} · age {ageIn(p, N)} · asks about {moneyOf(offers[0]?.ask ?? askingSalary(p, N), N)}{p.rfa ? <> · restricted: the <TL tid={p.rfa} /> can match any offer</> : ''}. What AI teams would offer right now and how much he likes each deal (money against his ask, plus winning, role, loyalty and the city). Offers are made at the end of the wave; until then they can still change.</p>
+        {offers.length ? <ul className="offers">
+          {offers.map((o: any, i: number) => {
+            const why = reasons(lg, p, o.tid).slice(0, 2).map((x: any) => x.t).join('; ');
+            return <li key={o.tid} className={i === 0 ? 'lead' : ''}>
+              <span className="o-team"><TL tid={o.tid} />{i === 0 ? <span className="chip tiny on-clock">leaning</span> : null}{o.mle ? <span className="chip tiny" title="Mid-level exception">MLE</span> : null}{o.needRoom ? <span className="chip tiny" title="His own team – would clear room to keep him">Bird rights</span> : null}</span>
+              <span className="o-money"><b>{moneyOf(o.sal, N)}</b> × {o.yrs} yrs</span>
+              <span className="o-bar" title={`His interest: ${Math.round(100 * o.score / best)}% of his favourite offer`}><span style={{ width: `${Math.max(4, Math.min(100, 100 * o.score / best))}%` }}></span></span>
+              {why && <span className="o-why dim">{why}</span>}
+            </li>;
+          })}
+        </ul> : <p className="note">No AI team would make him an offer right now.</p>}
+        {u && <p className="note">From your team he asks {moneyOf(faDemand(lg, p, u), N)}{reasons(lg, p, u).length ? ` (${reasons(lg, p, u).slice(0, 2).map((x: any) => x.t).join('; ')})` : ''}. Make your offer under “Free agents”.</p>}
+      </div>
     </div>
   );
 }

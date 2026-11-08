@@ -28,7 +28,8 @@ export function stepOnce(lg: League): boolean {
   }
   if (lg.phase === 'offseason') { enterFreeAgency(lg); return !lg.ended; } // saves from older versions
   if (lg.phase === 'freeagency') {
-    if (lg.fa && lg.fa.stage <= 3) faStage(lg); else startSeason(lg);
+    if (lg.fa && lg.fa.stage === 1 && !lg.fa.sumSeen) lg.fa.sumSeen = true; // past the decisions summary
+    else if (lg.fa && lg.fa.stage <= 3) faStage(lg); else startSeason(lg);
     return true;
   }
   return false;

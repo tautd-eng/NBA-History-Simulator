@@ -37,7 +37,7 @@ export function stepsOf(lg: any) {
     if (st !== 'draft') cur = st;
     else if (!d) cur = exp ? 'expansion' : 'lottery';
     else cur = d.done ? 'draft' : (d.stage ?? 'draft');
-  } else if (lg.phase === 'freeagency' || lg.phase === 'offseason') cur = !lg.fa || lg.fa.stage === 0 ? 'decisions' : 'fa';
+  } else if (lg.phase === 'freeagency' || lg.phase === 'offseason') cur = !lg.fa || lg.fa.stage === 0 || (lg.fa.stage === 1 && !lg.fa.sumSeen) ? 'decisions' : 'fa';
   else if (lg.phase === 'regular' && lg.previewOpen === lg.season) cur = 'preview';
   return { steps, cur };
 }

@@ -897,6 +897,71 @@ function teamFitGain(lg: League, tid: string, p: Player) {
 }
 
 /** One wave of AI signings. Later stages: lower demands, everyone with an offer signs. */
+/** The offers AI teams make a free agent in this wave (rnd: the league's randomness, or a neutral one for a preview). */
+function teamOffers(lg: League, p: Player, stage: number, rng: { next(): number; normal(): number }, ask: number, yrsOffer: number) {
+  const N = lg.season;
+  const pre = N < 1985;
+  const teams = activeTeams(lg).filter(t => t.tid !== lg.userTid);
+  const fa = lg.fa!;
+  const max = maxSalary(p, N);
+  const offers: { t: Team; sal: number; score: number; mle: boolean; cut: Player | null; needRoom: boolean }[] = [];
+  for (const t of teams) {
+    const cut = t.roster.length >= ROSTER_MAX ? cheapCut(lg, t, p) : null;
+    if (t.roster.length >= ROSTER_MAX && !cut) continue;
+    const pay = payroll(lg, t.tid);
+    const room = ceiling(lg, N) - pay;
+    let sal = 0, mle = false, needRoom = false;
+    // a team pays what he asks of it: less where he wants to play, more where he does not
+    const askT = Math.min(max, ask * (1 - discount(lg, p, t.tid)));
+    const underFloor = pay < FLOOR;
+    if (room >= askT) sal = Math.min(room, max, askT * (1 + (underFloor ? 0.3 : 0.15) * rng.next()));
+    // his own team holds his Bird rights: it may go over the cap to keep him (and a core player is worth making room for)
+    else if (p.bird === t.tid && pay + askT <= Math.min(hardCap(lg), pre ? 1.6 : 1.45)) sal = askT;
+    // (for a core player it offers anyway and makes the room if he picks it)
+    else if (p.bird === t.tid && keeps(lg, t.tid, p)) { sal = askT; needRoom = true; }
+    else if (ask <= MIN_SAL * 2.5) sal = Math.max(MIN_SAL, ask);
+    // later in the summer a good player left without a big offer takes what a team can still pay: most of its
+    // remaining room, or the mid-level exception
+    else if (stage >= 2 && room >= Math.max(MLE, 0.45 * askT)) sal = room;
+    else if (!pre && N >= 1995 && !fa.mle.includes(t.tid) && (askT <= MLE * 1.35 || stage >= 2) && pay + MLE <= hardCap(lg)) { sal = Math.min(MLE, askT); mle = true; }
+    else continue;
+    if (!needRoom && pay + sal > hardCap(lg) + 1e-9 && !(t.roster.length < ROSTER_MIN && sal <= MIN_SAL * 1.0001)) continue;
+    // a player who fills a hole in the rotation (shooting, a ball-handler, rim protection) is worth more to this team
+    const fitD = teamFitGain(lg, t.tid, p);
+    const v = playerValue(p, N, t.strategy) * (1 + fitD);
+    if (fitD > 0 && room >= askT) sal = Math.min(max, room, sal * (1 + 0.5 * fitD));
+    // an all-in team pays up for the missing piece
+    if (t.mode === 'allin' && room >= askT) sal = Math.min(max, room, sal * 1.15);
+    // only if he would be one of the team's twelve most valuable players
+    const vals = t.roster.map(pid => playerValue(lg.players[pid], N, t.strategy)).sort((a, b) => b - a);
+    const twelfth = vals[Math.min(vals.length, 12) - 1] ?? 0;
+    if (t.roster.length >= ROSTER_MIN && v <= twelfth && !(underFloor && t.roster.length < ROSTER_MAX)) continue;
+    if (t.strategy === 'rebuild' && ageIn(p, N) > 30 && sal > MIN_SAL * 2.5) continue;
+    // a tanking team does not pay veterans – it keeps the cap and the minutes for youth
+    // (a star still in his prime is not a veteran to avoid – he is the kind of player a rebuild is for)
+    if (t.mode === 'tank' && ageIn(p, N) > 27 && sal > MIN_SAL * 2.5 && !(shownOvr(p.z) >= 85 && ageIn(p, N) <= 30)) continue;
+    // the player picks the offer he likes best: money against his ask, plus the team's appeal to him
+    const score = offerUtility(lg, p, t.tid, sal, ask, yrsOffer) + 0.06 * rng.normal();
+    offers.push({ t, sal, score, mle, cut, needRoom });
+  }
+  return offers;
+}
+
+/**
+ * Free agency, live: which AI teams would make this player an offer right now (salary, years) and how much
+ * he likes each one – the market at this moment, before the wave closes.
+ */
+export function faOffersFor(lg: League, p: Player) {
+  const fa = lg.fa;
+  if (!fa || lg.phase !== 'freeagency' || !isFreeAgent(lg, p)) return [];
+  const N = lg.season, stage = Math.min(3, Math.max(1, fa.stage));
+  const ask = askingSalary(p, N) * STAGE_MULT[stage];
+  const yrs = contractYears(p, N, () => 0.5);
+  return teamOffers(lg, p, stage, { next: () => 0.5, normal: () => 0 }, ask, yrs)
+    .map(o => ({ tid: o.t.tid, sal: o.sal, yrs, score: o.score, mle: o.mle, needRoom: o.needRoom, ask }))
+    .sort((a, b) => b.score - a.score);
+}
+
 function aiSignings(lg: League, rng: Rng, stage: number) {
   const N = lg.season;
   const pre = N < 1985;
@@ -908,46 +973,7 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
     const ask = askingSalary(p, N) * STAGE_MULT[stage];
     const max = maxSalary(p, N);
     const yrsOffer = contractYears(p, N, () => rng.next());
-    const offers: { t: Team; sal: number; score: number; mle: boolean; cut: Player | null; needRoom: boolean }[] = [];
-    for (const t of teams) {
-      const cut = t.roster.length >= ROSTER_MAX ? cheapCut(lg, t, p) : null;
-      if (t.roster.length >= ROSTER_MAX && !cut) continue;
-      const pay = payroll(lg, t.tid);
-      const room = ceiling(lg, N) - pay;
-      let sal = 0, mle = false, needRoom = false;
-      // a team pays what he asks of it: less where he wants to play, more where he does not
-      const askT = Math.min(max, ask * (1 - discount(lg, p, t.tid)));
-      const underFloor = pay < FLOOR;
-      if (room >= askT) sal = Math.min(room, max, askT * (1 + (underFloor ? 0.3 : 0.15) * rng.next()));
-      // his own team holds his Bird rights: it may go over the cap to keep him (and a core player is worth making room for)
-      else if (p.bird === t.tid && pay + askT <= Math.min(hardCap(lg), pre ? 1.6 : 1.45)) sal = askT;
-      // (for a core player it offers anyway and makes the room if he picks it)
-      else if (p.bird === t.tid && keeps(lg, t.tid, p)) { sal = askT; needRoom = true; }
-      else if (ask <= MIN_SAL * 2.5) sal = Math.max(MIN_SAL, ask);
-      // later in the summer a good player left without a big offer takes what a team can still pay: most of its
-      // remaining room, or the mid-level exception
-      else if (stage >= 2 && room >= Math.max(MLE, 0.45 * askT)) sal = room;
-      else if (!pre && N >= 1995 && !fa.mle.includes(t.tid) && (askT <= MLE * 1.35 || stage >= 2) && pay + MLE <= hardCap(lg)) { sal = Math.min(MLE, askT); mle = true; }
-      else continue;
-      if (!needRoom && pay + sal > hardCap(lg) + 1e-9 && !(t.roster.length < ROSTER_MIN && sal <= MIN_SAL * 1.0001)) continue;
-      // a player who fills a hole in the rotation (shooting, a ball-handler, rim protection) is worth more to this team
-      const fitD = teamFitGain(lg, t.tid, p);
-      const v = playerValue(p, N, t.strategy) * (1 + fitD);
-      if (fitD > 0 && room >= askT) sal = Math.min(max, room, sal * (1 + 0.5 * fitD));
-      // an all-in team pays up for the missing piece
-      if (t.mode === 'allin' && room >= askT) sal = Math.min(max, room, sal * 1.15);
-      // only if he would be one of the team's twelve most valuable players
-      const vals = t.roster.map(pid => playerValue(lg.players[pid], N, t.strategy)).sort((a, b) => b - a);
-      const twelfth = vals[Math.min(vals.length, 12) - 1] ?? 0;
-      if (t.roster.length >= ROSTER_MIN && v <= twelfth && !(underFloor && t.roster.length < ROSTER_MAX)) continue;
-      if (t.strategy === 'rebuild' && ageIn(p, N) > 30 && sal > MIN_SAL * 2.5) continue;
-      // a tanking team does not pay veterans – it keeps the cap and the minutes for youth
-      // (a star still in his prime is not a veteran to avoid – he is the kind of player a rebuild is for)
-      if (t.mode === 'tank' && ageIn(p, N) > 27 && sal > MIN_SAL * 2.5 && !(shownOvr(p.z) >= 85 && ageIn(p, N) <= 30)) continue;
-      // the player picks the offer he likes best: money against his ask, plus the team's appeal to him
-      const score = offerUtility(lg, p, t.tid, sal, ask, yrsOffer) + 0.06 * rng.normal();
-      offers.push({ t, sal, score, mle, cut, needRoom });
-    }
+    const offers = teamOffers(lg, p, stage, rng, ask, yrsOffer);
     if (!offers.length) continue;
     // early on, some players wait for a better market
     if (!rng.chance(STAGE_SIGN[stage] + (offers.length >= 3 ? 0.1 : 0))) continue;
