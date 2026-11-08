@@ -12,6 +12,8 @@ import { Progression } from './rankings';
 import { offStep } from '../league/offseason';
 import { Devices } from './devices';
 import { PlayingAs, HumansPanel } from './humans';
+import { SalaryView } from './salaries';
+import { installTableExport } from './export';
 import { isHuman } from '../league/humans';
 import { roleOf } from '../archetypes';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -124,6 +126,7 @@ function usePanelFolding() {
 
 function App() {
   usePanelFolding();
+  useEffect(() => { installTableExport(); }, []);
   const [lg, setLg] = useState<any>(null);
   useEffect(() => { try { (window as any).__lg = lg; } catch { /* debugging handle */ } }, [lg]);
   const [ready, setReady] = useState(false);
@@ -255,6 +258,7 @@ function App() {
         {lg.phase !== 'fantasy' && tab === 'laisvieji' && <FreeAgentsView lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'mainai' && <Trades key={(lg.userTid ?? '') + (tradeSeed?.n ?? '')} seed={tradeSeed?.pid} lg={lg} openPlayer={openPlayer} onDone={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'komandos' && <TeamView lg={lg} tid={team ?? 'LAL'} setTid={setTeam} openPlayer={openPlayer} openGame={openGame} />}
+        {lg.phase !== 'fantasy' && tab === 'algos' && <SalaryView lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'draftai' && <div className="col"><Drafts lg={lg} openPlayer={openPlayer} openTeam={openTeam} />{lg.fantasy?.done && <FantasyResults lg={lg} openPlayer={openPlayer} />}</div>}
         {lg.phase !== 'fantasy' && tab === 'istorija' && <HistoryView lg={lg} openPlayer={openPlayer} openTeam={openTeam} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'statistika' && <StatsView lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
@@ -284,7 +288,7 @@ function App() {
 /** Sections: [key, label, shown in the phone's bottom bar (the rest go under "More")] */
 const TABS: [string, string, boolean][] = [
   ['apzvalga', 'Overview', true], ['komandos', 'Teams', true], ['reitingai', 'Rankings', true], ['mainai', 'Trades', true],
-  ['statistika', 'Stats', false], ['laisvieji', 'Free agents', false], ['draftai', 'Draft classes', false], ['istorija', 'History', false], ['rungtynes', 'Games', false],
+  ['statistika', 'Stats', false], ['laisvieji', 'Free agents', false], ['algos', 'Salaries', false], ['draftai', 'Draft classes', false], ['istorija', 'History', false], ['rungtynes', 'Games', false],
 ];
 
 /** The sections for this league: Team management only when the user runs a team. */
@@ -301,6 +305,7 @@ function TabIcon({ k }: { k: string }) {
     mainai: 'M4 8h13l-3-3M20 16H7l3 3',
     laisvieji: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 4-6 8-6s8 2 8 6M19 4v4M17 6h4',
     draftai: 'M4 5h16v14H4zM8 9h8M8 13h5',
+    algos: 'M12 3v18M16 7c0-1.7-1.8-3-4-3s-4 1.3-4 3 1.8 3 4 3 4 1.3 4 3-1.8 3-4 3-4-1.3-4-3',
     istorija: 'M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4',
     rungtynes: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
     more: 'M5 12h.01M12 12h.01M19 12h.01M4 12a1 1 0 1 0 2 0 1 1 0 0 0-2 0M11 12a1 1 0 1 0 2 0 1 1 0 0 0-2 0M18 12a1 1 0 1 0 2 0 1 1 0 0 0-2 0',

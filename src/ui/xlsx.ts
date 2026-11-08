@@ -41,30 +41,36 @@ async function readXlsx(buf: ArrayBuffer): Promise<string[][]> {
     const d = dp.parseFromString(files['xl/sharedStrings.xml'], 'application/xml');
     for (const si of Array.from(d.getElementsByTagName('si'))) strings.push(Array.from(si.getElementsByTagName('t')).map(t => t.textContent ?? '').join(''));
   }
-  // the first sheet of the workbook
-  let path = 'xl/worksheets/sheet1.xml';
+  // every sheet, in workbook order (a rotation sheet and a tactics sheet both count), one after another
+  const paths: string[] = [];
   try {
     const wb = dp.parseFromString(files['xl/workbook.xml'], 'application/xml');
-    const first = wb.getElementsByTagName('sheet')[0];
-    const rid = first?.getAttribute('r:id') ?? first?.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
     const rels = dp.parseFromString(files['xl/_rels/workbook.xml.rels'], 'application/xml');
-    const t = Array.from(rels.getElementsByTagName('Relationship')).find(r => r.getAttribute('Id') === rid)?.getAttribute('Target');
-    if (t) path = 'xl/' + t.replace(/^\/?xl\//, '').replace(/^\//, '');
-  } catch { /* default */ }
-  const xml = files[path] ?? Object.entries(files).find(([k]) => k.startsWith('xl/worksheets/'))?.[1];
-  if (!xml) throw new Error('The file has no sheet.');
-  const d = dp.parseFromString(xml, 'application/xml');
-  const rows: string[][] = [];
-  for (const r of Array.from(d.getElementsByTagName('row'))) {
-    const row: string[] = [];
-    for (const c of Array.from(r.getElementsByTagName('c'))) {
-      const t = c.getAttribute('t'), ref = c.getAttribute('r') ?? '';
-      const val = c.getElementsByTagName('v')[0]?.textContent ?? '';
-      const text = t === 's' ? strings[+val] ?? '' : t === 'inlineStr' ? Array.from(c.getElementsByTagName('t')).map(x => x.textContent).join('') : val;
-      row[ref ? colIdx(ref) : row.length] = text;
+    for (const sh of Array.from(wb.getElementsByTagName('sheet'))) {
+      const rid = sh.getAttribute('r:id') ?? sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+      const t = Array.from(rels.getElementsByTagName('Relationship')).find(r => r.getAttribute('Id') === rid)?.getAttribute('Target');
+      if (t) paths.push('xl/' + t.replace(/^\/?xl\//, '').replace(/^\//, ''));
     }
-    rows.push(Array.from(row, x => (x ?? '').trim()));
+  } catch { /* fall back below */ }
+  if (!paths.length) paths.push(...Object.keys(files).filter(k => k.startsWith('xl/worksheets/')).sort());
+  const rows: string[][] = [];
+  for (const path of paths) {
+    const xml = files[path];
+    if (!xml) continue;
+    const d = dp.parseFromString(xml, 'application/xml');
+    for (const r of Array.from(d.getElementsByTagName('row'))) {
+      const row: string[] = [];
+      for (const c of Array.from(r.getElementsByTagName('c'))) {
+        const t = c.getAttribute('t'), ref = c.getAttribute('r') ?? '';
+        const val = c.getElementsByTagName('v')[0]?.textContent ?? '';
+        const text = t === 's' ? strings[+val] ?? '' : t === 'inlineStr' ? Array.from(c.getElementsByTagName('t')).map(x => x.textContent).join('') : val;
+        row[ref ? colIdx(ref) : row.length] = text;
+      }
+      rows.push(Array.from(row, x => (x ?? '').trim()));
+    }
+    rows.push([]);
   }
+  if (!rows.length) throw new Error('The file has no sheet.');
   return rows;
 }
 

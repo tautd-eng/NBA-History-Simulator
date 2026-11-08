@@ -919,3 +919,22 @@ main.wide { max-width: 1920px; }
 .sheet-import { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
 .btn-file { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; font-size: 0.85rem; cursor: pointer; }
 .btn-file input { display: none; }
+/* table export bar (appears over the corner of the table under the pointer) */
+.tbl-export { position: absolute; z-index: 50; display: flex; gap: 4px; }
+.tbl-export button { font-size: 0.72rem; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.tbl-export button:hover { color: var(--text, inherit); border-color: var(--accent); }
+/* salary cap breakdown */
+.sal-top { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-end; margin: 4px 0 14px; }
+.sal-top > div { display: flex; flex-direction: column; gap: 2px; }
+.sal-top span { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
+.sal-top b { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.sal-top small { color: var(--muted); font-size: 0.75rem; }
+.sal-legend { flex-direction: row !important; gap: 14px !important; margin-left: auto; }
+.sal-legend span { text-transform: none; letter-spacing: 0; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; }
+.sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.sw.team, .sal-tbl td.opt-team { --c: #8b3fd9; } .sw.player, .sal-tbl td.opt-player { --c: #1f9d55; } .sw.rk, .sal-tbl td.rk { --c: #2f6fd6; }
+.sw { background: var(--c); }
+.sal-tbl td.opt-team, .sal-tbl td.opt-player, .sal-tbl td.rk { color: var(--c); font-weight: 600; }
+.sal-tbl td.sal { font-variant-numeric: tabular-nums; }
+.sal-tbl .fa-tag { font-size: 0.7rem; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.sal-tbl tfoot td { border-top: 2px solid var(--line); }
