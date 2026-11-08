@@ -153,21 +153,25 @@ export function extensionNeed(lg: League, p: Player, tid: string, years: number)
   let len = 0;
   if (age >= 30) len += 0.025 * (Math.min(years, 4) - 1);
   if (years > (age >= 32 ? 3 : 5)) len -= 0.1;
-  // a long deal for a young player is priced at his potential: the longer, the more of it you pay for up front
-  // (5 years at 23 or younger = his projected peak's price)
+  // a long deal for a young player is priced on what he is expected to become over the deal: his projected path
+  // from today toward his peak (around 27), year by year, averaged – the team buys some of the upside and takes
+  // the risk that he never gets there; the player gives a little of it back for the security
   let young = 1;
-  if (age <= 25 && years > 2) {
-    const pot = askAtBpm(p, N, peakBpm(p, N));
-    const w = Math.min(1, (years - 2) / 3) * (age <= 23 ? 1 : age === 24 ? 0.6 : 0.3);
-    young = Math.max(1, (ask * (1 - w) + pot * w) / Math.max(ask, 1e-6));
-    if (young > 1.02) why.push(`a ${years}-year deal is priced on his potential (peak ~${peakShown(p, N)} OVR)`);
+  if (age <= 25 && years >= 2) {
+    const now = bpmOf(p.z), peak = Math.max(now, peakBpm(p, N));
+    const toPeak = Math.max(1, 27 - age);
+    let sum = 0;
+    for (let y = 1; y <= years; y++) sum += askAtBpm(p, N, now + (peak - now) * Math.min(1, y / toPeak));
+    const price = (sum / years) * (1 - 0.02 * (years - 1));
+    young = Math.max(1, price / Math.max(ask, 1e-6));
+    if (young > 1.03) why.push(`a ${years}-year deal is priced on his expected growth (peak ~${peakShown(p, N)} OVR) – a bet that he gets there`);
   } else if (age >= 30 && years >= 3) why.push('values a long contract');
   const raw = ask * (1 - stay) * (1 - len) * young;
   const need = Math.max(0.012, Math.min(max, raw));
   const parts = [
     { t: interest >= 50 ? 'wants to stay – hometown discount' : 'not keen on staying – wants more', pct: -stay },
     { t: age >= 30 ? 'contract length (security for a veteran)' : 'contract length', pct: -len },
-    { t: 'priced on his potential (long deal, young)', pct: young - 1 },
+    { t: 'priced on his expected growth (long deal, young)', pct: young - 1 },
   ].filter(x => Math.abs(x.pct) >= 0.005);
   // he wants more than any team may pay: no extension – he goes to free agency
   return { need, why, interest, ask, parts, out: raw > max * 1.0001 && stay < 0 };
