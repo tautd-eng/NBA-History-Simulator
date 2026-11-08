@@ -827,3 +827,23 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .ret-card h3 { font-size: 1.4rem; margin: 2px 0 4px; }
 .ret-card p { margin: 3px 0; }
 .ret-nums b { font-family: var(--font-display); font-size: 1.2rem; margin-left: 4px; }
+/* awards night */
+.aw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; }
+@media (max-width: 520px) { .aw-grid { grid-template-columns: 1fr; } }
+.aw-card { border-top: 3px solid var(--line); }
+.aw-card.done { border-top-color: var(--star); }
+.aw-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.aw-head h3 { font-size: 1.25rem; text-transform: uppercase; letter-spacing: .03em; }
+.aw-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.aw-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px; border-radius: 8px; background: var(--sunk); }
+.aw-row.hidden { opacity: .55; }
+.aw-row.win { background: var(--accent-soft); outline: 1px solid var(--star); }
+.aw-place { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; width: 28px; text-align: center; flex: none; }
+.aw-who { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
+.aw-name { font-weight: 600; }
+.aw-row.win .aw-name { font-size: 1.12rem; }
+.aw-line { font-size: 12.5px; color: var(--muted); }
+.aw-line b { color: var(--ink); }
+.aw-teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+@media (max-width: 460px) { .aw-teams { grid-template-columns: 1fr; } }
+.aw-team h3 { margin: 4px 0; }

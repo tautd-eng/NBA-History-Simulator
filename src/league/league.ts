@@ -468,7 +468,27 @@ function regularDayEnd(lg: League, day: number, rng: Rng) {
   const dl = deadlineDay(lg);
   if (day >= dl - 14 && day <= dl) aiTradeRound(lg, rng, 1.2);
   lg.day = Math.max(lg.day, day + 1);
-  if (!lg.schedule.some(g => !g.done)) startPlayoffs(lg, rng);
+  // the last game: the season stops on the awards screen; the playoffs start with the next step
+  if (!lg.schedule.some(g => !g.done)) endRegularSeason(lg);
+}
+
+/** The regular season is over: the awards are decided (and revealed on their own screen) before the playoffs. */
+function endRegularSeason(lg: League) {
+  if (lg.seasonAwards && lg.awardsShow?.s === lg.season) return;
+  regularSeasonAwards(lg, false);
+  lg.awardsShow = { s: lg.season, rev: {} };
+  lg.news.push({ s: lg.season, t: 'The regular season is over. The awards are in – the playoffs are next.' });
+}
+/** Between the last regular-season game and the playoffs (the awards screen). */
+export function awaitingPlayoffs(lg: League) {
+  return lg.phase === 'regular' && lg.schedule.length > 0 && !lg.schedule.some(g => !g.done);
+}
+/** Which playoff round is being played (play-in = 0); null outside the playoffs. */
+export function currentRound(lg: League): number | null {
+  if (lg.phase !== 'playoffs') return null;
+  if (lg.playIn?.some((g: any) => !g.winner)) return 0;
+  const open = lg.series.filter(s => !s.winner).map(s => s.round);
+  return open.length ? Math.min(...open) : 99;
 }
 
 /** Play one game now and return it with its play-by-play. */
@@ -714,17 +734,24 @@ function histFormat(season: number): Format {
 }
 
 /** Regular-season awards are handed out the moment the regular season ends. */
-function regularSeasonAwards(lg: League) {
+function regularSeasonAwards(lg: League, announce = true) {
   const S = lg.season;
   const aw = computeAwards(lg, S, seasonGames(lg, S));
   applyAwardChips(lg, S, aw);
   lg.seasonAwards = aw;
+  if (announce) awardsNews(lg);
+}
+/** The awards in the news (after the awards screen, so the news does not give the winners away). */
+function awardsNews(lg: League) {
+  const S = lg.season, aw = lg.seasonAwards;
+  if (!aw) return;
   const n = (pid?: string) => (pid ? tagOf(lg.players[pid], S) : '–');
   lg.news.push({ s: S, t: `Season awards: MVP – ${n(aw.mvp)}, Defensive Player – ${n(aw.dpoy)}, Rookie – ${n(aw.roy)}, Sixth Man – ${n(aw.smoy)}${aw.mip ? `, Most Improved – ${n(aw.mip)}` : ''}.` });
 }
 
 function startPlayoffs(lg: League, rng: Rng) {
-  regularSeasonAwards(lg);
+  if (!(lg.seasonAwards && lg.awardsShow?.s === lg.season)) regularSeasonAwards(lg);
+  else awardsNews(lg);
   lg.phase = 'playoffs';
   lg.series = [];
   lg.playIn = [];

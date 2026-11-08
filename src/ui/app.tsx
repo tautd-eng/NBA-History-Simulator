@@ -15,7 +15,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { loadHistory, H, RATING_LABELS, shownOvr as ovrOf, shownFromRaw, shownFromBpm, ratingOf, seasonInfo, bpmOf, LAST_SEASON } from '../data';
 import { setEraCal } from '../engine/game';
-import { newLeague, standings, playoffFormat, realChampion, simDayWatching, watchableToday, playedToday, seasonGames, applySettings, startClutch, finishClutch, todayIndex } from '../league/league';
+import { newLeague, standings, playoffFormat, realChampion, simDayWatching, watchableToday, playedToday, seasonGames, applySettings, startClutch, finishClutch, todayIndex, awaitingPlayoffs } from '../league/league';
+import { AwardsStep } from './awardsstep';
 import { ensurePicks, deadlineDay, boardScore } from '../ai/trades';
 import { planOf } from '../ai/plan';
 import { LiveGame } from './live';
@@ -301,6 +302,7 @@ function phaseLabel(lg: any) {
   if (lg.ended) return 'history complete';
   if (lg.phase === 'fantasy') return 'fantasy draft';
   if (lg.phase === 'regular') { const dl = deadlineDay(lg); return `regular season, day ${lg.day + 1} · ${lg.day < dl ? `trade deadline in ${dl - lg.day} day${dl - lg.day === 1 ? '' : 's'}` : lg.day === dl ? 'trade deadline today' : 'past the trade deadline'}`; }
+  if (awaitingPlayoffs(lg)) return 'regular season over · awards';
   if (lg.phase === 'playoffs') return 'playoffs';
   if (lg.phase === 'draft' && offStep(lg) === 'recap') return 'season over';
   if (lg.phase === 'draft' && offStep(lg) === 'retire') return 'offseason · retirements';
@@ -323,11 +325,13 @@ function Controls({ lg, busy, run, stop, saved }: any) {
   const b = (t: Target, l: string, primary = false) => <button className={primary ? 'primary' : ''} onClick={() => run(t, l)}>{l}</button>;
   return (
     <div className="controls">
-      {(lg.phase === 'regular' || lg.phase === 'playoffs') && <>
+      {awaitingPlayoffs(lg) && b('day', 'Start the playoffs', true)}
+      {(lg.phase === 'regular' || lg.phase === 'playoffs') && !awaitingPlayoffs(lg) && <>
         {b('day', 'Day')}
         {b('week', 'Week')}
+        {lg.phase === 'playoffs' && b('round', 'Sim round')}
         {lg.phase === 'regular' && lg.day < deadlineDay(lg) && b('deadline', 'To trade deadline')}
-        {lg.phase === 'regular' && b('playoffs', 'To playoffs')}
+        {lg.phase === 'regular' && b('playoffs', 'To end of regular season')}
         {b('seasonEnd', 'To season end', true)}
       </>}
       {lg.phase === 'draft' && offStep(lg) === 'recap' && b('day', 'Start the offseason', true)}
@@ -619,6 +623,12 @@ function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sam
           <section className="col">{lg.series.length ? <Bracket lg={lg} openTeam={openTeam} openGame={openGame} /> : null}<Fold id="news" title="League news"><News lg={lg} /></Fold></section>
         </div>
       </RecapStep>
+    </div>
+  );
+  if (awaitingPlayoffs(lg)) return (
+    <div className="col">
+      <AwardsStep lg={lg} onChange={onSaved} openPlayer={openPlayer} />
+      <Fold id="standings" title="Standings"><Standings lg={lg} openTeam={openTeam} /></Fold>
     </div>
   );
   if (step === 'retire') return <div className="col"><StepBar lg={lg} /><RetireStep lg={lg} onChange={onSaved} openPlayer={openPlayer} /></div>;

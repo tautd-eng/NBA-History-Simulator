@@ -218,6 +218,8 @@ export interface League {
   off?: { y: number; step: 'recap' | 'retire' | 'dev' | 'draft'; retDone?: boolean; devDone?: boolean; ret?: RetRow[] };
   /** the season preview is shown before the first game of this season */
   previewOpen?: number | null;
+  /** awards screen after the regular season: which awards have been revealed (count of places shown) */
+  awardsShow?: { s: number; rev: Record<string, number>; all?: boolean };
   /** season in which payrolls may stay over the hard cap (the first season after a fantasy draft) */
   capGrace?: number;
   dead?: { tid: string; sal: number; exp: number; pid: string }[]; // salaries of released players still on the books

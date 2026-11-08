@@ -1,14 +1,14 @@
 // Thin control layer between the UI and the league: advancing time in chunks
 // (so the page stays responsive) and saving to the browser.
 import { League } from './types';
-import { simDay } from './league/league';
+import { simDay, awaitingPlayoffs, currentRound } from './league/league';
 import { initDraft, draftAdvance, enterFreeAgency, faStage, startSeason, offStep, offRetire, offDevelop } from './league/offseason';
 import { fantasyAdvance } from './league/fantasy';
 import { registerClones } from './league/classes';
 import { registerNew2027 } from './rosters2027';
 import { deadlineDay } from './ai/trades';
 
-export type Target = 'day' | 'week' | 'deadline' | 'playoffs' | 'seasonEnd' | 'nextSeason' | 'years5';
+export type Target = 'day' | 'week' | 'deadline' | 'playoffs' | 'round' | 'seasonEnd' | 'nextSeason' | 'years5';
 
 const tick = () => new Promise(r => setTimeout(r, 0));
 
@@ -38,12 +38,16 @@ export async function advance(lg: League, target: Target, onProgress: () => void
   if (target === 'day') { stepOnce(lg); onProgress(); return; }
   const startSeason = lg.season;
   const startDay = lg.day;
+  const startPhase = lg.phase;
+  const startRound = currentRound(lg);
   const done = (): boolean => {
     if (lg.ended) return true;
     switch (target) {
-      case 'week': return lg.day >= startDay + 7 || (lg.phase !== 'regular' && lg.phase !== 'playoffs');
-      case 'deadline': return lg.phase !== 'regular' || lg.day >= deadlineDay(lg);
-      case 'playoffs': return lg.phase !== 'regular';
+      // a week never runs past the end of the regular season (the awards screen) into the playoffs
+      case 'week': return lg.day >= startDay + 7 || lg.phase !== startPhase || awaitingPlayoffs(lg);
+      case 'deadline': return lg.phase !== 'regular' || lg.day >= deadlineDay(lg) || awaitingPlayoffs(lg);
+      case 'playoffs': return lg.phase !== 'regular' || awaitingPlayoffs(lg);
+      case 'round': return lg.phase !== 'playoffs' || currentRound(lg) !== startRound;
       case 'seasonEnd': return lg.phase === 'draft';
       case 'nextSeason': return lg.season > startSeason && lg.phase === 'regular';
       case 'years5': return lg.season >= startSeason + 5 && lg.phase === 'regular';
