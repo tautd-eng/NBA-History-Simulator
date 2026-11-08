@@ -6,7 +6,7 @@ import { StandingsHistory, TeamStatsExplorer, FaMoves } from './leaguehist';
 import { Logo, TLogo, PFace } from './art';
 import { RoleBadge } from './roles';
 import { SeasonPreview } from './seasonpreview';
-import { StepBar, RecapStep, RetireStep, DevStep, PreviewStep } from './offsteps';
+import { StepBar, RecapStep, RetireStep, DevStep, PreviewStep, HallOfFameView } from './offsteps';
 import { Progression } from './rankings';
 import { offStep } from '../league/offseason';
 import { Devices } from './devices';
@@ -252,7 +252,7 @@ function App() {
         {lg.phase !== 'fantasy' && tab === 'mainai' && <Trades lg={lg} openPlayer={openPlayer} onDone={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'komandos' && <TeamView lg={lg} tid={team ?? 'LAL'} setTid={setTeam} openPlayer={openPlayer} openGame={openGame} />}
         {lg.phase !== 'fantasy' && tab === 'draftai' && <div className="col"><Drafts lg={lg} openPlayer={openPlayer} openTeam={openTeam} />{lg.fantasy?.done && <FantasyResults lg={lg} openPlayer={openPlayer} />}</div>}
-        {lg.phase !== 'fantasy' && tab === 'istorija' && <HistoryView lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
+        {lg.phase !== 'fantasy' && tab === 'istorija' && <HistoryView lg={lg} openPlayer={openPlayer} openTeam={openTeam} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'statistika' && <StatsView lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'rungtynes' && <Games lg={lg} openPlayer={openPlayer} />}
       </main>
@@ -1215,13 +1215,14 @@ function AwardsExplorer({ lg, openPlayer }: any) {
   );
 }
 
-function HistoryView({ lg, openPlayer, openTeam }: any) {
-  const [tab, setTab] = useState<'main' | 'stand' | 'tstats' | 'fa'>('main');
+function HistoryView({ lg, openPlayer, openTeam, onSaved }: any) {
+  const [tab, setTab] = useState<'main' | 'stand' | 'tstats' | 'fa' | 'hof'>('main');
   const tabs = (
     <div className="seg hist-tabs" role="group" aria-label="History section">
-      {([['main', 'Champions & records'], ['stand', 'Standings'], ['tstats', 'Team stats'], ['fa', 'Free agency']] as const).map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
+      {([['main', 'Champions & records'], ['stand', 'Standings'], ['tstats', 'Team stats'], ['fa', 'Free agency'], ['hof', 'Hall of Fame']] as const).map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
     </div>
   );
+  if (tab === 'hof') return <div className="col">{tabs}<HallOfFameView lg={lg} openPlayer={openPlayer} onChange={onSaved} /></div>;
   if (tab !== 'main') return <div className="col">{tabs}{tab === 'stand' ? <StandingsHistory lg={lg} openTeam={openTeam} /> : tab === 'tstats' ? <TeamStatsExplorer lg={lg} openTeam={openTeam} /> : <FaMoves lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}</div>;
   return <HistoryMain lg={lg} openPlayer={openPlayer} tabs={tabs} />;
 }

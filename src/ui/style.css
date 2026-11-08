@@ -847,3 +847,4 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .aw-teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
 @media (max-width: 460px) { .aw-teams { grid-template-columns: 1fr; } }
 .aw-team h3 { margin: 4px 0; }
+.honors h3 { margin: 10px 0 4px; }
