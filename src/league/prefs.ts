@@ -82,7 +82,8 @@ export function discount(lg: League, p: Player, tid: string): number {
     + 0.14 * tr.role * (a.role - 0.55) * 2
     + 0.14 * tr.loyal * a.loyal
     + 0.08 * tr.market * (a.market - 0.45) * 2;
-  return Math.max(-0.2, Math.min(0.35, raw * (1 - 0.65 * tr.money)));
+  // a team he likes gets at most ~10% off (what history supports); one he does not like pays up to 20% more
+  return Math.max(-0.2, Math.min(0.1, raw * (1 - 0.65 * tr.money)));
 }
 
 /** How much he likes an offer (money relative to his ask plus the team's appeal). */
