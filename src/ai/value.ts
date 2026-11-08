@@ -73,6 +73,12 @@ export function askingSalary(p: Player, season: number) {
   return Math.min(maxSalary(p, season), Math.max(vetMin(p, season), SAL_K * Math.pow(b, SAL_EXP)));
 }
 
+/** What a player of this level (BPM) would ask – e.g. at his projected peak, for a long deal signed young. */
+export function askAtBpm(p: Player, season: number, bpm: number) {
+  const b = Math.max(0, bpm + hiddenBoost(p.id) - REPL);
+  return Math.min(maxSalary(p, season), Math.max(vetMin(p, season), SAL_K * Math.pow(b, SAL_EXP)));
+}
+
 export function contractYears(p: Player, season: number, rnd: () => number) {
   const age = ageIn(p, season);
   if (age <= 24) return 3 + Math.floor(rnd() * 2);

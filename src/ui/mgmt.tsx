@@ -138,7 +138,7 @@ function Extensions({ lg, openPlayer, onChange }: any) {
     <div className="col">
       <div className="panel">
         <h2>Extensions</h2>
-        <p className="note">During the regular season you can extend players whose contracts end this season. His price starts from his market value (what he would ask in free agency); wanting to stay brings it down, not wanting to pushes it up; veterans give a little for a longer deal, young players charge more for every year past two (more, the more they are expected to improve). At his number he signs; below it, it is a gamble – and only a player who wants to stay takes less.</p>
+        <p className="note">During the regular season you can extend players whose contracts end this season. His price starts from his market value (what he would ask in free agency). Wanting to stay brings it down a little (a hometown discount is at most ~10%); not wanting to stay pushes it up – up to twice his market value, and past the max he simply leaves. Veterans give a little for a longer deal; a long deal for a young player is priced on his potential (5 years at 23 or younger = the price of his projected peak). At his number he signs; a few percent below it is a gamble – and only a player who wants to stay takes less.</p>
         {lg.phase !== 'regular' && <p className="hint">Extensions open in the regular season.</p>}
         {done.length > 0 && <p className="note">Already extended: {done.map((p: any) => `${p.name} (${(p.ext.sal * 100).toFixed(1)}% through ${p.ext.exp})`).join(', ')}.</p>}
       </div>

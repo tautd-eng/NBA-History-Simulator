@@ -206,6 +206,7 @@ export function ExtensionBox({ lg, p, onChange, compact }: any) {
         {cooling ? <>He turned down your last offer – no talks for {p.extNo - lg.day} more days.</>
           : ch.chance >= 1 ? <>He signs – this is his number{offer > ch.need + 1e-4 ? ` (you are paying ${((offer - ch.need) * 100).toFixed(2)}% more than you need to)` : ''}.</>
           : ch.chance > 0 ? <>A gamble: <b>{Math.round(ch.chance * 100)}%</b> he takes {((1 - offer / ch.need) * 100).toFixed(1)}% less than his number – the more he wants to stay, the more room there is. If he says no, he will not talk for 10 days.</>
+          : est.out ? <>He wants out: what he would ask to stay is more than a max contract – he is going to free agency.</>
           : <>He will not take this – {est.interest < 40 ? 'he is not sold on staying, so no discount at all.' : 'too far under his number.'}</>}
       </div>
       <button className="primary" disabled={cooling || ch.chance <= 0} onClick={() => { const r = userExtend(lg, p.id, offer, years); setMsg(r.msg); setSal(null); onChange?.(); }}>Offer {years} yr{years > 1 ? 's' : ''} at {money(offer)}</button>

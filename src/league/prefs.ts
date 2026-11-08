@@ -9,7 +9,7 @@ import { League, Player } from '../types';
 import { ageIn } from '../players';
 import { bpmOf, shownOvr } from '../data';
 import { peakShown } from '../ai/plan';
-import { teamStrength, askingSalary, maxSalary } from '../ai/value';
+import { teamStrength, askingSalary, maxSalary, askAtBpm, peakBpm } from '../ai/value';
 
 export interface Traits { money: number; win: number; role: number; loyal: number; market: number }
 
@@ -119,7 +119,7 @@ export const TRAIT_LABELS: [keyof Traits, string][] = [['money', 'Money'], ['win
  * Beyond money: how this season goes for him and the team, security for
  * veterans, and young players who expect to improve betting on themselves.
  */
-export interface ExtNeed { need: number; why: string[]; interest: number; ask: number; parts: { t: string; pct: number }[] }
+export interface ExtNeed { need: number; why: string[]; interest: number; ask: number; parts: { t: string; pct: number }[]; out?: boolean }
 export function extensionNeed(lg: League, p: Player, tid: string, years: number): ExtNeed {
   const N = lg.season + 1;
   const tr = traits(p, lg.season);
@@ -143,8 +143,9 @@ export function extensionNeed(lg: League, p: Player, tid: string, years: number)
   // money-first stars want the full max or will test free agency
   if (tr.money > 0.7 && ask >= max * 0.9) { d = Math.min(d, 0); why.push('wants a max contract'); }
   // 1) wanting to stay: the more he likes it here, the bigger the hometown discount (or the premium, if he does not)
-  // (it swings the price a lot: a player who does not want to stay asks up to half again his market value)
-  const stay = Math.max(-0.5, Math.min(0.35, 1.8 * d));
+  // a hometown discount is small (history: rarely more than ~10%); a player who does not want to stay asks
+  // a lot more – up to twice his market value
+  const stay = d >= 0 ? Math.min(0.1, 0.45 * d) : -Math.min(1, 4 * -d);
   const interest = Math.round(Math.max(0, Math.min(100, 50 + 160 * d)));
   // 2) length: a veteran pays for security (each year up to four is worth ~2.5% to him); a deal too long for his age
   //    costs; a young player gives up his next free agency – every year past two compounds, the more so the more
@@ -152,19 +153,24 @@ export function extensionNeed(lg: League, p: Player, tid: string, years: number)
   let len = 0;
   if (age >= 30) len += 0.025 * (Math.min(years, 4) - 1);
   if (years > (age >= 32 ? 3 : 5)) len -= 0.1;
+  // a long deal for a young player is priced at his potential: the longer, the more of it you pay for up front
+  // (5 years at 23 or younger = his projected peak's price)
   let young = 1;
   if (age <= 25 && years > 2) {
-    const growth = Math.max(0, Math.min(1, (peakShown(p, N) - shownOvr(p.z)) / 10));
-    young = Math.pow(1 + 0.04 + 0.06 * growth, years - 2);
-    why.push(growth > 0.3 ? 'gives up his next free agency while still improving – long deals cost extra' : 'a long deal costs extra – he wants to get back to the market');
+    const pot = askAtBpm(p, N, peakBpm(p, N));
+    const w = Math.min(1, (years - 2) / 3) * (age <= 23 ? 1 : age === 24 ? 0.6 : 0.3);
+    young = Math.max(1, (ask * (1 - w) + pot * w) / Math.max(ask, 1e-6));
+    if (young > 1.02) why.push(`a ${years}-year deal is priced on his potential (peak ~${peakShown(p, N)} OVR)`);
   } else if (age >= 30 && years >= 3) why.push('values a long contract');
-  const need = Math.max(0.012, Math.min(max, ask * (1 - stay) * (1 - len) * young));
+  const raw = ask * (1 - stay) * (1 - len) * young;
+  const need = Math.max(0.012, Math.min(max, raw));
   const parts = [
     { t: interest >= 50 ? 'wants to stay – hometown discount' : 'not keen on staying – wants more', pct: -stay },
     { t: age >= 30 ? 'contract length (security for a veteran)' : 'contract length', pct: -len },
-    { t: 'giving up free agency while young', pct: young - 1 },
+    { t: 'priced on his potential (long deal, young)', pct: young - 1 },
   ].filter(x => Math.abs(x.pct) >= 0.005);
-  return { need, why, interest, ask, parts };
+  // he wants more than any team may pay: no extension – he goes to free agency
+  return { need, why, interest, ask, parts, out: raw > max * 1.0001 && stay < 0 };
 }
 
 /**
@@ -174,8 +180,9 @@ export function extensionNeed(lg: League, p: Player, tid: string, years: number)
  */
 export function extensionChance(lg: League, p: Player, tid: string, sal: number, years: number) {
   const e = extensionNeed(lg, p, tid, years);
+  if (e.out) return { ...e, chance: 0 };
   if (sal + 1e-9 >= e.need) return { ...e, chance: 1 };
-  const room = e.interest < 40 ? 0 : 0.02 + 0.13 * (e.interest - 40) / 60; // how far under his number he could go
+  const room = e.interest < 40 ? 0 : 0.01 + 0.06 * (e.interest - 40) / 60; // how far under his number he could go
   const x = (e.need - sal) / e.need;
   const chance = room <= 0 ? 0 : Math.max(0, Math.pow(1 - x / room, 1.5));
   return { ...e, chance };

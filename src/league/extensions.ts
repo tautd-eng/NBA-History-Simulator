@@ -42,7 +42,7 @@ export function userExtend(lg: League, pid: string, sal: number, years: number):
   if (nextPayroll(lg, tid) + sal > hc + 1e-9) return { ok: false, msg: `You would exceed the hard cap next season (${Math.round(hc * 100)}% of the cap): ${Math.round(nextPayroll(lg, tid) * 100)}% is already committed.` };
   if ((p.extNo ?? -1) > lg.day) return { ok: false, msg: `${p.name} turned down your last offer and is not talking for now – try again in ${p.extNo! - lg.day} days.` };
   const { need, why, chance } = extensionChance(lg, p, tid, sal, years);
-  if (chance <= 0) return { ok: false, msg: `${p.name} says no: he wants at least ${(need * 100).toFixed(1)}% of the cap for ${years} yrs${why.length ? ` (${why.join(', ')})` : ''}.` };
+  if (chance <= 0) return { ok: false, msg: extensionChance(lg, p, tid, sal, years).out ? `${p.name} wants out – no contract would keep him; he is going to free agency.` : `${p.name} says no: he wants at least ${(need * 100).toFixed(1)}% of the cap for ${years} yrs${why.length ? ` (${why.join(', ')})` : ''}.` };
   if (chance < 1) {
     // below his number: a gamble – and a refusal ends the talks for a while
     const rng = rngOf(lg);
