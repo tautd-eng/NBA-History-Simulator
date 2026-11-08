@@ -130,6 +130,8 @@ export interface Pick { season: number; round: number; orig: string; owner: stri
  *  'worse' – the receiver gets the less favourable of the giver's two picks (orig a, orig b). Settled after the lottery. */
 export interface PickRight { kind: 'swap' | 'worse'; season: number; round: number; a: string; b: string }
 export interface TradeAsset { pid?: string; pick?: { season: number; round: number; orig: string }; right?: PickRight }
+/** A trade offer from one human-run team to another: from gives fromGives, to gives toGives. */
+export interface Proposal { id: number; from: string; to: string; fromGives: TradeAsset[]; toGives: TradeAsset[]; s: number; day: number; phase: string; note?: string }
 export interface TradeRec { s: number; day: number; phase: string; a: string; b: string; aGets: TradeAsset[]; bGets: TradeAsset[]; user?: boolean; desc: string; info?: Record<string, [number, number]>; mv?: [number, number] }
 
 /** games: regular-season games per team (null = as in that real season); series: playoff series length (null = as in that era). */
@@ -174,7 +176,7 @@ export interface FreeAgency {
   stage: number; pending: string[]; mle: string[];
   log: { st: number; kind: 'sign' | 'resign' | 'trade' | 'release' | 'leave' | 'option' | 'qo' | 'match' | 'sheet'; pid?: string; tid?: string; sal?: number; exp?: number; desc?: string; user?: boolean; from?: string }[];
   /** stage 0: the user's contract decisions (team options, qualifying offers) with the GM's recommendation */
-  decisions?: { pid: string; kind: 'team' | 'qo'; rec: boolean; choice?: boolean; sal: number }[];
+  decisions?: { pid: string; kind: 'team' | 'qo'; rec: boolean; choice?: boolean; sal: number; tid?: string }[];
   /** offer sheets to the user's restricted free agents, waiting for match / no match */
   sheets?: { pid: string; tid: string; sal: number; exp: number }[];
   sumSeen?: boolean;                // the summary of the contract decisions was shown
@@ -222,6 +224,8 @@ export interface League {
   off?: { y: number; step: 'recap' | 'retire' | 'dev' | 'draft'; retDone?: boolean; devDone?: boolean; ret?: RetRow[] };
   /** the season preview is shown before the first game of this season */
   previewOpen?: number | null;
+  humans?: string[];                 // hot seat: every human-run team (userTid is the one being played now)
+  proposals?: Proposal[];            // trade offers between human-run teams, waiting for the other side
   hofManual?: string[];
   jerseyManual?: { pid: string; tid: string }[]; // jerseys retired by hand              // players put into the Hall of Fame by hand
   /** awards screen after the regular season: which awards have been revealed (count of places shown) */

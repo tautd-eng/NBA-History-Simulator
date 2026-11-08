@@ -13,6 +13,8 @@ import {
   enterFreeAgency, faStage, startSeason, faOffer, faDemand, faRenounce, faRelease, faDecide, faMatch, prevTeam, faOffersFor,
 } from '../league/offseason';
 import { DecisionsBoard } from './offsteps';
+import { isHuman } from '../league/humans';
+import { OthersWaiting } from './humans';
 import { SortTable, f1 } from './sorttable';
 import { ExpansionRoom, LotteryRoom, LotteryReveal, AutoControls, useAutoPlay } from './draftday';
 import { posNum } from '../engine/game';
@@ -45,12 +47,13 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
   const act = (fn: () => void) => { fn(); onChange(); };
   useAutoPlay(playing, speed, () => {
     const c = draftOnClock(lg);
-    if (!c || c.tid === lg.userTid) return false;
+    if (!c) return false;
+    if (isHuman(lg, c.tid)) { lg.userTid = c.tid; return false; } // hot seat: that team picks
     const before = lg.draftDay?.trades?.length ?? 0;
     draftAdvance(lg, 'one'); onTick();
     if ((lg.draftDay?.trades?.length ?? 0) > before) return false; // a trade: stop so it can be seen
     const nx = draftOnClock(lg);
-    return !!nx && nx.tid !== lg.userTid;
+    return !!nx && !isHuman(lg, nx.tid);
   }, () => { setPlaying(false); onChange(); });
   if (!d) {
     const last = lg.history[lg.history.length - 1];
@@ -72,7 +75,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
   const myTurn = on && on.tid === lg.userTid;
   const myLeft = lg.userTid && d.order.slice(d.idx).some((o: any, i: number) => {
     const owner = lg.picks?.find((p: any) => p.season === d.year && p.round === o.round && p.orig === o.orig)?.owner ?? o.orig;
-    return owner === lg.userTid;
+    return isHuman(lg, owner);
   });
   const board = d.pool.map((pid: string) => lg.players[pid]).filter((p: any) => posOk(p, pos));
   const suggestion = myTurn ? draftSuggest(lg, lg.userTid) : null;
@@ -119,7 +122,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
             <button onClick={() => act(() => draftPick(lg))}>Let the GM pick</button>
           </> : <button className="primary" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'one'))}>Next pick</button>}
           <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={!on || myTurn} />
-          {!myTurn && myLeft && <button disabled={playing} onClick={() => act(() => draftAdvance(lg, 'user'))}>To my pick</button>}
+          {!myTurn && myLeft && <button disabled={playing} onClick={() => act(() => draftAdvance(lg, 'user'))}>{(lg.humans?.length ?? 0) > 1 ? 'To the next human pick' : 'To my pick'}</button>}
           <button onClick={() => { setPlaying(false); act(() => { draftAdvance(lg, 'all'); finishDraft(lg); }); }}>{lg.userTid ? 'To the end (GM picks for me)' : 'To the end'}</button>
           {d.lotto?.result && <button className="ghost" onClick={() => setReveal(true)}>Lottery</button>}
         </div>
@@ -230,11 +233,11 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
   const u = lg.userTid ? lg.teams[lg.userTid] : null;
   const pay = u ? payroll(lg, u.tid) : 0;
   const capLim = N < 1985 ? 1.3 : 1.0;
-  const pending = fa.stage === 1 ? fa.pending.map((pid: string) => lg.players[pid]) : [];
+  const pending = fa.stage === 1 ? fa.pending.map((pid: string) => lg.players[pid]).filter((p: any) => (p.bird ?? lg.userTid) === lg.userTid) : [];
   const top = Object.values(lg.players).filter((p: any) => isFreeAgent(lg, p)).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z)).slice(0, 8);
   const stages = [0, 1, 2, 3].map(s => ({ s, log: fa.log.filter((x: any) => x.st === s) }));
-  const decisions = fa.stage === 0 ? (fa.decisions ?? []) : [];
-  const sheets = fa.sheets ?? [];
+  const decisions = fa.stage === 0 ? (fa.decisions ?? []).filter((d: any) => (d.tid ?? lg.userTid) === lg.userTid || (d.kind === 'team' && lg.players[d.pid]?.tid === lg.userTid)) : [];
+  const sheets = (fa.sheets ?? []).filter((sh: any) => (lg.players[sh.pid]?.rfa ?? lg.userTid) === lg.userTid);
   const entry = (x: any, i: number) => {
     const p = x.pid ? lg.players[x.pid] : null;
     if (x.kind === 'trade') return <li key={i}><span className="yr">⇄</span><span><Linkify text={x.desc} /></span></li>;
@@ -294,6 +297,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
           </div>
           {msg && <p className="hint" role="status">{msg}</p>}
         </div>
+        <OthersWaiting lg={lg} onChange={onChange} />
         {decisions.length > 0 && (
           <div className="panel">
             <h2>Your contract decisions</h2>
@@ -310,7 +314,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
               <tbody>{decisions.map((d: any) => {
                 const p = lg.players[d.pid];
                 const yes = d.choice ?? null;
-                if (d.kind === 'team' && p.tid !== lg.userTid) return <tr key={d.pid}><td className="l">{p.name}</td><td colSpan={6} className="l dim">Traded – the option went with him; {p.tid ? lg.teams[p.tid].name : 'his new team'} decide{p.tid ? '' : 's'}.</td></tr>;
+                if (d.kind === 'team' && p.tid !== lg.userTid && (d.tid ?? lg.userTid) === lg.userTid) return <tr key={d.pid}><td className="l">{p.name}</td><td colSpan={6} className="l dim">Traded – the option went with him; {p.tid ? lg.teams[p.tid].name : 'his new team'} decide{p.tid ? '' : 's'}.</td></tr>;
                 return <tr key={d.pid}>
                   <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">{p.pos}</span></td>
                   <td>{ageIn(p, N)}</td><td><Ovr v={ovrOf(p.z)} /></td>
@@ -433,7 +437,7 @@ function OptionsSummary({ lg, openPlayer, onOpen }: any) {
         <section className="col">
           <div className="panel">
             <h2>Best players on the market</h2>
-            <ul className="news">{market.map((p: any) => <li key={p.id}><span className="yr">{ovrOf(p.z)}</span><span><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">{p.pos} · age {ageIn(p, N)} · last with {lg.teams[prevTeam(p)]?.abbr ?? '–'}{p.rfa ? ` · restricted (${lg.teams[p.rfa]?.abbr} can match)` : ''}{fa.pending.includes(p.id) ? ' · your player – you negotiate first' : ''}</span></span></li>)}</ul>
+            <ul className="news">{market.map((p: any) => <li key={p.id}><span className="yr">{ovrOf(p.z)}</span><span><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">{p.pos} · age {ageIn(p, N)} · last with {lg.teams[prevTeam(p)]?.abbr ?? '–'}{p.rfa ? ` · restricted (${lg.teams[p.rfa]?.abbr} can match)` : ''}{fa.pending.includes(p.id) ? (p.bird && p.bird !== lg.userTid ? ` · ${lg.teams[p.bird]?.abbr} negotiate first` : ' · your player – you negotiate first') : ''}</span></span></li>)}</ul>
           </div>
         </section>
       </div>

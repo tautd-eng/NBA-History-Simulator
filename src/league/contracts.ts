@@ -5,6 +5,7 @@ import { Rng } from '../rng';
 import { Contract, League, Player } from '../types';
 import { ageIn } from '../players';
 import { MIN_SAL, askingSalary, playerValue, peakBpm } from '../ai/value';
+import { isHuman } from './humans';
 
 export function rules(N: number) {
   return {
@@ -65,7 +66,7 @@ export function lockTrade(lg: League, p: Player) {
 /** Can this player be traded now? The user's own players are exempt. */
 export function tradeLocked(lg: League, p: Player) {
   const l = p.tradeLock;
-  if (!l || p.tid === lg.userTid) return false;
+  if (!l || isHuman(lg, p.tid)) return false;
   if (lg.season > l.s) return false;
   if (lg.phase !== 'regular') return true;
   return lg.day / seasonDays(lg) < l.f;

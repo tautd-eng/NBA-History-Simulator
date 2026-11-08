@@ -19,6 +19,7 @@ import { makeSchedule } from './schedule';
 import { recordHealth } from './health';
 import { computeAwards, applyAwardChips, finalsMvp } from './awards';
 import { askingSalary, contractYears, teamStrength, peakBpm, payroll, hardCap } from '../ai/value';
+import { isHuman } from './humans';
 
 export const VERSION = 1;
 
@@ -352,7 +353,7 @@ export function updateModes(lg: League, announce = true) {
     // in the summer market a front office does not flip its plan between waves without a real reason
     if (fa && t.mode === 'tank' && mode !== 'tank' && i >= n * 0.65) mode = 'tank';
     if (fa && t.mode === 'allin' && mode !== 'allin' && i < n * 0.4) mode = 'allin';
-    if (t.tid === lg.userTid) mode = undefined; // the user decides for his own team
+    if (isHuman(lg, t.tid)) mode = undefined; // people decide for their own teams
     if (announce && mode !== t.mode && mode) {
       const txt = { allin: 'goes all-in – hunting the missing pieces for a title, at the cost of the future', tank: 'starts tanking – will sell veterans for picks and young players', retool: 'is stuck in the middle – shopping for side moves to break out', rising: 'is rising with a young core – adding to it without selling the future', capclear: 'is close to the hard cap – will look to shed salary' }[mode];
       lg.news.push({ s: lg.season, t: `${t.name} ${txt}.` });
@@ -362,7 +363,7 @@ export function updateModes(lg: League, announce = true) {
     else if (announce && fa && t.mode === 'allin' && mode !== 'allin') lg.news.push({ s: lg.season, t: `${t.name} step back from the all-in push after the summer market.` });
     t.mode = mode;
     if (mode === 'tank') t.strategy = 'rebuild';
-    if (mode === 'allin' && t.tid !== lg.userTid) t.strategy = 'contend';
+    if (mode === 'allin' && !isHuman(lg, t.tid)) t.strategy = 'contend';
   });
   // only a handful of GMs are restless enough to keep shuffling the deck
   // and only so many teams can believe they are a title team at once
@@ -385,7 +386,7 @@ export function rotationPreview(lg: League, tid: string, m: NonNullable<Team['mg
 /** What the engine gets for a team: tonight's players, and – for the user's team – his rotation and tactics. */
 export function teamIn(lg: League, t: Team, rng: Rng) {
   const players = availablePlayers(lg, t.tid, rng);
-  const m = t.tid === lg.userTid ? t.mgmt : undefined;
+  const m = isHuman(lg, t.tid) ? t.mgmt : undefined;
   if (!m) return { tid: t.tid, players, paceZ: t.paceZ };
   if (m.mode === 'auto' && lg.phase !== 'playoffs' && m.youth > 0) {
     // more minutes for the young: the younger, the bigger the push
@@ -406,7 +407,7 @@ export function availablePlayers(lg: League, tid: string, rng: Rng) {
     for (const v of vets) if (ps.length > 9 && rng.chance(restP)) ps = ps.filter(p => p !== v);
   }
   // minutes follow the plan: a team that is building gives its young pieces real minutes (in the regular season)
-  const pl = t.tid !== lg.userTid && lg.phase === 'regular' ? t.plan : null;
+  const pl = !isHuman(lg, t.tid) && lg.phase === 'regular' ? t.plan : null;
   const devQ = !pl ? 1 : t.mode === 'allin' || pl.stage === 'contend' ? 1 : t.mode === 'tank' || pl.stage === 'rebuild' ? 1.35 : pl.stage === 'build' || t.mode === 'rising' ? 1.25 : 1.1;
   for (const p of ps) (p as any).rotQ = pl && pl.rising.includes(p.id) ? devQ : 1;
   for (const p of ps) {
@@ -487,7 +488,7 @@ function recordResult(lg: League, res: GameResult, rng: Rng) {
   // keep the latest 400 games, and every game of the user's team this season
   if (lg.recent.length > 400) {
     const u = lg.userTid;
-    const i = lg.recent.findIndex(r => !u || (r.home.tid !== u && r.away.tid !== u) || r.season !== lg.season);
+    const i = lg.recent.findIndex(r => !u || (!isHuman(lg, r.home.tid) && !isHuman(lg, r.away.tid)) || r.season !== lg.season);
     lg.recent.splice(i >= 0 ? i : 0, 1);
   }
 }

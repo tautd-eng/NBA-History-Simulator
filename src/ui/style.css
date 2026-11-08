@@ -900,3 +900,7 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .tac { display: flex; flex-direction: column; }
 .tbl.roster .role-col { min-width: 200px; white-space: nowrap; }
 .tbl.roster .role-col .role-badge { margin-right: 4px; }
+.playing-as { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--muted); margin-left: 8px; }
+.playing-as select { max-width: 190px; font-weight: 600; }
+.hum-list li label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+@media (max-width: 640px) { .playing-as { margin-left: 0; } .playing-as select { max-width: 150px; } }

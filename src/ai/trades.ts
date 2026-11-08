@@ -13,6 +13,7 @@ import { posNum } from '../engine/game';
 import { bucket, tagOf, ageIn } from '../players';
 import { shownOvr, K, OVR_VOLUME } from '../data';
 import { planOf, assessTeam, keeps } from './plan';
+import { isHuman } from '../league/humans';
 
 export const ROSTER_MIN = 13, ROSTER_MAX = 15;
 
@@ -94,7 +95,7 @@ export function youngCore(lg: League, p: Player) {
 export function protectedYoung(lg: League, p: Player) {
   if (youngCore(lg, p)) return true;
   const t = p.tid ? lg.teams[p.tid] : null;
-  if (!t || t.mode === 'allin' || t.tid === lg.userTid) return false;
+  if (!t || t.mode === 'allin' || isHuman(lg, t.tid)) return false;
   return !!planOf(lg, t.tid)?.rising.includes(p.id);
 }
 /** Players the team's plan is built around, which it does not trade away for less than a lot. */
@@ -384,10 +385,10 @@ export function tradeRules(lg: League, a: string, b: string, aGets: TradeAsset[]
     const t = lg.teams[tid];
     const size = t.roster.length + inc.length - out.length;
     // AI teams may take an extra body or two and waive their last men afterwards
-    const slack = a === lg.userTid || b === lg.userTid ? 0 : 2;
+    const slack = isHuman(lg, a) || isHuman(lg, b) ? 0 : 2;
     if (size > ROSTER_MAX + slack) return `${t.name} would have too many players (${size}, max ${ROSTER_MAX}).`;
     // a team may go short only if free agents are there to fill the roster afterwards
-    if (size < ROSTER_MIN - 1 && (size < ROSTER_MIN - 3 || freeAgentCount(lg) < ROSTER_MIN - size + 2)) return `${t.name} would have too few players (${size}).`;
+    if (size < ROSTER_MIN - 1 && size < t.roster.length && (size < ROSTER_MIN - 3 || freeAgentCount(lg) < ROSTER_MIN - size + 2)) return `${t.name} would have too few players (${size}).`;
     const payAfter = payroll(lg, tid) + sal(lg, inc) - sal(lg, out);
     const hc = hardCap(lg);
     if (payAfter > hc + 1e-9 && sal(lg, inc) > sal(lg, out) + 1e-9) return `${t.name} would exceed the hard cap (${Math.round(hc * 100)}% of the cap): payroll after the trade would be ${Math.round(payAfter * 100)}%.`;
@@ -440,7 +441,7 @@ function coreReluctance(lg: League, tid: string, out: Player[]) {
   const top = t.roster.map(pid => lg.players[pid]).sort((x, y) => pv(lg, y, h, tid) - pv(lg, x, h, tid)).slice(0, 3).map(p => p.id);
   const share = h === 'allin' || h === 'contend' ? 0.25 : h === 'middle' ? 0.15 : 0.05;
   // the plan's core and young pieces cost more to pry loose than just being among the top three
-  const pl = tid !== lg.userTid ? planOf(lg, tid) : null;
+  const pl = !isHuman(lg, tid) ? planOf(lg, tid) : null;
   const keep = pl ? planKeeps(lg, t) : new Set<string>();
   return out.reduce((a, p) => {
     const sh = keep.has(p.id) ? Math.max(share, pl!.rising.includes(p.id) ? 0.3 : pl!.stage === 'rebuild' ? 0.1 : 0.25) : top.includes(p.id) ? share : 0;
@@ -531,7 +532,7 @@ export function executeTrade(lg: League, a: string, b: string, aGets: TradeAsset
 export function fillRoster(lg: League, tid: string) {
   const t = lg.teams[tid];
   faCache = null;
-  while (t.roster.length > ROSTER_MAX && tid !== lg.userTid) {
+  while (t.roster.length > ROSTER_MAX && !isHuman(lg, tid)) {
     const cut = t.roster.map(pid => lg.players[pid])
       // the least valuable player goes (a cheap one if it is close: half of a big salary would stay on the books anyway)
       .sort((x, y) => (keeps(lg, tid, x) ? 1 : 0) - (keeps(lg, tid, y) ? 1 : 0) || (playerValue(x, lg.season, t.strategy) + x.contract.sal * 3) - (playerValue(y, lg.season, t.strategy) + y.contract.sal * 3))[0];
@@ -572,7 +573,7 @@ export function fillRoster(lg: League, tid: string) {
 export function aiTradeRound(lg: League, rng: Rng, intensity = 1): TradeRec[] {
   ensurePicks(lg);
   const done: TradeRec[] = [];
-  const teams = Object.values(lg.teams).filter(t => t.active && t.tid !== lg.userTid);
+  const teams = Object.values(lg.teams).filter(t => t.active && !isHuman(lg, t.tid));
   rng.shuffle(teams);
   const busy = new Set<string>();
   for (const A of teams) {
@@ -690,7 +691,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
     }
     // B can balance too: a lesser player or a pick coming back to A
     const hB = horizonOf(B);
-    const bCore = new Set([...B.roster.map(pid => lg.players[pid]).sort((x, y) => playerValue(y, S, hB) - playerValue(x, S, hB)).slice(0, 3).map(p => p.id), ...(B.tid !== lg.userTid ? planKeeps(lg, B) : [])]);
+    const bCore = new Set([...B.roster.map(pid => lg.players[pid]).sort((x, y) => playerValue(y, S, hB) - playerValue(x, S, hB)).slice(0, 3).map(p => p.id), ...(!isHuman(lg, B.tid) ? planKeeps(lg, B) : [])]);
     for (const pid of B.roster) {
       const p = lg.players[pid];
       if (pid === tgt.p.id || bCore.has(pid) || tradeLocked(lg, p) || justTraded(lg, p) || soldBy(lg, p, A.tid) || protectedYoung(lg, p)) continue;
@@ -811,7 +812,7 @@ function findDump(lg: League, A: Team, others: Team[], force = false, minExp = l
  */
 export function clearRoom(lg: League, A: Team, room: () => number, worth: number, minExp: number, why: string) {
   if (room() >= -1e-9) return true;
-  if (A.tid === lg.userTid || hardCap(lg) === Infinity) return false;
+  if (isHuman(lg, A.tid) || hardCap(lg) === Infinity) return false;
   fresh(lg);
   const h = horizonOf(A);
   const spare = () => A.roster.map(pid => lg.players[pid]).filter(x => x.contract.sal > MIN_SAL * 1.5 && x.contract.exp >= minExp && !keeps(lg, A.tid, x))
@@ -820,7 +821,7 @@ export function clearRoom(lg: League, A: Team, room: () => number, worth: number
   const releasable = () => { let v = 0, f = 0; for (const x of spare()) { v += Math.max(0, pv(lg, x, h, A.tid)); if (v > worth) break; f += x.contract.sal * (1 - DEAD_SHARE); } return f; };
   // nothing to do if even trading every spare contract away would not be enough
   if (spare().reduce((a, x) => a + x.contract.sal, 0) < -room()) return false;
-  const others = Object.values(lg.teams).filter(t => t.active && t !== A && t.tid !== lg.userTid);
+  const others = Object.values(lg.teams).filter(t => t.active && t !== A && !isHuman(lg, t.tid));
   for (let tries = 0; tries < 4 && room() < -1e-9; tries++) {
     const deal = findDump(lg, A, others, true, minExp);
     if (!deal) break;
@@ -856,8 +857,8 @@ export function complyHardCap(lg: League, rng: Rng, buyouts = false) {
   for (const A of Object.values(lg.teams)) {
     if (!A.active) continue;
     for (let tries = 0; tries < 3 && payroll(lg, A.tid) > hc + 1e-9; tries++) {
-      if (A.tid === lg.userTid) break;
-      const others = Object.values(lg.teams).filter(t => t.active && t !== A && t.tid !== lg.userTid);
+      if (isHuman(lg, A.tid)) break;
+      const others = Object.values(lg.teams).filter(t => t.active && t !== A && !isHuman(lg, t.tid));
       const deal = findDump(lg, A, others, true);
       if (!deal) break;
       executeTrade(lg, A.tid, deal.b, deal.aGets, deal.bGets);
@@ -970,7 +971,7 @@ export function aiDraftTrade(lg: League, rng: Rng): TradeRec | null {
   const i = d.idx, Y = d.year, cur = d.order[i];
   const xid = pickOwner(lg, Y, cur.round, cur.orig);
   const X = lg.teams[xid];
-  if (!X || xid === lg.userTid) return null;
+  if (!X || isHuman(lg, xid)) return null;
   if (!rng.chance(cur.round === 1 ? 0.3 : 0.12)) return null;
   const curPk = { season: Y, round: cur.round, orig: cur.orig };
   const hX = horizonOf(X), wX = moneyWeight(lg, X.tid);
@@ -980,7 +981,7 @@ export function aiDraftTrade(lg: League, rng: Rng): TradeRec | null {
   for (let j = i + 1; j < Math.min(d.order.length, i + 16); j++) {
     const o = d.order[j];
     const yid = pickOwner(lg, Y, o.round, o.orig);
-    if (yid === xid || yid === lg.userTid || seen.has(yid) || !lg.teams[yid]?.active) continue;
+    if (yid === xid || isHuman(lg, yid) || seen.has(yid) || !lg.teams[yid]?.active) continue;
     seen.add(yid);
     const Yt = lg.teams[yid], hY = horizonOf(Yt), wY = moneyWeight(lg, yid);
     const laterPk = { season: Y, round: o.round, orig: o.orig };

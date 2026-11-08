@@ -6,6 +6,9 @@ import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, seasonInfo } from '../da
 import { ageIn } from '../players';
 import { aiResponse, executeTrade, fillRoster, ensurePicks, deadlineDay, pastDeadline, describeAssets, tradeableValue, pickTradeValue, pickUsed, rightOptions, describeRight, rightTradeValue, pickTied } from '../ai/trades';
 import { payroll, hardCap } from '../ai/value';
+import { isHuman } from '../league/humans';
+import { propose as sendOffer, answer, withdraw, inbox, outbox, proposalProblem, describeSide } from '../league/proposals';
+import { tradeRules } from '../ai/trades';
 
 const money = (frac: number, s: number) => {
   const m = frac * seasonInfo(s).cap;
@@ -45,7 +48,12 @@ export function Trades({ lg, openPlayer, onDone }: any) {
     return out;
   };
   const aGives = assets(selA, a), bGives = assets(selB, b);
-  const reply = (aGives.length || bGives.length) ? aiResponse(lg, a, b, bGives, aGives) : null;
+  // a person runs the partner: no AI answer – the offer waits in their inbox
+  const toHuman = isHuman(lg, b) && b !== a && a === lg.userTid;
+  const rule = (aGives.length || bGives.length) && toHuman ? tradeRules(lg, a, b, bGives, aGives) : null;
+  const reply = (aGives.length || bGives.length) ? (toHuman
+    ? { accept: !rule, text: rule ?? `The ${lg.teams[b].name} are run by a person: the offer goes to their inbox and they answer when their team is played.` }
+    : aiResponse(lg, a, b, bGives, aGives)) : null;
   const closed = lg.phase === 'playoffs' || (lg.phase === 'regular' && pastDeadline(lg));
 
   const toggle = (set: Set<string>, setter: any, k: string) => {
@@ -54,6 +62,11 @@ export function Trades({ lg, openPlayer, onDone }: any) {
 
   const propose = () => {
     if (!reply?.accept) return;
+    if (toHuman) {
+      const r = sendOffer(lg, a, b, aGives, bGives);
+      if (r.ok) { setSelA(new Set()); setSelB(new Set()); }
+      setMsg(r.msg); onDone(); return;
+    }
     const rec = executeTrade(lg, a, b, bGives, aGives, true);
     fillRoster(lg, a); fillRoster(lg, b);
     setSelA(new Set()); setSelB(new Set());
@@ -114,11 +127,27 @@ export function Trades({ lg, openPlayer, onDone }: any) {
   };
 
   const trades = (lg.trades ?? []).slice().reverse();
+  const inc = inbox(lg, lg.userTid), out = outbox(lg, lg.userTid);
+  const reply2 = (id: number, yes: boolean) => { const r = answer(lg, id, yes); setMsg(r.msg); onDone(); };
   return (
     <div className="col">
+      {(inc.length > 0 || out.length > 0) && <div className="panel accent">
+        <h2>Trade offers{inc.length ? ` · ${inc.length} for you` : ''}</h2>
+        {inc.length > 0 && <ul className="news">{inc.map((pr: any) => {
+          const bad = proposalProblem(lg, pr);
+          return <li key={pr.id}><span className="yr"><TL tid={pr.from} abbr /></span><span>
+            The {lg.teams[pr.from].name} offer <b>{describeSide(lg, pr.fromGives)}</b> for <b>{describeSide(lg, pr.toGives)}</b>.
+            {bad ? <span className="dim"> {bad}</span> : null}{' '}
+            <button className="small primary" disabled={!!bad || closed} onClick={() => reply2(pr.id, true)}>Accept</button>{' '}
+            <button className="small" onClick={() => reply2(pr.id, false)}>Decline</button></span></li>;
+        })}</ul>}
+        {out.length > 0 && <><p className="dim">Your offers waiting for an answer:</p><ul className="news">{out.map((pr: any) => <li key={pr.id}><span className="yr"><TL tid={pr.to} abbr /></span><span>
+          You offer {describeSide(lg, pr.fromGives)} for {describeSide(lg, pr.toGives)}.{' '}
+          <button className="small" onClick={() => { withdraw(lg, pr.id); setMsg('Offer withdrawn.'); onDone(); }}>Withdraw</button></span></li>)}</ul></>}
+      </div>}
       <div className="panel">
         <h2>Trade proposal</h2>
-        <p className="note">{closed ? (lg.phase === 'playoffs' ? 'Trading is closed during the playoffs.' : 'This season\'s trade deadline has passed. Trading reopens on draft day.') : lg.phase === 'regular' ? `Trade deadline: day ${deadlineDay(lg) + 1} of the season (today is day ${lg.day + 1}).` : lg.phase === 'draft' ? 'Draft day: picks can be traded until they are used – move up or down the board.' : 'Offseason: trading is open.'} AI teams trade among themselves; with your team they only trade when you propose.</p>
+        <p className="note">{closed ? (lg.phase === 'playoffs' ? 'Trading is closed during the playoffs.' : 'This season\'s trade deadline has passed. Trading reopens on draft day.') : lg.phase === 'regular' ? `Trade deadline: day ${deadlineDay(lg) + 1} of the season (today is day ${lg.day + 1}).` : lg.phase === 'draft' ? 'Draft day: picks can be traded until they are used – move up or down the board.' : 'Offseason: trading is open.'} AI teams trade among themselves; with your team they only trade when you propose.{lg.humans?.length > 1 ? ' Offers to another person\'s team wait for their answer.' : ''}</p>
         <div className="trade-pick">
           <label htmlFor="trade-a">Your side
             <select id="trade-a" value={a} onChange={e => { setA(e.target.value); setSelA(new Set()); if (e.target.value === b) setB(teams.find((t: any) => t.tid !== e.target.value).tid); }}>
@@ -140,7 +169,7 @@ export function Trades({ lg, openPlayer, onDone }: any) {
             <p><b>{reply.text}</b></p>
             <p className="dim">Salaries: {lg.teams[a].abbr} send {money(aGives.reduce((s: number, x: any) => s + (x.pid ? lg.players[x.pid].contract.sal : 0), 0), lg.season)}, receive {money(bGives.reduce((s: number, x: any) => s + (x.pid ? lg.players[x.pid].contract.sal : 0), 0), lg.season)}</p>
           </> : <p className="dim">Select players or picks on both sides – the AI's answer appears here. “Value” is how much the partner GM values an asset: on-court benefit over the next few years (a star is worth far more than two average players) minus salary cost; a cheap deal or rookie contract adds value, an overpay subtracts it. A pick is the expected rookie at that slot on a cheap deal.</p>}
-          <button className="primary" disabled={!reply?.accept || closed} onClick={propose}>Propose trade</button>
+          <button className="primary" disabled={!reply?.accept || closed} onClick={propose}>{toHuman ? 'Send offer' : 'Propose trade'}</button>
         </div>
         {msg && <p className="ok-msg">{msg}</p>}
       </div>

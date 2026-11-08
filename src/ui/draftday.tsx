@@ -13,6 +13,7 @@ import { SortTable } from './sorttable';
 import { posNum } from '../engine/game';
 import { colorsOf } from './art';
 import { pickOwner } from '../ai/trades';
+import { isHuman } from '../league/humans';
 
 function Ovr({ v }: any) {
   const tier = v >= 90 ? 'star' : v >= 80 ? 'good' : v >= 70 ? 'mid' : 'low';
@@ -56,7 +57,8 @@ export function ExpansionRoom({ lg, onChange, onTick, openPlayer, openTeam }: an
   const myTurn = on && on.nt === lg.userTid;
   useAutoPlay(playing, speed, () => {
     const c = expOnClock(lg);
-    if (!c || c.nt === lg.userTid) return false;
+    if (!c) return false;
+    if (isHuman(lg, c.nt)) { lg.userTid = c.nt; return false; } // hot seat: that team picks
     expPick(lg); onTick();
     return !!expOnClock(lg);
   }, () => { setPlaying(false); onChange(); });

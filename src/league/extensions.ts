@@ -10,6 +10,7 @@ import { extensionNeed, extensionChance } from './prefs';
 import { rngOf } from './league';
 const save = (lg: League, r: Rng) => { lg.rng = [...r.s] as any; };
 import { shownOvr } from '../data';
+import { isHuman } from './humans';
 
 /** Next season's payroll: contracts that run on, signed extensions, dead money. */
 export function nextPayroll(lg: League, tid: string) {
@@ -63,7 +64,7 @@ export function userExtend(lg: League, pid: string, sal: number, years: number):
 export function aiExtensions(lg: League, rng: Rng) {
   const N = lg.season + 1;
   for (const t of Object.values(lg.teams)) {
-    if (!t.active || t.tid === lg.userTid) continue;
+    if (!t.active || isHuman(lg, t.tid)) continue;
     const ranked = t.roster.map(pid => lg.players[pid]).sort((a, b) => playerValue(b, N, t.strategy) - playerValue(a, N, t.strategy));
     for (const p of ranked) {
       if (!extendable(lg, p) || !rng.chance(0.12)) continue;

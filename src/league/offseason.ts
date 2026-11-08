@@ -1,3 +1,4 @@
+import { isHuman, humans } from './humans';
 // Off-season: expansion, lottery and draft, retirements, development, contracts,
 // arrivals and free agency.
 import { nextPayroll } from './extensions';
@@ -170,7 +171,7 @@ export function expAdvance(lg: League, mode: 'one' | 'all') {
   if (!e.confirmed) e.confirmed = true;
   while (expOnClock(lg)) {
     const on = expOnClock(lg)!;
-    if (mode !== 'all' && on.nt === lg.userTid) break;
+    if (mode !== 'all' && isHuman(lg, on.nt)) { lg.userTid = on.nt; break; }
     expPick(lg);
     if (mode === 'one') break;
   }
@@ -368,11 +369,12 @@ export function draftAdvance(lg: League, mode: 'one' | 'user' | 'all') {
   while (true) {
     const on = draftOnClock(lg);
     if (!on) break;
-    if (mode !== 'all' && on.tid === lg.userTid && lg.userTid) break;
+    // a person's pick: stop, and hand the controls to that team (hot seat)
+    if (mode !== 'all' && isHuman(lg, on.tid)) { lg.userTid = on.tid; break; }
     // a pick on the clock may change hands first (trade up / trade down)
-    if (on.tid !== lg.userTid && aiDraftTrade(lg, rngOf(lg))) {
+    if (!isHuman(lg, on.tid) && aiDraftTrade(lg, rngOf(lg))) {
       const now = draftOnClock(lg);
-      if (now && mode !== 'all' && now.tid === lg.userTid && lg.userTid) break;
+      if (now && mode !== 'all' && isHuman(lg, now.tid)) { lg.userTid = now.tid; break; }
     }
     draftPick(lg);
     n++;
@@ -540,6 +542,8 @@ export function faOffer(lg: League, pid: string, sal: number): { ok: boolean; ms
   if (lg.phase !== 'freeagency' && lg.phase !== 'regular') return { ok: false, msg: 'You can sign players in free agency or during the regular season.' };
   if (p.tid || p.retired || p.prospect || (p as any).stash) return { ok: false, msg: `${p.name} is not a free agent.` };
   if (lg.fa?.stage === 0) return { ok: false, msg: 'Finish the contract decisions first – then the market opens.' };
+  // another person's free agent in his exclusive window
+  if (lg.fa?.stage === 1 && lg.fa.pending.includes(pid) && p.bird && p.bird !== tid) return { ok: false, msg: `${p.name} is negotiating with the ${lg.teams[p.bird]?.name} first.` };
   if (lg.fa?.sheets?.some(x => x.pid === pid)) return { ok: false, msg: `${p.name} already signed an offer sheet – waiting to see if it gets matched.` };
   if (sal > maxSalary(p, lg.season) + 1e-9) return { ok: false, msg: `The most you can offer is a max contract: ${(maxSalary(p, lg.season) * 100).toFixed(1)}% of the cap.` };
   sal = Math.max(MIN_SAL, sal);
@@ -557,6 +561,12 @@ export function faOffer(lg: League, pid: string, sal: number): { ok: boolean; ms
   const yrs = contractYears(p, lg.season, () => rng.next());
   save(lg, rng);
   const N = lg.season;
+  // another person's restricted free agent: an offer sheet that team decides on when it plays
+  if (p.rfa && p.rfa !== tid && isHuman(lg, p.rfa) && lg.fa) {
+    (lg.fa.sheets ??= []).push({ pid, tid, sal, exp: N - 1 + yrs });
+    lg.news.push({ s: N, t: `${tagOf(p, N)} signed an offer sheet with the ${lg.teams[tid].name} – the ${lg.teams[p.rfa].name} can match.` });
+    return { ok: true, msg: `${p.name} signed your offer sheet. The ${lg.teams[p.rfa].name} decide whether to match it.` };
+  }
   // another team's restricted free agent: they may match
   if (p.rfa && p.rfa !== tid) {
     const R = p.rfa;
@@ -649,11 +659,16 @@ export function faDecide(lg: League, pid: string, choice: boolean) {
 /** End of stage 0: apply the user's decisions (the GM's recommendation where he made none). */
 function applyDecisions(lg: League) {
   const fa = lg.fa!;
-  const tid = lg.userTid;
   const N = lg.season;
   for (const d of fa.decisions ?? []) {
     const p = lg.players[d.pid];
     const keep = d.choice ?? d.rec;
+    // a team option traded to another person's team: that team decides (its choice, or its GM's)
+    if (d.kind === 'team' && p.tid && p.tid !== (d.tid ?? lg.userTid) && isHuman(lg, p.tid)) {
+      if (d.choice === undefined) d.rec = worthKeeping(lg, p, p.contract.sal, N, lg.teams[p.tid].strategy);
+      d.tid = p.tid;
+    }
+    const tid = d.tid ?? lg.userTid;
     // traded away before the decisions were confirmed: the option went with him, and his new team decides
     if (d.kind === 'team' && p.tid && p.tid !== tid) {
       const t = lg.teams[p.tid];
@@ -736,7 +751,7 @@ function bestBid(lg: League, p: Player, rng: Rng, skip?: string, clear = false):
   const yrs = contractYears(p, N, () => rng.next());
   const bids: { t: Team; sal: number; yrs: number; score: number; cut: Player | null; need: boolean }[] = [];
   for (const t of activeTeams(lg)) {
-    if (t.tid === lg.userTid || t.tid === skip) continue;
+    if (isHuman(lg, t.tid) || t.tid === skip) continue;
     if (p.cut?.tid === t.tid && p.cut.s === N) continue;
     const cut = t.roster.length >= ROSTER_MAX ? cheapCut(lg, t, p) : null;
     if (t.roster.length >= ROSTER_MAX && !cut) continue;
@@ -767,14 +782,14 @@ function aiMatches(lg: League, p: Player, tid: string, sal: number) {
   if (t.roster.length >= ROSTER_MAX || !worthKeeping(lg, p, sal, lg.season, t.strategy)) return false;
   if (payroll(lg, tid) + sal <= lim) return true;
   // his team builds around him: it makes room rather than lose him
-  return tid !== lg.userTid && keeps(lg, tid, p) && clearRoom(lg, t, () => lim - payroll(lg, tid) - sal, worthTo(lg, p, tid) * 1.5, lg.season, `to match the offer sheet for ${p.name}`);
+  return !isHuman(lg, tid) && keeps(lg, tid, p) && clearRoom(lg, t, () => lim - payroll(lg, tid) - sal, worthTo(lg, p, tid) * 1.5, lg.season, `to match the offer sheet for ${p.name}`);
 }
 
 /** The user answers an offer sheet for his restricted free agent. */
 export function faMatch(lg: League, pid: string, match: boolean): { ok: boolean; msg: string } {
   const fa = lg.fa;
   const sh = fa?.sheets?.find(x => x.pid === pid);
-  const tid = lg.userTid;
+  const tid = (sh && lg.players[pid]?.rfa) || lg.userTid;
   if (!fa || !sh || !tid) return { ok: false, msg: 'The offer is gone.' };
   const p = lg.players[pid];
   if (match && lg.teams[tid].roster.length >= ROSTER_MAX) return { ok: false, msg: `Roster is full (${ROSTER_MAX}) – release a player first.` };
@@ -796,7 +811,8 @@ export function faMatch(lg: League, pid: string, match: boolean): { ok: boolean;
 function resolveSheets(lg: League) {
   for (const sh of [...(lg.fa?.sheets ?? [])]) {
     const p = lg.players[sh.pid];
-    faMatch(lg, sh.pid, !!lg.userTid && aiMatches(lg, p, lg.userTid, sh.sal));
+    const r = p.rfa ?? lg.userTid;
+    faMatch(lg, sh.pid, !!r && aiMatches(lg, p, r, sh.sal));
   }
 }
 
@@ -826,8 +842,16 @@ export function faStage(lg: League) {
 /** The user's unhandled expiring players: the GM decides, as for AI teams. */
 function resolvePending(lg: League, rng: Rng) {
   const fa = lg.fa!;
-  const tid = lg.userTid;
-  if (!tid || !fa.pending.length) { fa.pending = []; return; }
+  const all = fa.pending;
+  for (const h of humans(lg)) {
+    fa.pending = all.filter(pid => (lg.players[pid].bird ?? lg.userTid) === h);
+    resolvePendingFor(lg, rng, h);
+  }
+  fa.pending = [];
+}
+function resolvePendingFor(lg: League, rng: Rng, tid: string) {
+  const fa = lg.fa!;
+  if (!tid || !fa.pending.length) return;
   const t = lg.teams[tid];
   const N = lg.season;
   let pay = payroll(lg, tid);
@@ -859,7 +883,7 @@ function reachFloor(lg: League, rng: Rng) {
   const N = lg.season;
   const fa = lg.fa!;
   for (const t of activeTeams(lg)) {
-    if (t.tid === lg.userTid) continue;
+    if (isHuman(lg, t.tid)) continue;
     let pay = payroll(lg, t.tid);
     for (let guard = 0; pay < FLOOR - 0.01 && guard < 6; guard++) {
       const p = Object.values(lg.players).filter(x => isFreeAgent(lg, x) && !x.rfa).sort((a, b) => playerValue(b, N, t.strategy) - playerValue(a, N, t.strategy))[0];
@@ -901,7 +925,7 @@ function teamFitGain(lg: League, tid: string, p: Player) {
 function teamOffers(lg: League, p: Player, stage: number, rng: { next(): number; normal(): number }, ask: number, yrsOffer: number) {
   const N = lg.season;
   const pre = N < 1985;
-  const teams = activeTeams(lg).filter(t => t.tid !== lg.userTid);
+  const teams = activeTeams(lg).filter(t => !isHuman(lg, t.tid));
   const fa = lg.fa!;
   const max = maxSalary(p, N);
   const offers: { t: Team; sal: number; score: number; mle: boolean; cut: Player | null; needRoom: boolean }[] = [];
@@ -965,7 +989,7 @@ export function faOffersFor(lg: League, p: Player) {
 function aiSignings(lg: League, rng: Rng, stage: number) {
   const N = lg.season;
   const pre = N < 1985;
-  const teams = activeTeams(lg).filter(t => t.tid !== lg.userTid);
+  const teams = activeTeams(lg).filter(t => !isHuman(lg, t.tid));
   const fa = lg.fa!;
   const signed: string[] = [];
   const pool = Object.values(lg.players).filter(p => isFreeAgent(lg, p)).sort((a, b) => playerValue(b, N) - playerValue(a, N));
@@ -990,7 +1014,7 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
     const rights = p.rfa;
     if (rights && rights !== o.t.tid) {
       // restricted free agent: an offer sheet the rights team may match
-      if (rights === lg.userTid) {
+      if (isHuman(lg, rights)) {
         if (!(fa.sheets ??= []).some(x => x.pid === p.id)) {
           fa.sheets.push({ pid: p.id, tid: o.t.tid, sal: o.sal, exp: N - 1 + yrs });
           fa.log.push({ st: stage, kind: 'sheet', pid: p.id, tid: o.t.tid, sal: o.sal, desc: `offer sheet for your RFA – awaiting your decision` });
@@ -1025,7 +1049,7 @@ export function startSeason(lg: League) {
     if (!p.rfa || p.tid || p.retired) continue;
     const t = lg.teams[p.rfa];
     // a full roster does not cost an AI team its restricted free agent: the least valuable player is waived instead
-    if (t?.active && t.tid !== lg.userTid && t.roster.length >= ROSTER_MAX) {
+    if (t?.active && !isHuman(lg, t.tid) && t.roster.length >= ROSTER_MAX) {
       const worst = t.roster.map(pid => lg.players[pid]).sort((a, b) => playerValue(a, N, t.strategy) - playerValue(b, N, t.strategy))[0];
       if (worst && playerValue(worst, N, t.strategy) < playerValue(p, N, t.strategy)) {
         t.roster = t.roster.filter(pid => pid !== worst.id); releaseDead(lg, t.tid, worst); worst.tid = null;
@@ -1036,7 +1060,7 @@ export function startSeason(lg: League) {
     if (t?.active && t.roster.length < ROSTER_MAX) {
       // nobody sent an offer sheet: an AI team that wants him signs him to a market deal (he has nowhere else to go);
       // only if it won't pay that does he play the year on the qualifying offer
-      if (t.tid !== lg.userTid) {
+      if (!isHuman(lg, t.tid)) {
         const ask = Math.min(maxSalary(p, N), askingSalary(p, N) * 0.92);
         if (ask > (p.qo ?? MIN_SAL) && worthKeeping(lg, p, ask, N, t.strategy) && (payroll(lg, t.tid) + ask <= hardCap(lg)
           || (keeps(lg, t.tid, p) && clearRoom(lg, t, () => hardCap(lg) - payroll(lg, t.tid) - ask, worthTo(lg, p, t.tid), N, `to make room to re-sign ${p.name}`)))) {
@@ -1047,7 +1071,7 @@ export function startSeason(lg: League) {
         }
       }
       // a team with room still sends him an offer sheet; his team matches only if it can and wants to
-      const bid = t.tid !== lg.userTid ? bestBid(lg, p, rng, t.tid) : null;
+      const bid = !isHuman(lg, t.tid) ? bestBid(lg, p, rng, t.tid) : null;
       if (bid && bid.sal > (p.qo ?? MIN_SAL) * 1.3) {
         if (aiMatches(lg, p, t.tid, bid.sal)) {
           signWith(lg, p, t.tid, bid.sal, N - 1 + bid.yrs);
@@ -1062,7 +1086,7 @@ export function startSeason(lg: League) {
       const qo = p.qo ?? MIN_SAL;
       signWith(lg, p, t.tid, qo, N);
       lg.fa?.log.push({ st: 3, kind: 'qo', pid: p.id, tid: t.tid, from: t.tid, sal: qo, exp: N, desc: 'accepted the qualifying offer (1 yr)' });
-      if (t.tid === lg.userTid) lg.news.push({ s: N, t: `${tagOf(p, N)} accepted the ${t.abbr} qualifying offer (1 yr).` });
+      if (isHuman(lg, t.tid)) lg.news.push({ s: N, t: `${tagOf(p, N)} accepted the ${t.abbr} qualifying offer (1 yr).` });
     }
   }
   // everyone under the hard cap before the season (after the qualifying offers): dumps, then buyouts
@@ -1081,7 +1105,7 @@ export function startSeason(lg: League) {
       lockTrade(lg, best);
       filled.push(tagOf(best, N));
       lg.fa?.log.push({ st: 4, kind: 'sign', pid: best.id, tid: t.tid, from: prevTeam({ ...best, tid: null } as Player), sal: fair, exp: N, desc: 'to fill the roster' });
-      if (t.tid !== lg.userTid && bpmOf(best.z) > NEWS_BPM) aiFill.push(`${tagOf(best, N)} → ${t.abbr}`);
+      if (!isHuman(lg, t.tid) && bpmOf(best.z) > NEWS_BPM) aiFill.push(`${tagOf(best, N)} → ${t.abbr}`);
       if (!lg.fa) addTx(best, N, fair > MIN_SAL + 1e-9 ? `Signed with ${t.name}: 1 yr, ${Math.round(fair * 1000) / 10}% of the cap` : `Signed with ${t.name}: minimum deal (1 yr)`, -1);
     }
     const cut: string[] = [];
@@ -1093,7 +1117,7 @@ export function startSeason(lg: League) {
       cut.push(tagOf(worst, N));
       addTx(worst, N, `Released by ${t.name} before the season`, -1);
     }
-    if (t.tid === lg.userTid && (filled.length || cut.length)) {
+    if (isHuman(lg, t.tid) && (filled.length || cut.length)) {
       lg.news.push({ s: N, t: `${t.name}: ${filled.length ? `roster filled to ${ROSTER_MIN} with ${filled.join(', ')}` : ''}${filled.length && cut.length ? '; ' : ''}${cut.length ? `released ${cut.join(', ')}` : ''}.` });
     }
   }
@@ -1292,8 +1316,8 @@ function processOptions(lg: League, rng: Rng, log: FreeAgency['log'], decisions:
         p.contract.opts = p.contract.opts!.filter(x => x !== o);
         log.push({ st: 0, kind: 'option', pid, tid: t.tid, desc: 'exercised his player option and stays' });
       }
-    } else if (t.tid === lg.userTid) {
-      decisions.push({ pid, kind: 'team', rec: worthKeeping(lg, p, p.contract.sal, N, t.strategy), sal: p.contract.sal });
+    } else if (isHuman(lg, t.tid)) {
+      decisions.push({ pid, kind: 'team', rec: worthKeeping(lg, p, p.contract.sal, N, t.strategy), sal: p.contract.sal, tid: t.tid });
     } else aiTeamOption(lg, t, p, Y, log);
   }
 }
@@ -1327,12 +1351,12 @@ function contracts(lg: League, rng: Rng, log: FreeAgency['log'], decisions: NonN
   const cap = 1;
   const pending: string[] = [];
   for (const t of activeTeams(lg)) {
-    if (t.tid === lg.userTid) {
+    if (isHuman(lg, t.tid)) {
       for (const p of t.roster.map(pid => lg.players[pid]).filter(p => p.contract.exp <= Y)) {
         t.roster = t.roster.filter(pid => pid !== p.id);
         p.tid = null; p.bird = t.tid;
         // restricted: the user decides on a qualifying offer; otherwise an exclusive re-signing window
-        if (rfaEligible(p, N, lg)) decisions.push({ pid: p.id, kind: 'qo', rec: worthKeeping(lg, p, qoAmount(p), N, t.strategy), sal: qoAmount(p) });
+        if (rfaEligible(p, N, lg)) decisions.push({ pid: p.id, kind: 'qo', rec: worthKeeping(lg, p, qoAmount(p), N, t.strategy), sal: qoAmount(p), tid: t.tid });
         else pending.push(p.id);
       }
       continue;
@@ -1441,7 +1465,7 @@ export function recallStash(lg: League, pid: string): { ok: boolean; msg: string
 export function aiRecallStash(lg: League, rng: Rng, chance = 1) {
   const S = lg.phase === 'regular' ? lg.season : lg.season + 1;
   for (const p of Object.values(lg.players) as any[]) {
-    if (!p.stash || p.retired || p.rights === lg.userTid) continue;
+    if (!p.stash || p.retired || isHuman(lg, p.rights)) continue;
     const t = lg.teams[p.rights];
     if (!t?.active || t.roster.length >= ROSTER_MAX) continue;
     const ovr = ovrOf(p.z);

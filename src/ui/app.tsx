@@ -10,6 +10,8 @@ import { StepBar, RecapStep, RetireStep, DevStep, PreviewStep, HallOfFameView } 
 import { Progression } from './rankings';
 import { offStep } from '../league/offseason';
 import { Devices } from './devices';
+import { PlayingAs, HumansPanel } from './humans';
+import { isHuman } from '../league/humans';
 import { roleOf } from '../archetypes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -155,6 +157,7 @@ function App() {
   }, []);
   const openGame = (rid: number) => { const r = lg?.recent.find((x: any) => x.id === rid); if (r) setGameView(r); };
   const [showSettings, setShowSettings] = useState(false);
+  const [showHumans, setShowHumans] = useState(false);
   const [showSaves, setShowSaves] = useState(false);
   const stop = useRef(false);
 
@@ -230,6 +233,7 @@ function App() {
             <div className="name">NBA History Simulator</div>
             <div className="meta">{seasonLabel(lg.season)} · {phaseLabel(lg)} · destiny {Math.round(lg.destiny * 100)}%</div>
           </div>
+          <PlayingAs lg={lg} onChange={async () => { if (lg.userTid) setTeam(lg.userTid); bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />
         </div>
         <Controls lg={lg} busy={busy} run={run} stop={() => (stop.current = true)} saved={saved} />
       </header>
@@ -248,10 +252,10 @@ function App() {
       <main>
         {lg.phase === 'fantasy' && <FantasyRoom lg={lg} openPlayer={openPlayer} onTick={bump} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'apzvalga' && <Overview lg={lg} openTeam={openTeam} openPlayer={openPlayer} openGame={openGame} watch={watch} clutch={clutchStart} busy={!!busy || !!clutch} sampler={sampler} goFA={() => go('laisvieji')} onTick={bump} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
-        {lg.phase !== 'fantasy' && tab === 'valdymas' && <TeamMgmt lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
+        {lg.phase !== 'fantasy' && tab === 'valdymas' && <TeamMgmt key={lg.userTid ?? ''} lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'reitingai' && <Rankings lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'laisvieji' && <FreeAgentsView lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
-        {lg.phase !== 'fantasy' && tab === 'mainai' && <Trades lg={lg} openPlayer={openPlayer} onDone={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
+        {lg.phase !== 'fantasy' && tab === 'mainai' && <Trades key={lg.userTid ?? ''} lg={lg} openPlayer={openPlayer} onDone={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'komandos' && <TeamView lg={lg} tid={team ?? 'LAL'} setTid={setTeam} openPlayer={openPlayer} openGame={openGame} />}
         {lg.phase !== 'fantasy' && tab === 'draftai' && <div className="col"><Drafts lg={lg} openPlayer={openPlayer} openTeam={openTeam} />{lg.fantasy?.done && <FantasyResults lg={lg} openPlayer={openPlayer} />}</div>}
         {lg.phase !== 'fantasy' && tab === 'istorija' && <HistoryView lg={lg} openPlayer={openPlayer} openTeam={openTeam} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
@@ -262,11 +266,13 @@ function App() {
         <span>Data: Basketball-Reference (via sumitrodatta/bball-reference-datasets). The league is saved in this browser. <span className="dim">Version {BUILD}</span></span>
         <span className="foot-actions">
           <button className="ghost small" onClick={() => setShowSettings(true)}>Season format</button>
+          <button className="ghost small" onClick={() => setShowHumans(true)}>Players & teams</button>
           <button className="ghost small" onClick={() => setShowSaves(true)}>Saves</button>
           <button className="ghost small" onClick={startNew}>New league</button>
         </span>
       </footer>
       {showSaves && <SavesPanel lg={lg} close={() => setShowSaves(false)} onLoad={switchTo} onNew={startNew} />}
+      {showHumans && <HumansPanel lg={lg} close={() => setShowHumans(false)} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {showSettings && <SettingsPanel lg={lg} close={() => setShowSettings(false)} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {clutch && <ClutchGame lg={lg} cs={clutch} close={() => setClutch(null)} openPlayer={() => {}}
         onFinish={async () => { finishClutch(lg, clutch); bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
@@ -946,7 +952,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
   const pay = payroll(lg, t.tid);
   const strat = t.mode ? { allin: 'All-in', tank: 'Tanking', rising: 'Rising', capclear: 'Clearing salary', retool: 'Retooling' }[t.mode] : { contend: 'Contender', middle: 'Middle of the pack', rebuild: 'Rebuilding' }[t.strategy];
   const titles = lg.history.filter((s: any) => s.champion === t.tid).map((s: any) => s.season);
-  const plan = t.tid !== lg.userTid ? planOf(lg, t.tid) : null;
+  const plan = !isHuman(lg, t.tid) ? planOf(lg, t.tid) : null;
   const [view, setView] = useState<'stats' | 'attr' | 'hist' | 'rec'>('stats');
   const inSeason = lg.phase === 'regular' || lg.phase === 'playoffs';
   const calNow = inSeason ? nextCal(lg, todayIndex(lg)) : 0;
@@ -977,7 +983,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
           {titles.length > 0 && <span>Titles: <b>{titles.join(', ')}</b></span>}
         </div>
       </div>
-      {plan && t.tid !== lg.userTid && (
+      {plan && (
         <div className="fo-plan">
           <span className="fo-stage">Front office: <b>{({ contend: 'Contending', push: 'Pushing for more', build: 'Building around youth', rebuild: 'Rebuilding' } as any)[plan.stage]}</b> · {plan.act ? 'ready to spend future assets' : 'patient – keeping its picks and young players'}</span>
           <span className="dim">{plan.why.join('; ')}.</span>
