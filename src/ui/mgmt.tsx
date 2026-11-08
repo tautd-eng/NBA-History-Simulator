@@ -9,6 +9,9 @@ import { rotationPreview } from '../league/league';
 import { extendable } from '../league/extensions';
 import { ExtensionBox } from './player';
 import { RoleCell } from './roles';
+import { readSheet } from './xlsx';
+import { importRotations, rotationTemplate, ImportReport } from '../league/rotimport';
+import { humans, isHuman } from '../league/humans';
 import { posNum } from '../engine/game';
 
 const DEF = () => ({ mode: 'auto', depth: 10, youth: 0, minutes: {}, tac: { pace: 0, three: 0, crash: 0, press: 0 } });
@@ -162,6 +165,44 @@ function Rotation({ lg, openPlayer, onChange }: any) {
         })}</tbody>
       </table></div>
       <p className="note">“Plan” – the minutes the coach would give tonight with these settings (healthy players). In-game he still rests tired players, protects foul trouble and empties the bench in blowouts.</p>
+      <SheetImport lg={lg} onChange={() => { setT(x => x + 1); onChange(); }} />
+    </div>
+  );
+}
+
+/** Minutes, positions and starters from an Excel / CSV sheet – for your team, or for several teams at once. */
+function SheetImport({ lg, onChange }: any) {
+  const [rep, setRep] = useState<ImportReport | null>(null);
+  const [err, setErr] = useState('');
+  const load = async (f: File | undefined) => {
+    if (!f) return;
+    setErr(''); setRep(null);
+    try { const rows = await readSheet(f); setRep(importRotations(lg, rows)); onChange(); }
+    catch (e: any) { setErr(e?.message ?? String(e)); }
+  };
+  const template = () => {
+    const tids = humans(lg);
+    const csv = rotationTemplate(lg, tids, (tid: string) => rotationPreview(lg, tid, lg.teams[tid].mgmt ?? { mode: 'auto', depth: 10, youth: 0, minutes: {} }));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv' }));
+    a.download = `rotation-${lg.teams[lg.userTid].abbr}-${lg.season}.csv`;
+    a.click();
+  };
+  const imported = Object.values(lg.teams).filter((t: any) => t.mgmt?.imported && !isHuman(lg, t.tid)) as any[];
+  return (
+    <div className="sheet-import">
+      <h3>From a spreadsheet</h3>
+      <p className="note">One row per player with the columns <b>Team</b> (abbreviation or name; may be left out for your team), <b>Player</b>, <b>Position</b> (PG, SG, SF, PF, C), <b>Minutes</b> and <b>Starter</b> (Y for the five). Excel (.xlsx) or CSV. If the minutes add up to less than 240, the rest go to the players the sheet leaves out; more than 240 is scaled down. The sheet may list several teams – an AI team listed in it plays that rotation too.</p>
+      <div className="def-row">
+        <label className="btn-file">Import Excel / CSV<input type="file" accept=".xlsx,.csv,.txt" onChange={e => { load(e.target.files?.[0]); e.target.value = ''; }} /></label>
+        <button className="small ghost" onClick={template}>Download a template (your rotation now)</button>
+      </div>
+      {err && <p className="hint neg">{err}</p>}
+      {rep && <div className="note">
+        {rep.teams.map(t => <div key={t.tid}>✓ {lg.teams[t.tid].name}: {t.players} players{t.minutes ? `, ${t.minutes} minutes` : ''}{t.starters ? `, ${Math.min(5, t.starters)} starters` : ''}{t.ai ? ' (AI team – follows the sheet)' : ''}</div>)}
+        {rep.problems.map((p, i) => <div key={i} className="warn-t">• {p}</div>)}
+      </div>}
+      {imported.length > 0 && <p className="note">AI teams playing an imported rotation: {imported.map(t => t.abbr).join(', ')}. <button className="small ghost" onClick={() => { for (const t of imported) delete t.mgmt; onChange(); }}>Give them back to their coaches</button></p>}
     </div>
   );
 }

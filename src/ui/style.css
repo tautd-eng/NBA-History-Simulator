@@ -916,3 +916,6 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 /* free agency and the draft: long player lists – use the whole screen */
 main.wide { max-width: 1920px; }
 .team-head select.mm-opp { font-size: 0.95rem; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.sheet-import { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.btn-file { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+.btn-file input { display: none; }

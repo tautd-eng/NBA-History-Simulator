@@ -388,7 +388,8 @@ export function rotationPreview(lg: League, tid: string, m: NonNullable<Team['mg
 /** What the engine gets for a team: tonight's players, and – for the user's team – his rotation and tactics. */
 export function teamIn(lg: League, t: Team, rng: Rng, opp?: string) {
   const players = availablePlayers(lg, t.tid, rng);
-  const m = isHuman(lg, t.tid) ? t.mgmt : undefined;
+  // a person's team – or an AI team whose rotation was imported from a sheet
+  const m = isHuman(lg, t.tid) || (t.mgmt as any)?.imported ? t.mgmt : undefined;
   if (!m) return { tid: t.tid, players, paceZ: t.paceZ };
   if (m.mode === 'auto' && lg.phase !== 'playoffs' && m.youth > 0) {
     // more minutes for the young: the younger, the bigger the push
