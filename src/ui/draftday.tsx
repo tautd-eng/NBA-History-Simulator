@@ -3,11 +3,11 @@
 // (protection lists, then the new teams picking) and the lottery (odds, then
 // the draw revealed slot by slot).
 import { Linkify, PL, TL, nav } from './nav';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm } from '../data';
 import { ageIn } from '../players';
 import {
-  expAvailable, expOnClock, expPick, expAdvance, expConfirm, expToggleProtect, PROTECT_N, lotteryDraw,
+  expAvailable, expOnClock, expPick, expAdvance, expConfirm, expToggleProtect, PROTECT_N, lotteryDraw, lotteryLeft,
 } from '../league/offseason';
 import { SortTable } from './sorttable';
 import { posNum } from '../engine/game';
@@ -206,7 +206,10 @@ export function LotteryReveal({ lg, close }: any) {
   }, [auto, shown, n]);
   const lottery = L.teams.map((t: any) => t.tid);
   const owner = (tid: string) => pickOwner(lg, d.year, 1, tid);
+  // who is still waiting, and which picks each can still get
+  const left = useMemo(() => (shown < n ? lotteryLeft(lg, shown) : []), [shown, n]);
   return (
+    <div className="lotto-wrap">
     <div className="panel accent lotto">
       <div className="team-head">
         <h2>{d.year} lottery results</h2>
@@ -238,6 +241,26 @@ export function LotteryReveal({ lg, close }: any) {
         })}
       </ol>
       {shown >= n && <p className="note"><Linkify text={d.lottery} /></p>}
+    </div>
+    {shown < n && (
+      <div className="panel lotto-left">
+        <h2>Still waiting</h2>
+        <p className="note">{left.length} teams not shown yet – and the picks each one can still land, given what has been revealed.</p>
+        <ul className="lotto-left-list">
+          {left.map(x => {
+            const o = owner(x.tid);
+            const slots = Object.entries(x.p).map(([k, v]) => [+k, v as number]).filter(([, v]) => v > 0.001).sort((a, b) => a[0] - b[0]);
+            return (
+              <li key={x.tid} className={o === lg.userTid || x.tid === lg.userTid ? 'mine' : ''}>
+                <span className="swatch" style={{ background: colorsOf(o, lg.teams[o]?.abbr)[0] }}></span>
+                <span className="ll-name"><b>{lg.teams[o].name}</b>{o !== x.tid ? <small className="dim"> (from {lg.teams[x.tid].abbr})</small> : null}<small className="dim"> · seed {lottery.indexOf(x.tid) + 1}</small></span>
+                <span className="ll-picks">{slots.map(([k, v]) => <span key={k} className={`chip tiny ${v >= 0.5 ? 'on-clock' : ''}`} title={`${Math.round(v * 1000) / 10}% chance of No. ${k}`}>No. {k} · {v >= 0.995 ? 'sure' : `${Math.max(1, Math.round(v * 100))}%`}</span>)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    )}
     </div>
   );
 }

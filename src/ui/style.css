@@ -848,3 +848,11 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 @media (max-width: 460px) { .aw-teams { grid-template-columns: 1fr; } }
 .aw-team h3 { margin: 4px 0; }
 .honors h3 { margin: 10px 0 4px; }
+.lotto-wrap { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 900px) { .lotto-wrap { grid-template-columns: 1fr; } }
+.lotto-left-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lotto-left-list li { display: grid; grid-template-columns: 14px 1fr; gap: 4px 8px; align-items: center; padding: 6px 8px; border-radius: 8px; background: var(--sunk); }
+.lotto-left-list li.mine { outline: 2px solid var(--accent); }
+.lotto-left-list .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.lotto-left-list .ll-picks { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px; }
+.lotto-left-list .chip { margin: 0; }

@@ -250,6 +250,29 @@ function drawOrder(lottery: string[], entrants: string[], weights: number[], dra
   return [...top, ...lottery.filter(t => !top.includes(t))];
 }
 
+/**
+ * While the lottery result is revealed from the bottom: for every team not shown yet, the chance of each
+ * slot still open, given the slots already shown (simulated draws that agree with what has been shown).
+ */
+export function lotteryLeft(lg: League, shown: number): { tid: string; p: Record<number, number> }[] {
+  const L = lg.draftDay?.lotto;
+  if (!L?.result) return [];
+  const lottery = L.teams.map(t => t.tid), n = L.result.length, k = n - shown;
+  const fixed = L.result.slice(k);
+  const left = L.result.slice(0, k);
+  const cnt: Record<string, Record<number, number>> = Object.fromEntries(left.map(t => [t, {}]));
+  const sim = new Rng((lg.draftDay!.year * 31 + shown) * 7919);
+  let ok = 0;
+  for (let it = 0; it < 60000 && ok < 3000; it++) {
+    const r = drawOrder(lottery, L.entrants, L.weights, L.draws, sim);
+    if (fixed.some((t, i) => r[k + i] !== t)) continue;
+    ok++;
+    for (let i = 0; i < k; i++) { const c = cnt[r[i]]; if (c) c[i + 1] = (c[i + 1] ?? 0) + 1; }
+  }
+  return left.map(t => ({ tid: t, p: Object.fromEntries(Object.entries(cnt[t]).map(([s, v]) => [+s, v / Math.max(1, ok)])) }))
+    .sort((a, b) => lottery.indexOf(a.tid) - lottery.indexOf(b.tid));
+}
+
 /** Draw the lottery and fix the draft order. */
 export function lotteryDraw(lg: League) {
   const d = lg.draftDay;
