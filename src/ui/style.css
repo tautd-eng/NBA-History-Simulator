@@ -882,3 +882,13 @@ div.fold-h::before { position: absolute; left: 0; top: 50%; transform: translate
 .offer.ext > button { width: auto; align-self: flex-start; }
 .ext-years { width: auto !important; }
 .ext-years th button { min-width: 34px; }
+.ext-calc { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; padding: 6px 8px; border-radius: 8px; background: var(--surface); }
+.ext-calc .pos { color: var(--real); } .ext-calc .neg { color: #c0392b; }
+.mg-settings { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 12px; }
+.mg-settings label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mg-min { white-space: nowrap; }
+.mg-min b { display: inline-block; min-width: 26px; text-align: center; }
+.tac-list { display: flex; flex-direction: column; gap: 14px; }
+.tac-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.tac-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.tac-row .seg button { min-width: 38px; }

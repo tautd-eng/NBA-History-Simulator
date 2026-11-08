@@ -17,6 +17,7 @@ import { loadHistory, H, RATING_LABELS, shownOvr as ovrOf, shownFromRaw, shownFr
 import { setEraCal } from '../engine/game';
 import { newLeague, standings, playoffFormat, realChampion, simDayWatching, watchableToday, playedToday, seasonGames, applySettings, startClutch, finishClutch, todayIndex, awaitingPlayoffs } from '../league/league';
 import { AwardsStep } from './awardsstep';
+import { TeamMgmt } from './mgmt';
 import { ensurePicks, deadlineDay, boardScore } from '../ai/trades';
 import { planOf } from '../ai/plan';
 import { LiveGame } from './live';
@@ -233,20 +234,21 @@ function App() {
         <Controls lg={lg} busy={busy} run={run} stop={() => (stop.current = true)} saved={saved} />
       </header>
       <nav className="tabs" aria-label="Sections">
-        {TABS.map(([k, l, main]) => (
+        {tabsFor(lg).map(([k, l, main]) => (
           <button key={k} className={`${tab === k ? 'on' : ''} ${main ? '' : 'sec'}`} onClick={() => { go(k); setMore(false); }} aria-label={l}><TabIcon k={k} /><span className="tl">{l}</span></button>
         ))}
-        <button className={`more-btn ${more || TABS.some(([k, , m]) => !m && k === tab) ? 'on' : ''}`} onClick={() => setMore(m => !m)} aria-label="More" aria-expanded={more}><TabIcon k="more" /><span className="tl">More</span></button>
+        <button className={`more-btn ${more || tabsFor(lg).some(([k, , m]) => !m && k === tab) ? 'on' : ''}`} onClick={() => setMore(m => !m)} aria-label="More" aria-expanded={more}><TabIcon k="more" /><span className="tl">More</span></button>
       </nav>
       {more && <div className="more-sheet-bg" onClick={() => setMore(false)}>
         <div className="more-sheet" role="menu" onClick={e => e.stopPropagation()}>
-          {TABS.filter(([, , m]) => !m).map(([k, l]) => <button key={k} role="menuitem" className={tab === k ? 'on' : ''} onClick={() => { go(k); setMore(false); }}><TabIcon k={k} /><span>{l}</span></button>)}
+          {tabsFor(lg).filter(([, , m]) => !m).map(([k, l]) => <button key={k} role="menuitem" className={tab === k ? 'on' : ''} onClick={() => { go(k); setMore(false); }}><TabIcon k={k} /><span>{l}</span></button>)}
           <p className="more-ver">Version {BUILD}</p>
         </div>
       </div>}
       <main>
         {lg.phase === 'fantasy' && <FantasyRoom lg={lg} openPlayer={openPlayer} onTick={bump} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'apzvalga' && <Overview lg={lg} openTeam={openTeam} openPlayer={openPlayer} openGame={openGame} watch={watch} clutch={clutchStart} busy={!!busy || !!clutch} sampler={sampler} goFA={() => go('laisvieji')} onTick={bump} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
+        {lg.phase !== 'fantasy' && tab === 'valdymas' && <TeamMgmt lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'reitingai' && <Rankings lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'laisvieji' && <FreeAgentsView lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'mainai' && <Trades lg={lg} openPlayer={openPlayer} onDone={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
@@ -281,12 +283,16 @@ const TABS: [string, string, boolean][] = [
   ['statistika', 'Stats', false], ['laisvieji', 'Free agents', false], ['draftai', 'Draft classes', false], ['istorija', 'History', false], ['rungtynes', 'Games', false],
 ];
 
+/** The sections for this league: Team management only when the user runs a team. */
+const tabsFor = (lg: any): [string, string, boolean][] => lg?.userTid ? [TABS[0], ['valdymas', 'Team management', true], ...TABS.slice(1).map(([k, l, m]) => [k, l, k === 'mainai' ? false : m] as [string, string, boolean])] : TABS;
+
 /** Small line icons for the tab bar (bottom bar on phones). */
 function TabIcon({ k }: { k: string }) {
   const d: Record<string, string> = {
     apzvalga: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
     komandos: 'M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z',
     reitingai: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+    valdymas: 'M4 6h16M4 12h10M4 18h6M18 10l3 2-3 2',
     statistika: 'M3 3v18h18M7 15l4-4 3 3 6-7',
     mainai: 'M4 8h13l-3-3M20 16H7l3 3',
     laisvieji: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 4-6 8-6s8 2 8 6M19 4v4M17 6h4',

@@ -7,7 +7,8 @@
 import { hash01 } from '../rng';
 import { League, Player } from '../types';
 import { ageIn } from '../players';
-import { bpmOf } from '../data';
+import { bpmOf, shownOvr } from '../data';
+import { peakShown } from '../ai/plan';
 import { teamStrength, askingSalary, maxSalary } from '../ai/value';
 
 export interface Traits { money: number; win: number; role: number; loyal: number; market: number }
@@ -118,11 +119,14 @@ export const TRAIT_LABELS: [keyof Traits, string][] = [['money', 'Money'], ['win
  * Beyond money: how this season goes for him and the team, security for
  * veterans, and young players who expect to improve betting on themselves.
  */
-export function extensionNeed(lg: League, p: Player, tid: string, years: number): { need: number; why: string[]; interest: number } {
+export interface ExtNeed { need: number; why: string[]; interest: number; ask: number; parts: { t: string; pct: number }[] }
+export function extensionNeed(lg: League, p: Player, tid: string, years: number): ExtNeed {
   const N = lg.season + 1;
   const tr = traits(p, lg.season);
   const age = ageIn(p, N);
-  const ask = Math.min(maxSalary(p, N), askingSalary(p, N));
+  const max = maxSalary(p, N);
+  // his market value: what he would ask a team in free agency
+  const ask = Math.min(max, askingSalary(p, N));
   let d = discount(lg, p, tid);
   const why: string[] = reasons(lg, p, tid).filter(r => r.s !== 0).slice(0, 2).map(r => r.t);
   // this season: playing time against what a player of his level expects
@@ -136,18 +140,30 @@ export function extensionNeed(lg: League, p: Player, tid: string, years: number)
     if (wp < 0.35 && tr.win > 0.5) { d -= 0.06; why.push('team is losing this season'); }
     if (wp > 0.6) { d += 0.03; why.push('team is winning'); }
   }
-  // how much he wants to stay at all (before the length of the deal)
-  const interest = Math.round(Math.max(0, Math.min(100, 50 + 160 * d)));
-  // length: veterans value security (each extra year is worth something to them), young risers want to
-  // get back to the market soon (each year past two costs), a player in his prime does not much care
-  if (age >= 30) { d += 0.025 * (Math.min(years, 4) - 1); if (years >= 3) why.push('values a long contract'); }
-  else if (age <= 25) { if (years > 2) { d -= 0.03 * (years - 2); why.push('wants a shorter deal – he expects to be worth more'); } else if (tr.money > 0.5) { d -= 0.03; why.push('expects to improve and earn more on the market'); } }
-  if (years > (age >= 32 ? 3 : 5)) d -= 0.1;
   // money-first stars want the full max or will test free agency
-  const max = maxSalary(p, N);
   if (tr.money > 0.7 && ask >= max * 0.9) { d = Math.min(d, 0); why.push('wants a max contract'); }
-  const need = Math.max(0.012, Math.min(max, ask * (1 - Math.max(-0.25, Math.min(0.3, d)))));
-  return { need, why, interest };
+  // 1) wanting to stay: the more he likes it here, the bigger the hometown discount (or the premium, if he does not)
+  const stay = Math.max(-0.25, Math.min(0.3, d));
+  const interest = Math.round(Math.max(0, Math.min(100, 50 + 160 * d)));
+  // 2) length: a veteran pays for security (each year up to four is worth ~2.5% to him); a deal too long for his age
+  //    costs; a young player gives up his next free agency – every year past two compounds, the more so the more
+  //    he is expected to improve
+  let len = 0;
+  if (age >= 30) len += 0.025 * (Math.min(years, 4) - 1);
+  if (years > (age >= 32 ? 3 : 5)) len -= 0.1;
+  let young = 1;
+  if (age <= 25 && years > 2) {
+    const growth = Math.max(0, Math.min(1, (peakShown(p, N) - shownOvr(p.z)) / 10));
+    young = Math.pow(1 + 0.04 + 0.06 * growth, years - 2);
+    why.push(growth > 0.3 ? 'gives up his next free agency while still improving – long deals cost extra' : 'a long deal costs extra – he wants to get back to the market');
+  } else if (age >= 30 && years >= 3) why.push('values a long contract');
+  const need = Math.max(0.012, Math.min(max, ask * (1 - stay) * (1 - len) * young));
+  const parts = [
+    { t: interest >= 50 ? 'wants to stay – hometown discount' : 'not keen on staying – wants more', pct: -stay },
+    { t: age >= 30 ? 'contract length (security for a veteran)' : 'contract length', pct: -len },
+    { t: 'giving up free agency while young', pct: young - 1 },
+  ].filter(x => Math.abs(x.pct) >= 0.005);
+  return { need, why, interest, ask, parts };
 }
 
 /**

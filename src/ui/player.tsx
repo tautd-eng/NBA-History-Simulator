@@ -138,20 +138,6 @@ function HistoryTab({ lg, p, openTeam }: any) {
 /** What the player cares about, and – for the user's own players – the extension talks. */
 function Priorities({ lg, p, onChange }: any) {
   const tr = traits(p, lg.season);
-  const mine = lg.userTid && p.tid === lg.userTid;
-  const canExt = mine && extendable(lg, p);
-  const N = lg.season + 1;
-  const cap = seasonInfo(N).cap;
-  const [years, setYears] = useState(3);
-  const est = canExt ? extensionNeed(lg, p, lg.userTid, years) : null;
-  // the offer as a share of the cap (adjusted with the buttons); starts at what he asks for
-  const [sal, setSal] = useState<number | null>(null);
-  const offer = sal ?? (est ? est.need : 0);
-  const [msg, setMsg] = useState<string | null>(null);
-  const max = canExt ? maxSalary(p, N) : 0;
-  const ch = canExt ? extensionChance(lg, p, lg.userTid, offer, years) : null;
-  const money = (x: number) => `$${(x * cap).toFixed(2)}M`;
-  const bump = (dx: number) => setSal(Math.max(0.012, Math.min(max, Math.round((offer + dx) * 10000) / 10000)));
   const why = lg.userTid && lg.userTid !== p.tid ? reasons(lg, p, lg.userTid) : [];
   return (
     <>
@@ -163,38 +149,68 @@ function Priorities({ lg, p, onChange }: any) {
       </div>
       {why.length > 0 && <p className="note">If he were choosing your team: {why.map(w => w.t).join('; ')}.</p>}
       {p.ext && <p className="note"><b>Contract extended:</b> {(p.ext.sal * 100).toFixed(1)}% of the cap through {p.ext.exp}.</p>}
-      {canExt && (
-        <div className="offer ext" role="group" aria-label="Contract extension">
-          <div><b>Extend contract</b> <span className="dim">His contract ends this season. Max contract – {(max * 100).toFixed(0)}% of the cap.</span></div>
-          <div className="ext-interest">
-            <span className="rl">Wants to stay</span>
-            <span className="bar"><span style={{ width: `${est!.interest}%` }}></span></span>
-            <span className="rv">{est!.interest >= 70 ? 'keen' : est!.interest >= 40 ? 'open' : 'not sold'}</span>
-          </div>
-          {est!.why.length > 0 && <p className="note">{est!.why.join(' · ')}</p>}
-          <table className="tbl compact ext-years">
-            <thead><tr><th className="l">Years</th>{[1, 2, 3, 4, 5].map(y => <th key={y}><button className={`small ${y === years ? 'primary' : ''}`} onClick={() => { setYears(y); setSal(null); }}>{y}</button></th>)}</tr></thead>
-            <tbody><tr><td className="l dim">He signs for</td>{[1, 2, 3, 4, 5].map(y => { const n = extensionNeed(lg, p, lg.userTid, y).need; return <td key={y} className={y === years ? 'on' : ''}>{(n * 100).toFixed(1)}%<br /><span className="dim small-t">{money(n)}</span></td>; })}</tr></tbody>
-          </table>
-          <div className="ext-adjust">
-            <span>Your offer for <b>{years}</b> yr{years > 1 ? 's' : ''}:</span>
-            <button className="small" onClick={() => bump(-0.01)} aria-label="1% of the cap less">−1%</button>
-            <button className="small" onClick={() => bump(-0.0025)} aria-label="a quarter percent less">−¼</button>
-            <b className="ext-amt">{(offer * 100).toFixed(2)}% <span className="dim">· {money(offer)}</span></b>
-            <button className="small" onClick={() => bump(0.0025)} aria-label="a quarter percent more">+¼</button>
-            <button className="small" onClick={() => bump(0.01)} aria-label="1% of the cap more">+1%</button>
-            <button className="small ghost" onClick={() => setSal(null)}>His number</button>
-          </div>
-          <div className={`ext-chance ${ch!.chance >= 1 ? 'pos' : ch!.chance > 0.4 ? 'mid' : 'neg'}`}>
-            {ch!.chance >= 1 ? <>He signs – this is his number{offer > ch!.need + 1e-4 ? ` (you are paying ${((offer - ch!.need) * 100).toFixed(2)}% more than you need to)` : ''}.</>
-              : ch!.chance > 0 ? <>A gamble: <b>{Math.round(ch!.chance * 100)}%</b> he takes the discount. If he says no, he will not talk for 10 days.</>
-              : <>He will not take this – {est!.interest < 40 ? 'he is not sold on staying, so no discounts at all.' : 'too far under his number.'}</>}
-          </div>
-          <button className="primary" disabled={ch!.chance <= 0} onClick={() => { const r = userExtend(lg, p.id, offer, years); setMsg(r.msg); onChange?.(); }}>Offer {years} yr{years > 1 ? 's' : ''} at {money(offer)}</button>
-          {msg && <span className="hint" role="status">{msg}</span>}
-        </div>
-      )}
+      <ExtensionBox lg={lg} p={p} onChange={onChange} />
     </>
+  );
+}
+
+/**
+ * Extension talks with one of the user's players: how much he wants to stay, his market value and how the
+ * price for each length is built from it, the offer adjusted with buttons, and the chance he signs.
+ */
+export function ExtensionBox({ lg, p, onChange, compact }: any) {
+  const mine = lg.userTid && p.tid === lg.userTid;
+  const canExt = mine && extendable(lg, p);
+  const N = lg.season + 1;
+  const cap = seasonInfo(N).cap;
+  const [years, setYears] = useState(3);
+  const [sal, setSal] = useState<number | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  if (!canExt) return null;
+  const est = extensionNeed(lg, p, lg.userTid, years);
+  const offer = sal ?? est.need;
+  const max = maxSalary(p, N);
+  const ch = extensionChance(lg, p, lg.userTid, offer, years);
+  const money = (x: number) => `$${(x * cap).toFixed(2)}M`;
+  const pc = (x: number) => `${(x * 100).toFixed(1)}%`;
+  const bump = (dx: number) => setSal(Math.max(0.012, Math.min(max, Math.round((offer + dx) * 10000) / 10000)));
+  const cooling = (p.extNo ?? -1) > lg.day;
+  return (
+    <div className="offer ext" role="group" aria-label={`Contract extension for ${p.name}`}>
+      <div><b>Extend {compact ? p.name : 'contract'}</b> <span className="dim">Contract ends this season. Market value (what he would ask in free agency): <b>{pc(est.ask)}</b> of the cap ({money(est.ask)}) · max {pc(max)}.</span></div>
+      <div className="ext-interest">
+        <span className="rl">Wants to stay</span>
+        <span className="bar"><span style={{ width: `${est.interest}%` }}></span></span>
+        <span className="rv">{est.interest >= 70 ? 'keen' : est.interest >= 40 ? 'open' : 'not sold'}</span>
+      </div>
+      {est.why.length > 0 && <p className="note">{est.why.join(' · ')}</p>}
+      <div className="ext-calc">
+        <span>Market value <b>{pc(est.ask)}</b></span>
+        {est.parts.map((x: any, i: number) => <span key={i} className={x.pct < 0 ? 'pos' : 'neg'}>{x.pct < 0 ? '−' : '+'}{Math.abs(x.pct * 100).toFixed(1)}% <span className="dim">{x.t}</span></span>)}
+        <span>= his number for {years} yr{years > 1 ? 's' : ''}: <b>{pc(est.need)}</b> ({money(est.need)})</span>
+      </div>
+      <table className="tbl compact ext-years">
+        <thead><tr><th className="l">Years</th>{[1, 2, 3, 4, 5].map(y => <th key={y}><button className={`small ${y === years ? 'primary' : ''}`} onClick={() => { setYears(y); setSal(null); }}>{y}</button></th>)}</tr></thead>
+        <tbody><tr><td className="l dim">He signs for</td>{[1, 2, 3, 4, 5].map(y => { const n = extensionNeed(lg, p, lg.userTid, y).need; return <td key={y} className={y === years ? 'on' : ''}>{pc(n)}<br /><span className="dim small-t">{money(n)}</span></td>; })}</tr></tbody>
+      </table>
+      <div className="ext-adjust">
+        <span>Your offer for <b>{years}</b> yr{years > 1 ? 's' : ''}:</span>
+        <button className="small" onClick={() => bump(-0.01)} aria-label="1% of the cap less">−1%</button>
+        <button className="small" onClick={() => bump(-0.0025)} aria-label="a quarter percent less">−¼</button>
+        <b className="ext-amt">{(offer * 100).toFixed(2)}% <span className="dim">· {money(offer)}</span></b>
+        <button className="small" onClick={() => bump(0.0025)} aria-label="a quarter percent more">+¼</button>
+        <button className="small" onClick={() => bump(0.01)} aria-label="1% of the cap more">+1%</button>
+        <button className="small ghost" onClick={() => setSal(null)}>His number</button>
+      </div>
+      <div className={`ext-chance ${cooling ? 'neg' : ch.chance >= 1 ? 'pos' : ch.chance > 0.4 ? 'mid' : 'neg'}`}>
+        {cooling ? <>He turned down your last offer – no talks for {p.extNo - lg.day} more days.</>
+          : ch.chance >= 1 ? <>He signs – this is his number{offer > ch.need + 1e-4 ? ` (you are paying ${((offer - ch.need) * 100).toFixed(2)}% more than you need to)` : ''}.</>
+          : ch.chance > 0 ? <>A gamble: <b>{Math.round(ch.chance * 100)}%</b> he takes {((1 - offer / ch.need) * 100).toFixed(1)}% less than his number – the more he wants to stay, the more room there is. If he says no, he will not talk for 10 days.</>
+          : <>He will not take this – {est.interest < 40 ? 'he is not sold on staying, so no discount at all.' : 'too far under his number.'}</>}
+      </div>
+      <button className="primary" disabled={cooling || ch.chance <= 0} onClick={() => { const r = userExtend(lg, p.id, offer, years); setMsg(r.msg); setSal(null); onChange?.(); }}>Offer {years} yr{years > 1 ? 's' : ''} at {money(offer)}</button>
+      {msg && <span className="hint" role="status">{msg}</span>}
+    </div>
   );
 }
 

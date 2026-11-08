@@ -113,7 +113,10 @@ export function prep(p: Player, season: number): GP {
   };
 }
 
-interface Side { tid: string; gps: GP[]; on: GP[]; pts: number; q: number[]; home: boolean; paceZ: number }
+/** A team's style, each from -1 to 1 (0 = neutral): pace, three-point shooting, crashing the offensive glass
+ *  (against getting back in transition), defensive pressure (more turnovers, more fouls). */
+export interface Tactics { pace: number; three: number; crash: number; press: number }
+interface Side { tid: string; gps: GP[]; on: GP[]; pts: number; q: number[]; home: boolean; paceZ: number; tac: Tactics; minutes?: Record<string, number>; depth?: number }
 
 export interface GameOpts { season: number; po: boolean; rng: Rng; pbp?: boolean; ctl?: Control }
 
@@ -162,7 +165,19 @@ const short = (n: string) => {
  * and empties the bench in blowouts.
  */
 function planMinutes(side: Side, po = false) {
-  const depth = po ? C.poDepth : C.depth, alpha = po ? C.poAlpha : C.minAlpha, maxMin = po ? C.poMax : C.maxMin;
+  // the user's own minutes: his plan, scaled to the 240 there are (those who are out lose theirs)
+  if (side.minutes) {
+    const want = side.gps.map(g => Math.max(0, side.minutes![g.p.id] ?? 0));
+    const sum = want.reduce((a, x) => a + x, 0);
+    if (sum >= 60) {
+      const T = spread(want, 240, po ? C.poMax : 44);
+      side.gps.forEach((g, i) => (g.target = T[i]));
+      // the coach's order: his minutes decide who starts and who closes
+      side.gps.forEach(g => (g.q = g.q * 0.25 + 0.75 * (side.minutes![g.p.id] ?? 0) / 4));
+      return;
+    }
+  }
+  const depth = side.depth ?? (po ? C.poDepth : C.depth), alpha = po ? C.poAlpha : C.minAlpha, maxMin = po ? C.poMax : C.maxMin;
   const avail = [...side.gps].sort((a, b) => b.q - a.q);
   const n = Math.min(avail.length, depth);
   const w = avail.map((g, i) => (i < n ? Math.pow(g.q, alpha) : 0));
@@ -189,6 +204,13 @@ function planMinutes(side: Side, po = false) {
     }
   }
   avail.forEach((g, i) => (g.target = T[i]));
+}
+
+/** The minutes a coach would plan for these players (the same plan the game starts from). */
+export function planPreview(players: Player[], season: number, o: { minutes?: Record<string, number>; depth?: number; po?: boolean } = {}) {
+  const side = { tid: '', gps: players.map(p => prep(p, season)), on: [], pts: 0, q: [], home: true, paceZ: 0, tac: NO_TAC, minutes: o.minutes, depth: o.depth } as Side;
+  planMinutes(side, o.po);
+  return Object.fromEntries(side.gps.map(g => [g.p.id, g.target]));
 }
 
 /** split `total` minutes in proportion to w, nobody above maxMin */
@@ -257,7 +279,8 @@ function chooseLineup(side: Side, period: number, rem: number, margin: number, s
   side.on = five;
 }
 
-type TeamIn = { tid: string; players: Player[]; paceZ: number };
+type TeamIn = { tid: string; players: Player[]; paceZ: number; tac?: Tactics; minutes?: Record<string, number>; depth?: number };
+const NO_TAC: Tactics = { pace: 0, three: 0, crash: 0, press: 0 };
 export function simGame(home: TeamIn, away: TeamIn, o: GameOpts) {
   const g = gameGen(home, away, o);
   let r = g.next();
@@ -270,14 +293,14 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   const seasonOf = season;
   const ctl = o.ctl;
   const mk = (t: typeof home, isHome: boolean): Side => ({
-    tid: t.tid, gps: t.players.map(p => prep(p, season)), on: [], pts: 0, q: [], home: isHome, paceZ: t.paceZ,
+    tid: t.tid, gps: t.players.map(p => prep(p, season)), on: [], pts: 0, q: [], home: isHome, paceZ: t.paceZ, tac: t.tac ?? NO_TAC, minutes: t.minutes, depth: t.depth,
   });
   const H = mk(home, true), A = mk(away, false);
   const E = getEraCal(season);
   const leagueTov = rate(K.tov, 0, season);
   const F0 = fit0(season), CT0 = ctr0(season);
   const leaguePf = rate(K.pf, 0, season);
-  const pace = seasonPace(season) * (1 + 0.03 * (H.paceZ + A.paceZ) / 2);
+  const pace = seasonPace(season) * (1 + 0.03 * (H.paceZ + A.paceZ) / 2) * (1 + 0.04 * (H.tac.pace + A.tac.pace) / 2);
   const T0 = (2880 / (2 * pace)) * 0.86 * C.possSec * E.pace;
 
   planMinutes(H, o.po); planMinutes(A, o.po);
@@ -512,7 +535,8 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
       aiCalls(off, def, period, rem);
       // transition: a steal or a long rebound starts a break before the defence is set
       const pushes = offCall === 'quick' || offCall === 'two4one' ? 1.5 : offCall === 'milk' || offCall === 'hold' ? 0 : 1;
-      fastBreak = defCall !== 'foul' && rem > 4 && rng.chance((ended === 'stl' ? C.fbStl : ended === 'drb' ? C.fbDrb : 0) * pushes * (1 + 0.15 * off.paceZ));
+      // a team that crashes the offensive glass gives up more breaks after its misses
+      fastBreak = defCall !== 'foul' && rem > 4 && rng.chance((ended === 'stl' ? C.fbStl : ended === 'drb' ? C.fbDrb * (1 + 0.5 * def.tac.crash) : 0) * pushes * (1 + 0.15 * off.paceZ + 0.15 * off.tac.pace));
       ended = 'dead';
       // --- one possession (may contain several plays through offensive rebounds)
       let first = true;
@@ -697,7 +721,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
 
     // turnover
     // ball pressure: his own defender's hands count as much as the team's
-    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd) - eT);
+    const pTov = sigm(logit(actor.tov) + C.tov + E.tov + C.stlDef * (C.mmDef * md.stlZ + (1 - C.mmDef) * stlZ) + 0.8 * fat - 0.5 * homeAdv - 0.3 * usgShift + (defCall === 'pressure' ? 0.35 : 0) + 0.12 * def.tac.press + (offCall === 'milk' ? 0.1 : 0) + (lc ? 0.15 : 0) - C.fitHd * (fHd - F0.hd) - eT);
     if (rng.chance(pTov)) {
       inc(actor, 'tov');
       const sumStl = dOn.reduce((a, g) => a + g.stl, 0);
@@ -722,13 +746,13 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     // free-throw trip without a field-goal attempt (shooting foul / bonus)
     const defPf = dOn.reduce((a, g) => a + g.pf, 0) / 5;
     const r = Math.max(0, actor.drw - C.andOne * 0.5);
-    const qTrip = Math.min(0.45, (r / (2 + r)) * C.foulTrip * E.ftr * Math.sqrt(defPf / leaguePf) * (offCall === 'inside' ? 1.35 : 1) * (fb ? 1.2 : 1));
+    const qTrip = Math.min(0.45, (r / (2 + r)) * C.foulTrip * E.ftr * Math.sqrt(defPf / leaguePf) * (offCall === 'inside' ? 1.35 : 1) * (fb ? 1.2 : 1) * (1 + 0.25 * def.tac.press));
     if (rng.chance(qTrip)) {
       foulOn(def);
       return ftTrip(off, def, actor, 2);
     }
     // field-goal attempt
-    let tprAdj = sigm(logit(Math.min(0.97, Math.max(0.003, actor.tpr))) + C.tpa + E.tpa);
+    let tprAdj = sigm(logit(Math.min(0.97, Math.max(0.003, actor.tpr))) + C.tpa + E.tpa + 0.45 * off.tac.three);
     // down three late there is no point in a two: everybody hunts a three, also after an offensive rebound
     if (offCall === 'three') tprAdj = Math.max(tprAdj, def.pts - off.pts === 3 ? 0.97 : 0.88);
     if (offCall === 'inside') tprAdj *= 0.15;
@@ -831,7 +855,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
   }
 
   function rebound(off: Side, def: Side, ft: boolean): 'end' | 'orb' {
-    const O = off.on.reduce((a, g) => a + g.orb, 0) * C.orb * E.orb * (ft ? C.orbFt : 1);
+    const O = off.on.reduce((a, g) => a + g.orb, 0) * C.orb * E.orb * (ft ? C.orbFt : 1) * (1 + (off.tac.crash > 0 ? 0.14 : 0.07) * off.tac.crash);
     const D = def.on.reduce((a, g) => a + g.drb, 0);
     if (rng.chance(O / (O + D))) {
       const g = off.on[rng.weighted(off.on.map(g => g.orb))];

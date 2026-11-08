@@ -1,7 +1,7 @@
 import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, K, OVR_VOLUME, agingIndex } from '../data';
 import { trackGame, playoffFinish } from './records';
 import { Rng } from '../rng';
-import { simGame, gameGen, PbpEv, GameState, Decision } from '../engine/game';
+import { simGame, planPreview, gameGen, PbpEv, GameState, Decision } from '../engine/game';
 import { aiTradeRound, ensurePicks, pastDeadline, deadlineDay, complyHardCap, isFreeAgent } from '../ai/trades';
 import {
   Settings, League, Team, Player, Game, Series, PlayInGame, GameResult, StatLine, emptyLine, addLine, SeasonSummary, CareerSeason,
@@ -372,7 +372,29 @@ export function updateModes(lg: League, announce = true) {
 }
 
 // ---------------------------------------------------------------- simulation
-function availablePlayers(lg: League, tid: string, rng: Rng) {
+/** The minutes the user's coach would plan tonight with these settings (healthy players only; no side effects). */
+export function rotationPreview(lg: League, tid: string, m: NonNullable<Team['mgmt']>, po = false) {
+  const players = lg.teams[tid].roster.map(pid => lg.players[pid]).filter(p => !p.injury);
+  const save = players.map(p => (p as any).rotQ);
+  for (const p of players) { const a = ageIn(p, lg.season); (p as any).rotQ = m.mode === 'auto' && !po ? 1 + m.youth * 0.7 * (a <= 21 ? 1 : a <= 23 ? 0.7 : a <= 25 ? 0.3 : 0) : 1; }
+  const r = planPreview(players, lg.season, { minutes: m.mode === 'manual' ? m.minutes : undefined, depth: m.mode === 'auto' && !po ? m.depth : undefined, po });
+  players.forEach((p, i) => ((p as any).rotQ = save[i]));
+  return r;
+}
+
+/** What the engine gets for a team: tonight's players, and – for the user's team – his rotation and tactics. */
+export function teamIn(lg: League, t: Team, rng: Rng) {
+  const players = availablePlayers(lg, t.tid, rng);
+  const m = t.tid === lg.userTid ? t.mgmt : undefined;
+  if (!m) return { tid: t.tid, players, paceZ: t.paceZ };
+  if (m.mode === 'auto' && lg.phase !== 'playoffs' && m.youth > 0) {
+    // more minutes for the young: the younger, the bigger the push
+    for (const p of players) { const a = ageIn(p, lg.season); (p as any).rotQ = 1 + m.youth * 0.7 * (a <= 21 ? 1 : a <= 23 ? 0.7 : a <= 25 ? 0.3 : 0); }
+  }
+  return { tid: t.tid, players, paceZ: t.paceZ, tac: m.tac, minutes: m.mode === 'manual' ? m.minutes : undefined, depth: m.mode === 'auto' && lg.phase !== 'playoffs' ? m.depth : undefined };
+}
+
+export function availablePlayers(lg: League, tid: string, rng: Rng) {
   const cal = nextCal(lg, todayIndex(lg));
   refreshInjuries(lg, cal, lg.teams[tid].roster.map(pid => lg.players[pid]));
   let ps = lg.teams[tid].roster.map(pid => lg.players[pid]).filter(p => p.injury <= 0);
@@ -543,8 +565,8 @@ export function playSingle(lg: League, home: string, away: string, opts: { defer
   const po = lg.phase === 'playoffs';
   const h = lg.teams[home], a = lg.teams[away];
   const r = simGame(
-    { tid: h.tid, players: availablePlayers(lg, h.tid, rng), paceZ: h.paceZ },
-    { tid: a.tid, players: availablePlayers(lg, a.tid, rng), paceZ: a.paceZ },
+    teamIn(lg, h, rng),
+    teamIn(lg, a, rng),
     { season: lg.season, po, rng, pbp: true },
   );
   const res: GameResult = { id: lg.nextGameId++, season: lg.season, day: d.kind === 'reg' ? d.g.day : lg.day, po, home: r.home, away: r.away, ot: r.ot };
@@ -589,8 +611,8 @@ export function startClutch(lg: League, home: string, away: string, side: 'h' | 
   const h = lg.teams[home], a = lg.teams[away];
   const po = lg.phase === 'playoffs';
   const gen = gameGen(
-    { tid: h.tid, players: availablePlayers(lg, h.tid, rng), paceZ: h.paceZ },
-    { tid: a.tid, players: availablePlayers(lg, a.tid, rng), paceZ: a.paceZ },
+    teamIn(lg, h, rng),
+    teamIn(lg, a, rng),
     { season: lg.season, po, rng: new Rng(Math.floor(rng.next() * 2 ** 31)), ctl: { side, fromRem: CLUTCH_FROM, timeouts: 3 } },
   );
   saveRng(lg, rng);
@@ -648,8 +670,8 @@ function applySeries(lg: League, s: Series, home: string, res: GameResult) {
 export function playGame(lg: League, g: { home: string; away: string }, po: boolean, rng: Rng): GameResult {
   const h = lg.teams[g.home], a = lg.teams[g.away];
   const r = simGame(
-    { tid: h.tid, players: availablePlayers(lg, h.tid, rng), paceZ: h.paceZ },
-    { tid: a.tid, players: availablePlayers(lg, a.tid, rng), paceZ: a.paceZ },
+    teamIn(lg, h, rng),
+    teamIn(lg, a, rng),
     { season: lg.season, po, rng },
   );
   const res: GameResult = { id: lg.nextGameId++, season: lg.season, day: lg.day, po, home: r.home, away: r.away, ot: r.ot };
