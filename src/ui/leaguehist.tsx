@@ -1,6 +1,7 @@
 // @ts-nocheck
 // League history explorers: standings of past seasons, team statistics across seasons, free-agency moves.
 import { useMemo, useState } from 'react';
+import { showDollars, dollarsOf } from './money';
 import { TL } from './nav';
 import { TLogo } from './art';
 import { SortTable } from './sorttable';
@@ -229,7 +230,6 @@ export function FaMoves({ lg, openPlayer, openTeam }: any) {
   const [minOvr, setMinOvr] = useState(0);
   const rows = useMemo(() => faMovesOf(lg, S ?? lg.season), [lg, S, lg.day, lg.phase, lg.fa?.log.length]);
   if (!seasons.length) return <div className="panel"><h2>Free-agency moves</h2><p className="note">Every signing is recorded here from the first free agency on.</p></div>;
-  const cap = seasonInfo(S).cap;
   const moved = (r: any) => r.kind === 'sign' && r.from !== r.tid || r.kind === 'sheet';
   const shown = rows.filter((r: any) => (tid === 'all' || r.tid === tid || r.from === tid) && r.ovr >= minOvr && (kind === 'all' || (kind === 'moved' ? moved(r) : !moved(r))));
   const T = (t: string) => t && lg.teams[t] ? <button className="link" onClick={() => openTeam(t)}>{lg.teams[t].abbr}</button> : <span className="dim">{t ? t : '—'}</span>;
@@ -240,7 +240,7 @@ export function FaMoves({ lg, openPlayer, openTeam }: any) {
     { key: 'from', label: 'From', left: true, asc: true, get: (r: any) => (r.from ? abbrOf(lg, r.from) : ''), fmt: (_: any, r: any) => T(r.from) },
     { key: 'to', label: 'To', left: true, asc: true, get: (r: any) => abbrOf(lg, r.tid), fmt: (_: any, r: any) => <>{moved(r) ? '→ ' : ''}{T(r.tid)}</> },
     { key: 'kind', label: 'Move', left: true, asc: true, get: (r: any) => KIND[r.kind] ?? r.kind, fmt: (v: any, r: any) => <>{v}{r.st === 5 ? <span className="dim"> · in season</span> : r.st === 4 ? <span className="dim"> · late</span> : null}</> },
-    { key: 'sal', label: '$M/yr', get: (r: any) => r.sal * cap, fmt: (v: any) => v.toFixed(2) },
+    ...(showDollars() ? [{ key: 'sal', label: '$/yr', get: (r: any) => r.sal, fmt: (v: any) => dollarsOf(v, S) }] : []),
     { key: 'pct', label: '% cap', get: (r: any) => r.sal * 100, fmt: f1 },
     { key: 'yrs', label: 'Yrs', get: (r: any) => r.exp - S + 1 },
   ];

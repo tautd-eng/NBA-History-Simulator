@@ -83,7 +83,10 @@ export function discount(lg: League, p: Player, tid: string): number {
     + 0.14 * tr.loyal * a.loyal
     + 0.08 * tr.market * (a.market - 0.45) * 2;
   // a team he likes gets at most ~10% off (what history supports); one he does not like pays up to 20% more
-  return Math.max(-0.2, Math.min(0.1, raw * (1 - 0.65 * tr.money)));
+  const v = raw * (1 - 0.65 * tr.money);
+  // his own team (it holds his rights) and he does not want to stay: it pays dearly to keep him – up to double
+  if (v < 0 && (p.bird === tid || p.rfa === tid)) return -Math.min(1, 4 * -v);
+  return Math.max(-0.2, Math.min(0.1, v));
 }
 
 /** How much he likes an offer (money relative to his ask plus the team's appeal). */

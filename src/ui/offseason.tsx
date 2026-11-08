@@ -2,6 +2,7 @@
 // Off-season screens: draft day (one pick at a time), the free-agency hub
 // (three stages) and the free-agent list where the user makes offers.
 import { Linkify, PL, TL, nav } from './nav';
+import { money, usd, showDollars, dollarsOf } from './money';
 import { useMemo, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, RATING_LABELS, ratingOf, seasonInfo } from '../data';
 import { ageIn } from '../players';
@@ -19,10 +20,7 @@ import { SortTable, f1 } from './sorttable';
 import { ExpansionRoom, LotteryRoom, LotteryReveal, AutoControls, useAutoPlay } from './draftday';
 import { posNum } from '../engine/game';
 
-export const moneyOf = (frac: number, s: number) => {
-  const m = frac * seasonInfo(s).cap;
-  return m >= 1 ? `$${m.toFixed(1)}M` : `$${Math.round(m * 1000)}K`;
-};
+export const moneyOf = (frac: number, s: number) => money(frac, s);
 export const potOf = (p: any, s: number) => shownFromBpm(peakBpm(p, s));
 const R = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
 const SHOW = [0, 1, 4, 7, 10];
@@ -288,7 +286,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
           </div>
           <p className="note">{fa.stage <= 3 ? STAGE_TXT[fa.stage] : 'Free agency is over. When the season starts, teams with fewer than 13 players will sign minimum deals, and teams with more than 15 will release their weakest.'}</p>
           {u && <div className="kv">
-            <div><span className="dim">{u.name}</span> {u.roster.length} players · payroll {moneyOf(pay, N)} ({Math.round(pay * 100)}% of the cap) {hardCap(lg) < Infinity ? <> · room under the cap ({Math.round(hardCap(lg) * 100)}%): <b className={pay > hardCap(lg) ? 'neg' : ''}>{Math.round((hardCap(lg) - pay) * 100)}%</b></> : <> · cap space {Math.max(0, Math.round((capLim - pay) * 100))}%{N >= 1995 ? ` · mid-level exception ${fa.mle.includes(u.tid) ? 'used' : 'available'}` : ''}</>}</div>
+            <div><span className="dim">{u.name}</span> {u.roster.length} players · payroll {Math.round(pay * 100)}% of the cap{usd(pay, N)} {hardCap(lg) < Infinity ? <> · room under the cap ({Math.round(hardCap(lg) * 100)}%): <b className={pay > hardCap(lg) ? 'neg' : ''}>{Math.round((hardCap(lg) - pay) * 100)}%</b></> : <> · cap space {Math.max(0, Math.round((capLim - pay) * 100))}%{N >= 1995 ? ` · mid-level exception ${fa.mle.includes(u.tid) ? 'used' : 'available'}` : ''}</>}</div>
           </div>}
           <div className="def-row">
             {fa.stage <= 3
@@ -530,7 +528,7 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
       {u && (
         <section className="panel">
           <h2>{u.name}</h2>
-          <p className="note">{u.roster.length} players (13–15 allowed) · payroll {moneyOf(pay, N)} ({Math.round(pay * 100)}% of the cap). A released player's salary stays on the books at half until his contract ends.</p>
+          <p className="note">{u.roster.length} players (13–15 allowed) · payroll {Math.round(pay * 100)}% of the cap{usd(pay, N)}. A released player's salary stays on the books at half until his contract ends.</p>
           <div className="tbl-wrap"><table className="tbl">
             <thead><tr><th className="l">Player</th><th>OVR</th><th className="l">Contract</th><th></th></tr></thead>
             <tbody>{mine.map((p: any) => <tr key={p.id}>
@@ -566,7 +564,7 @@ export function FAOfferBox({ lg, p, onDone, onCancel }: any) {
   const n = need(years);
   const offer = sal ?? n;
   const max = maxSalary(p, N);
-  const money = (x: number) => { const m = x * cap; return m >= 1 ? `$${m.toFixed(2)}M` : `$${Math.round(m * 1000)}K`; };
+  const dol = showDollars(), $ = (x: number) => dollarsOf(x, N, true);
   const pc = (x: number) => `${(x * 100).toFixed(1)}%`;
   const bump = (dx: number) => setSal(Math.max(MIN_SAL, Math.min(max, Math.round((offer + dx) * 10000) / 10000)));
   const why = reasons(lg, p, tid);
@@ -584,17 +582,17 @@ export function FAOfferBox({ lg, p, onDone, onCancel }: any) {
   const table = rows.slice(0, 8).map((r: any) => ({ ...r, rel: Math.max(0.05, Math.min(1, r.score / top)) }));
   return (
     <div className="offer ext" role="group" aria-label={`Offer to ${p.name}`}>
-      <div><b>{p.name}</b> <span className="dim">{p.pos} · age {ageIn(p, N)} · OVR {ovrOf(p.z)} · max contract {pc(max)} ({money(max)}) · your payroll {Math.round(pay * 100)}% of the cap</span></div>
+      <div><b>{p.name}</b> <span className="dim">{p.pos} · age {ageIn(p, N)} · OVR {ovrOf(p.z)} · max contract {pc(max)}{usd(max, N)} · your payroll {Math.round(pay * 100)}% of the cap</span></div>
       <p className="note">{why.length ? `About your team: ${why.map((x: any) => x.t).join('; ')}.` : 'He cares about the terms, not the team.'}{p.rfa && p.rfa !== tid ? ` Restricted free agent – the ${lg.teams[p.rfa].name} can match your offer.` : ''} He would pick {pref} year{pref > 1 ? 's' : ''} himself.{L.why ? ` For ${years} years: ${L.why}.` : ''}</p>
       <table className="tbl compact ext-years">
         <thead><tr><th className="l">Years</th>{[1, 2, 3, 4, 5].map(y => <th key={y}><button className={`small ${y === years ? 'primary' : ''}`} onClick={() => { setYears(y); setSal(null); }}>{y}</button></th>)}</tr></thead>
-        <tbody><tr><td className="l dim">He signs for</td>{[1, 2, 3, 4, 5].map(y => { const v = need(y); return <td key={y} className={y === years ? 'on' : ''}>{pc(v)}<br /><span className="dim small-t">{money(v)}</span></td>; })}</tr></tbody>
+        <tbody><tr><td className="l dim">He signs for</td>{[1, 2, 3, 4, 5].map(y => { const v = need(y); return <td key={y} className={y === years ? 'on' : ''}>{pc(v)}{dol && <><br /><span className="dim small-t">{$(v)}</span></>}</td>; })}</tr></tbody>
       </table>
       <div className="ext-adjust">
         <span>Your offer for <b>{years}</b> yr{years > 1 ? 's' : ''}:</span>
         <button className="small" onClick={() => bump(-0.01)} aria-label="1% of the cap less">−1%</button>
         <button className="small" onClick={() => bump(-0.0025)} aria-label="a quarter percent less">−¼</button>
-        <b className="ext-amt">{(offer * 100).toFixed(2)}% <span className="dim">· {money(offer)}</span></b>
+        <b className="ext-amt">{(offer * 100).toFixed(2)}% {dol && <span className="dim">· {$(offer)}</span>}</b>
         <button className="small" onClick={() => bump(0.0025)} aria-label="a quarter percent more">+¼</button>
         <button className="small" onClick={() => bump(0.01)} aria-label="1% of the cap more">+1%</button>
         <button className="small ghost" onClick={() => setSal(null)}>His number</button>
@@ -615,7 +613,7 @@ export function FAOfferBox({ lg, p, onDone, onCancel }: any) {
         </tr>)}</tbody>
       </table></div>}
       <div className="def-row">
-        <button className="primary" onClick={() => onDone(faOffer(lg, p.id, offer, years))}>{mineNow ? 'Change offer' : 'Make offer'}: {years} yr{years > 1 ? 's' : ''} at {money(offer)}</button>
+        <button className="primary" onClick={() => onDone(faOffer(lg, p.id, offer, years))}>{mineNow ? 'Change offer' : 'Make offer'}: {years} yr{years > 1 ? 's' : ''} at {dol ? $(offer) : pc(offer)}</button>
         <button className="ghost" onClick={onCancel}>Cancel</button>
       </div>
     </div>

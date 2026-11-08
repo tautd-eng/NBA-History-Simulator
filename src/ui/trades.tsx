@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Trade screen: build a proposal with another team and see the AI's answer before sending it.
 import { TL } from './nav';
+import { money, usd } from './money';
 import { useMemo, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, seasonInfo } from '../data';
 import { ageIn } from '../players';
@@ -10,10 +11,6 @@ import { isHuman } from '../league/humans';
 import { propose as sendOffer, answer, withdraw, inbox, outbox, proposalProblem, describeSide } from '../league/proposals';
 import { tradeRules, findTrades } from '../ai/trades';
 
-const money = (frac: number, s: number) => {
-  const m = frac * seasonInfo(s).cap;
-  return m >= 1 ? `$${m.toFixed(1)}M` : `$${Math.round(m * 1000)}K`;
-};
 const pkKey = (p: any) => `${p.season}-${p.round}-${p.orig}`;
 const valCls = (v: number) => (v >= 15 ? 'hi' : v >= 5 ? 'mid' : v < 0 ? 'neg' : '');
 
@@ -107,7 +104,7 @@ export function Trades({ lg, openPlayer, onDone }: any) {
     return (
       <div className="trade-side">
         <h3>{label}</h3>
-        <p className="dim">{t.roster.length} players · payroll {money(payroll(lg, tid), lg.season)} ({Math.round(payroll(lg, tid) * 100)}% of the cap) · {t.mode === 'allin' ? 'all-in – buying for now' : t.mode === 'tank' ? 'tanking – selling veterans' : t.mode === 'rising' ? 'rising – protecting youth' : t.mode === 'capclear' ? 'clearing salary' : t.mode === 'retool' ? 'retooling – open to side moves' : ({ contend: 'contender', middle: 'middle of the pack', rebuild: 'rebuilding' } as any)[t.strategy]}{hardCap(lg) < Infinity ? ` · ${Math.max(0, Math.round((hardCap(lg) - payroll(lg, tid)) * 100))}% left under the hard cap` : ''}</p>
+        <p className="dim">{t.roster.length} players · payroll {Math.round(payroll(lg, tid) * 100)}% of the cap{usd(payroll(lg, tid), lg.season)} · {t.mode === 'allin' ? 'all-in – buying for now' : t.mode === 'tank' ? 'tanking – selling veterans' : t.mode === 'rising' ? 'rising – protecting youth' : t.mode === 'capclear' ? 'clearing salary' : t.mode === 'retool' ? 'retooling – open to side moves' : ({ contend: 'contender', middle: 'middle of the pack', rebuild: 'rebuilding' } as any)[t.strategy]}{hardCap(lg) < Infinity ? ` · ${Math.max(0, Math.round((hardCap(lg) - payroll(lg, tid)) * 100))}% left under the hard cap` : ''}</p>
         <ul className="pick-list">
           {players.map((p: any) => {
             const k = 'p:' + p.id;

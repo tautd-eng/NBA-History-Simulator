@@ -998,7 +998,10 @@ function teamOffers(lg: League, p: Player, stage: number, rng: { next(): number;
     const room = ceiling(lg, N) - pay;
     let sal = 0, mle = false, needRoom = false;
     // a team pays what he asks of it: less where he wants to play, more where he does not
-    const askT = Math.min(max, ask * (1 - discount(lg, p, t.tid)));
+    const dT = discount(lg, p, t.tid);
+    const askT = Math.min(max, ask * (1 - dT));
+    // his own team, and he does not want to stay: it pays the premium only for a player it builds around
+    if (dT < -0.2 && p.bird === t.tid && !keeps(lg, t.tid, p)) continue;
     const underFloor = pay < FLOOR;
     if (room >= askT) sal = Math.min(room, max, askT * (1 + (underFloor ? 0.3 : 0.15) * rng.next()));
     // his own team holds his Bird rights: it may go over the cap to keep him (and a core player is worth making room for)

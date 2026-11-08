@@ -149,6 +149,16 @@ function migrate(lg: League) {
     p.awards = p.awards.map((a: string) => { const m = /^(\d{4}) (.*)$/.exec(a); if (!m) return a; if (AWARD_EN[m[2]]) return `${m[1]} ${AWARD_EN[m[2]]}`; return /[ąčęėįšųūž]/i.test(m[2]) ? `${m[1]} ${awardLabel(m[2])}` : a; });
   }
   checkRosters(lg); // older saves: duplicate names, players on two rosters
+  // older saves: the opening contracts marked every player as on his first (rookie) deal
+  if (!(lg as any).rookieFix) {
+    for (const p of Object.values(lg.players) as any[]) {
+      if (!p.contract?.rookie || p.contract.exp <= lg.start) continue;
+      const first = p.draft?.year ? p.draft.year + 1 : null;
+      const age = lg.start - (p.born ?? lg.start - 25);
+      if (p.entered === lg.start && (first ? lg.start - first >= 3 : age >= 24)) delete p.contract.rookie;
+    }
+    (lg as any).rookieFix = 1;
+  }
 }
 export async function loadLeague(id = slot): Promise<League | null> {
   try { const lg = await get<League>(id); if (lg) migrate(lg); return lg; } catch { return null; }

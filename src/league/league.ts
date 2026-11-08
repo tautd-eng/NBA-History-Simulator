@@ -45,7 +45,9 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
   }
   const sign = (p: Player) => {
     p.contract = { sal: askingSalary(p, season), exp: season + rng.int(Math.max(1, contractYears(p, season, () => rng.next()))) };
-    if (season - p.entered <= 3) p.contract.rookie = true; // still on his first contract: restricted when it ends
+    // still on his first contract: restricted when it ends (p.entered is when he joined this league – at the start, everyone)
+    const firstSeason = p.draft?.year ? p.draft.year + 1 : season - Math.max(0, ageIn(p, season) - 21);
+    if (season - firstSeason < 3) p.contract.rookie = true;
     const d = p.draft;
     if (season >= 2000 && d && d.round === 1 && d.year >= season - 4 && d.year < season) {
       // rookie scale: two guaranteed years, team options for years 3 and 4

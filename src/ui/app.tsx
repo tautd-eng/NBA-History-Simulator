@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { PlayoffPreviews, SeriesDialog } from './preview';
+import { money, usd, showDollars, setShowDollars } from './money';
 import { Linkify, PL, TL, nav } from './nav';
 import { TeamHistory, TeamRecords, LeagueRecords, Retirements, SeasonArchive } from './history';
 import { StandingsHistory, TeamStatsExplorer, FaMoves } from './leaguehist';
@@ -59,10 +60,6 @@ setEraCal(cal as any);
 const per = (v: number, gp: number) => (gp ? (v / gp).toFixed(1) : '–');
 const pct = (m: number, a: number) => (a ? (m / a).toFixed(3).replace(/^0/, '') : '–');
 const seasonLabel = (s: number) => `${s - 1}–${String(s).slice(2)}`;
-const money = (frac: number, s: number) => {
-  const m = frac * seasonInfo(s).cap;
-  return m >= 1 ? `$${m.toFixed(1)}M` : `$${Math.round(m * 1000)}K`;
-};
 
 function Ovr({ v, small }: { v: number; small?: boolean }) {
   const tier = v >= 90 ? 'star' : v >= 80 ? 'good' : v >= 70 ? 'mid' : 'low';
@@ -375,6 +372,7 @@ function SettingsPanel({ lg, close, onSaved }: any) {
     <div className="overlay center" onClick={close}>
       <div className="dialog" role="dialog" aria-label="Season format" onClick={e => e.stopPropagation()}>
         <h2>Season format</h2>
+        <label className="commish"><input type="checkbox" defaultChecked={showDollars()} onChange={e => { setShowDollars(e.target.checked); onSaved(); }} /> Show salaries in dollars too (that season's money). Off: everything is a share of the salary cap – the same in every era.</label>
         <p className="note">Now: {seasonGames(lg)} games per season, {f.perConf} playoff teams per conference{f.playIn ? ' with a play-in' : ''}, series {f.bestOf.map(b => b === 1 ? '1 game' : `best of ${b}`).join(' / ')}.</p>
         <SeasonFields form={form} setForm={setForm} idp="set-" />
         {result && <p className="ok-msg">{result}</p>}
@@ -979,7 +977,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
         <div className="team-facts">
           <span><b>{t.w}–{t.l}</b> record</span>
           <span>GM strategy: <b>{strat}</b></span>
-          <span>Payroll: <b>{money(pay, lg.season)}</b> ({Math.round(pay * 100)}% of the cap{hardCap(lg) < Infinity ? <>, hard cap <b className={pay > hardCap(lg) ? 'neg' : pay > hardCap(lg) - 0.05 ? 'warn-t' : ''}>{Math.round(hardCap(lg) * 100)}%</b></> : null})</span>
+          <span>Payroll: <b>{Math.round(pay * 100)}% of the cap</b>{usd(pay, lg.season)}{hardCap(lg) < Infinity ? <>, hard cap <b className={pay > hardCap(lg) ? 'neg' : pay > hardCap(lg) - 0.05 ? 'warn-t' : ''}>{Math.round(hardCap(lg) * 100)}%</b></> : null}</span>
           {titles.length > 0 && <span>Titles: <b>{titles.join(', ')}</b></span>}
         </div>
       </div>
