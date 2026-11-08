@@ -4,6 +4,7 @@ import { nextPayroll } from './extensions';
 import { H, seasonInfo, LAST_SEASON, bpmOf, ovrOf, agingIndex, NK, shownOvr, shownFromRaw, histShown } from '../data';
 import { rosterFit, GMFIT } from '../archetypes';
 import { Rng } from '../rng';
+import { posNum } from '../engine/game';
 import { League, Player, Team, emptyLine, ExpansionDraft, Lottery, FreeAgency, RetRow } from '../types';
 import { newPlayer, prospectZ, realTarget, lastRealSeason, ageIn, firstRealSeason, snapRatings, tagOf, addTx } from '../players';
 import { activeTeams, makeTeam, rngOf, standings, updateStrategies, updateModes, playoffFormat, seasonGames } from './league';
@@ -1155,6 +1156,13 @@ function retirements(lg: League, rng: Rng, notes: string[]): RetRow[] {
   const Y = lg.season, d = lg.destiny;
   const famous: string[] = [];
   const rows: RetRow[] = [];
+  // where each player ranks at his position (guards / forwards / centers) among everyone still playing
+  const grp = (p: Player) => { const x = posNum(p.pos); return x <= 2.5 ? 'g' : x >= 4.5 ? 'c' : 'f'; };
+  const posRank = new Map<string, number>();
+  for (const g of ['g', 'f', 'c']) {
+    Object.values(lg.players).filter(p => !p.retired && !p.prospect && !(p as any).stash && grp(p) === g)
+      .sort((a, b) => shownOvr(b.z) - shownOvr(a.z)).forEach((p, i) => posRank.set(p.id, i + 1));
+  }
   for (const p of Object.values(lg.players)) {
     if (p.retired || (p as any).stash || p.prospect) continue;
     const age = ageIn(p, Y + 1);
@@ -1191,13 +1199,18 @@ function retirements(lg: League, rng: Rng, notes: string[]): RetRow[] {
       const sh = shownOvr(p.z);
       if (Y - lastPlayed >= 1 && !hurt && (sh < 72 || (age >= 33 && sh < 76))) { uns = (age >= 30 ? 0.7 : 0.35) * (sh >= 70 ? 0.5 : 1); pr = Math.max(pr, uns); }
     }
+    // a player who is still among the best at his position does not walk away: top 20 practically never
+    // (only past 40), the next 20 seldom
+    const rk = posRank.get(p.id) ?? 999;
+    if (rk <= 20) pr = age >= 41 ? pr * 0.3 : 0;
+    else if (rk <= 40) pr *= 0.35;
     if (rng.chance(pr)) {
       (p as any).retWhy = uns >= Math.max(hist, base) ? 'unsigned' : hist > base ? 'history' : 'age';
       if (bpmOf(p.z) > 3 || p.awards.some(a => a.includes('MVP'))) famous.push(tagOf(p, Y));
       const why = (p as any).retWhy, o = shownOvr(p.z);
       // would he come back if asked? a player who can still play and did not leave because nobody wanted him
       const back = why !== 'unsigned' && p.injury < 40 && ((why === 'history' && o >= 70 && age <= 38) || (o >= 74 && age <= 37));
-      rows.push({ pid: p.id, tid: p.tid, age, ovr: o, why, back });
+      rows.push({ pid: p.id, tid: p.tid, age, ovr: o, why, back, rk, pr: Math.round(pr * 1000) / 1000 } as any);
       retirePlayer(lg, p, Y);
     }
   }

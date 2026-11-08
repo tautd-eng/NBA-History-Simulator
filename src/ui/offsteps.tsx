@@ -4,11 +4,12 @@
 // new season), and the screens of the steps that have no room of their own elsewhere.
 import { useState } from 'react';
 import { PL, TL } from './nav';
-import { shownOvr as ovrOf, seasonInfo } from '../data';
+import { shownOvr as ovrOf, seasonInfo, H, histShown, LAST_SEASON } from '../data';
 import { ageIn } from '../players';
 import { offStep, offRetire, offDevelop, unretire, initDraft } from '../league/offseason';
 import { SortTable } from './sorttable';
 import { injName } from '../league/injuries';
+import { posNum } from '../engine/game';
 
 const seasonLabel = (s: number) => `${s - 1}–${String(s).slice(2)}`;
 const top = () => { try { window.scrollTo({ top: 0 }); } catch { /* */ } };
@@ -73,31 +74,75 @@ export function RecapStep({ lg, onChange, children }: any) {
 }
 
 // ---------------------------------------------------------------- 2) retirements
-const WHY: Record<string, string> = { age: 'age and decline', history: 'his real career ended here', unsigned: 'no team wanted him' };
+const WHY: Record<string, string> = { age: 'Age and decline', history: 'His real career ended here', unsigned: 'No team wanted him' };
+
+/**
+ * A whole career: his real NBA seasons before this league began plus his seasons in this league –
+ * years, teams, totals, peak, honors, and how it compares with what really happened.
+ */
+export function careerSummary(lg: any, p: any) {
+  const start = lg.start ?? lg.history?.[0]?.season ?? lg.season;
+  const hp = H.players[p.id];
+  const realPre = (hp?.s ?? []).filter((r: any) => r[0] < start && !(p.shift));
+  const reg = p.career.filter((c: any) => !c.po);
+  let gp = 0, pts = 0, reb = 0, ast = 0;
+  const seasons = new Set<number>(), path: string[] = [];
+  let peak = 0;
+  for (const r of realPre) {
+    const g = r[2]; gp += g; pts += r[4] * g; reb += r[5] * g; ast += r[6] * g; seasons.add(r[0]);
+    if (path[path.length - 1] !== r[1]) path.push(r[1]);
+    if (r[3] >= 500) peak = Math.max(peak, ovrOf(r[7]));
+  }
+  for (const c of reg) {
+    gp += c.gp; pts += c.pts; reb += c.orb + c.drb; ast += c.ast; seasons.add(c.s);
+    if (c.tid && path[path.length - 1] !== c.tid) path.push(c.tid);
+  }
+  for (const h of p.ovrHist ?? []) peak = Math.max(peak, histShown(h));
+  const ys = [...seasons].sort((a, b) => a - b);
+  const aw = p.awards ?? [];
+  const lastReal = hp?.s?.length ? hp.s[hp.s.length - 1][0] : undefined;
+  return {
+    first: ys[0], last: ys[ys.length - 1], n: ys.length, gp, path, peak,
+    ppg: gp ? pts / gp : 0, rpg: gp ? reb / gp : 0, apg: gp ? ast / gp : 0, pts: Math.round(pts),
+    rings: aw.filter((a: string) => /Champion$/.test(a)).length,
+    mvp: aw.filter((a: string) => /\bMVP$/.test(a) && !/Finals/.test(a)).length,
+    allLg: aw.filter((a: string) => /All-League/.test(a)).length,
+    hof: !!hp?.hof, realPre: realPre.length ? new Set(realPre.map((r: any) => r[0])).size : 0, lastReal,
+  };
+}
+/** How his exit compares with history. */
+export function vsReality(c: any, Y: number) {
+  if (c.lastReal === undefined) return 'not a real player';
+  if (c.lastReal >= LAST_SEASON) return `his real career was still going when the data ends (${LAST_SEASON - 1}–${String(LAST_SEASON).slice(2)})`;
+  if (c.lastReal === Y) return 'same year as in reality';
+  if (c.lastReal > Y) return `in reality played on through ${c.lastReal - 1}–${String(c.lastReal).slice(2)} (${c.lastReal - Y} more)`;
+  return `outlasted his real career (ended ${c.lastReal - 1}–${String(c.lastReal).slice(2)})`;
+}
+const teamTag = (lg: any, t: string) => lg.teams[t] ? <TL tid={t} abbr /> : <span>{t}</span>;
+
 export function RetireStep({ lg, onChange, openPlayer }: any) {
   const [msg, setMsg] = useState<string | null>(null);
   const o = lg.off;
-  const rows = (o?.ret ?? []).map((r: any) => ({ ...r, key: r.pid, p: lg.players[r.pid] })).filter((r: any) => r.p);
   const Y = lg.season;
-  const career = (p: any) => {
-    const reg = p.career.filter((c: any) => !c.po);
-    const gp = reg.reduce((a: number, c: any) => a + c.gp, 0), pts = reg.reduce((a: number, c: any) => a + c.pts, 0);
-    const rings = p.awards.filter((a: string) => /Champion$/.test(a)).length;
-    const mvp = p.awards.filter((a: string) => /\bMVP$/.test(a) && !/Finals/.test(a)).length;
-    return { n: new Set(reg.map((c: any) => c.s)).size, ppg: gp ? pts / gp : 0, rings, mvp, peak: Math.max(...(p.ovrHist ?? []).map((h: any) => h[2] ?? 0), 0) };
-  };
+  const rows = (o?.ret ?? []).map((r: any) => ({ ...r, key: r.pid, p: lg.players[r.pid] })).filter((r: any) => r.p).map((r: any) => ({ ...r, c: careerSummary(lg, r.p) }));
   const cols = [
-    { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <button className="link" onClick={() => openPlayer(r.pid)}>{v}</button> },
-    { key: 'team', label: 'Team', left: true, get: (r: any) => (r.tid ? lg.teams[r.tid]?.abbr : 'FA'), fmt: (v: any, r: any) => r.tid ? <TL tid={r.tid} abbr /> : <span className="dim">FA</span> },
+    { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <><button className="link" onClick={() => openPlayer(r.pid)}>{v}</button>{r.c.hof ? <span className="chip tiny" title="In the Hall of Fame in reality">HOF</span> : null}<br /><span className="dim small-t">{r.p.pos} · {r.tid ? <>last with {teamTag(lg, r.tid)}</> : 'free agent'}</span></> },
     { key: 'age', label: 'Age', get: (r: any) => r.age },
     { key: 'ovr', label: 'OVR', title: 'Overall in his last season', get: (r: any) => r.ovr, fmt: (v: any) => <span className={`ovr ${v >= 90 ? 'star' : v >= 80 ? 'good' : v >= 70 ? 'mid' : 'low'} sm`}>{v}</span> },
-    { key: 'yrs', label: 'Seasons', get: (r: any) => career(r.p).n },
-    { key: 'ppg', label: 'Career PPG', get: (r: any) => career(r.p).ppg, fmt: (v: any) => v.toFixed(1) },
-    { key: 'hon', label: 'Honors', left: true, get: (r: any) => career(r.p).rings * 10 + career(r.p).mvp, fmt: (_: any, r: any) => { const c = career(r.p); return <span className="dim">{[c.rings ? `${c.rings}× champion` : '', c.mvp ? `${c.mvp}× MVP` : ''].filter(Boolean).join(', ') || '–'}</span>; } },
-    { key: 'why', label: 'Why', left: true, get: (r: any) => r.why, fmt: (v: any, r: any) => <span className="dim">{WHY[v] ?? v}{r.p.injury > 0 ? ` (injured: ${r.p.injury} games)` : ''}</span> },
+    { key: 'rk', label: 'Pos. rank', title: 'Where he ranked at his position (guards / forwards / centers) in the league – a top-20 player at his position does not retire (only past 40)', get: (r: any) => r.rk ?? 999, fmt: (v: any, r: any) => v < 999 ? <span className="dim">No. {v} {['G', 'F', 'C'][(x => x <= 2.5 ? 0 : x >= 4.5 ? 2 : 1)(posNum(r.p.pos))]}</span> : '–' },
+    { key: 'peak', label: 'Peak', title: 'Best overall of his career (real seasons before this league included)', get: (r: any) => r.c.peak },
+    { key: 'yrs', label: 'Career', left: true, get: (r: any) => r.c.n, fmt: (_: any, r: any) => <>{r.c.first ? `${r.c.first - 1}–${String(r.c.last).slice(2)}` : '–'} <span className="dim">· {r.c.n} seasons</span><br /><span className="dim small-t">{r.c.path.map((t: string, i: number) => <span key={i}>{i ? ' → ' : ''}{teamTag(lg, t)}</span>)}</span></> },
+    { key: 'gp', label: 'GP', get: (r: any) => r.c.gp },
+    { key: 'ppg', label: 'PPG', get: (r: any) => r.c.ppg, fmt: (v: any) => v.toFixed(1) },
+    { key: 'rpg', label: 'RPG', get: (r: any) => r.c.rpg, fmt: (v: any) => v.toFixed(1) },
+    { key: 'apg', label: 'APG', get: (r: any) => r.c.apg, fmt: (v: any) => v.toFixed(1) },
+    { key: 'hon', label: 'Honors', left: true, get: (r: any) => r.c.rings * 100 + r.c.mvp * 10 + r.c.allLg, fmt: (_: any, r: any) => <span className="dim small-t">{[r.c.rings ? `🏆 ${r.c.rings}` : '', r.c.mvp ? `${r.c.mvp}× MVP` : '', r.c.allLg ? `${r.c.allLg}× All-League` : ''].filter(Boolean).join(' · ') || '–'}</span> },
+    { key: 'why', label: 'Why / history', left: true, get: (r: any) => r.why, fmt: (v: any, r: any) => <>{WHY[v] ?? v}{r.p.injury > 0 ? <span className="neg"> · injured ({r.p.injury} games left)</span> : null}<br /><span className="dim small-t">{vsReality(r.c, Y)}</span></> },
     { key: 'act', label: '', get: (r: any) => (r.undone ? 2 : r.back ? 1 : 0), fmt: (_: any, r: any) => r.undone ? <span className="chip tiny">coming back</span> : r.back ? <button className="small" onClick={() => { const x = unretire(lg, r.pid); setMsg(x.msg); onChange(); }}>Talk him out of it</button> : <span className="dim small-t">final</span> },
   ];
   const mine = rows.filter((r: any) => r.tid && r.tid === lg.userTid);
+  const legends = rows.filter((r: any) => r.c.hof || r.c.mvp || r.c.peak >= 90).sort((a: any, b: any) => b.c.peak - a.c.peak).slice(0, 4);
+  const start = lg.start ?? lg.history?.[0]?.season;
   return (
     <div className="col">
       <div className="panel accent step-head">
@@ -109,8 +154,22 @@ export function RetireStep({ lg, onChange, openPlayer }: any) {
         {mine.length > 0 && <p className="hint">From your team: {mine.map((r: any) => r.p.name).join(', ')}.</p>}
         {msg && <p className="hint" role="status">{msg}</p>}
       </div>
+      {legends.length > 0 && (
+        <div className="ret-legends">
+          {legends.map((r: any) => (
+            <div key={r.pid} className="panel ret-card">
+              <div className="eyebrow">{r.c.hof ? 'Hall of Famer' : r.c.mvp ? 'MVP' : 'Star'} calls it a career</div>
+              <h3><button className="link" onClick={() => openPlayer(r.pid)}>{r.p.name}</button></h3>
+              <p className="small-t">{r.c.first - 1}–{String(r.c.last).slice(2)} · {r.c.n} seasons · {r.c.path.map((t: string, i: number) => <span key={i}>{i ? ' → ' : ''}{teamTag(lg, t)}</span>)}</p>
+              <p className="ret-nums"><b>{r.c.ppg.toFixed(1)}</b> PPG <b>{r.c.rpg.toFixed(1)}</b> RPG <b>{r.c.apg.toFixed(1)}</b> APG · {r.c.pts.toLocaleString()} points</p>
+              <p className="dim small-t">Peak OVR {r.c.peak}{r.c.rings ? ` · 🏆 ${r.c.rings}` : ''}{r.c.mvp ? ` · ${r.c.mvp}× MVP` : ''} · {vsReality(r.c, Y)}</p>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="panel">
-        {rows.length ? <SortTable cols={cols} rows={rows} initial="ovr" limit={200} rowClass={(r: any) => (r.tid && r.tid === lg.userTid ? 'mine' : r.undone ? 'dim' : '')} /> : <p className="note">Nobody retired this summer.</p>}
+        {rows.length ? <SortTable cols={cols} rows={rows} initial="peak" limit={200} rowClass={(r: any) => (r.tid && r.tid === lg.userTid ? 'mine' : r.undone ? 'dim' : '')} /> : <p className="note">Nobody retired this summer.</p>}
+        <p className="note">Career numbers include his real NBA seasons before this league began{start ? ` (${start - 1}–${String(start).slice(2)})` : ''} and every season in this league. Peak – his best overall. The last line under “Why” compares the exit with his real career.</p>
       </div>
     </div>
   );

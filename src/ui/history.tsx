@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { GAME_CATS, TEAM_CATS, finishLabel, ensureRecords, gmsc } from '../league/records';
 import { TLogo } from './art';
 import { SortTable } from './sorttable';
+import { careerSummary, vsReality } from './offsteps';
 import { shownFromRaw } from '../data';
 
 const sl = (s: number) => `${s - 1}–${String(s).slice(2)}`;
@@ -212,23 +213,16 @@ export function Retirements({ lg, openPlayer }: any) {
   const [y, setY] = useState<number | 'all'>(years[0] ?? 'all');
   const [min, setMin] = useState(0);
   if (!years.length) return (
-    <div className="panel"><h2>Retirements</h2><p className="note">Players retire in the offseason, right after the draft, when free agency opens. The first retirements will show up here after the first season.</p></div>
+    <div className="panel"><h2>Retirements</h2><p className="note">Players retire in the offseason, right after the season. The first retirements will show up here after the first season.</p></div>
   );
   const rows = (Object.values(lg.players) as any[]).filter(p => p.retired && p.career.length && (y === 'all' || p.retired === y)).map(p => {
-    const reg = p.career.filter((c: any) => !c.po);
-    const sum = (k: string) => reg.reduce((a: number, c: any) => a + (c[k] ?? 0), 0);
-    const gp = sum('gp');
-    const stints: string[] = [];
-    for (const c of reg) { if (c.tid && stints[stints.length - 1] !== c.tid) stints.push(c.tid); }
-    const peak = p.ovrHist?.length ? Math.max(...p.ovrHist.map((o: any) => o[1])) : null;
-    const aw = p.awards.filter((a: string) => !/(Champion|čempionas)/.test(a));
+    // the whole career: real seasons before this league began plus this league's seasons
+    const c = careerSummary(lg, p);
     return {
-      key: p.id, p, gp, seasons: new Set(reg.map((c: any) => c.s)).size, stints,
-      first: reg.length ? Math.min(...reg.map((c: any) => c.s)) : p.retired, age: Math.floor(p.retired + 0.5 - p.born),
-      ppg: gp ? sum('pts') / gp : null, rpg: gp ? (sum('orb') + sum('drb')) / gp : null, apg: gp ? sum('ast') / gp : null,
-      pts: sum('pts'), peak: peak == null ? null : shownFromRaw(peak),
-      mvp: aw.filter((a: string) => / MVP$/.test(a) && !/Finals/.test(a)).length, allLg: aw.filter((a: string) => /All-League/.test(a)).length,
-      titles: p.awards.filter((a: string) => /(Champion|čempionas)/.test(a)).length,
+      key: p.id, p, gp: c.gp, seasons: c.n, stints: c.path, c,
+      first: c.first ?? p.retired, age: Math.floor(p.retired + 0.5 - p.born),
+      ppg: c.gp ? c.ppg : null, rpg: c.gp ? c.rpg : null, apg: c.gp ? c.apg : null,
+      pts: c.pts, peak: c.peak || null, mvp: c.mvp, allLg: c.allLg, titles: c.rings,
     };
   }).filter(r => (r.peak ?? 0) >= min);
   const cols = [
@@ -236,14 +230,14 @@ export function Retirements({ lg, openPlayer }: any) {
     ...(y === 'all' ? [{ key: 'ret', label: 'Retired', get: (r: any) => r.p.retired }] : []),
     { key: 'age', label: 'Age', get: (r: any) => r.age },
     { key: 'yrs', label: 'Years', get: (r: any) => r.first, fmt: (_: any, r: any) => `${r.first - 1}–${String(r.p.retired).slice(2)}` },
-    { key: 'teams', label: 'Teams', left: true, get: (r: any) => r.stints.length, fmt: (_: any, r: any) => <span className="dim">{r.stints.length ? r.stints.map((t: string, i: number) => <span key={i}>{i ? ' → ' : ''}<TL tid={t} abbr /></span>) : '–'}</span> },
+    { key: 'teams', label: 'Teams', left: true, get: (r: any) => r.stints.length, fmt: (_: any, r: any) => <span className="dim">{r.stints.length ? r.stints.map((t: string, i: number) => <span key={i}>{i ? ' → ' : ''}{lg.teams[t] ? <TL tid={t} abbr /> : t}</span>) : '–'}</span> },
     { key: 'peak', label: 'Peak OVR', get: (r: any) => r.peak ?? 0, fmt: (v: any) => v || '–' },
     { key: 'gp', label: 'GP', get: (r: any) => r.gp },
     { key: 'pts', label: 'Pts', title: 'Career points', get: (r: any) => r.pts },
     { key: 'ppg', label: 'PPG', get: (r: any) => r.ppg, fmt: (v: any) => (v == null ? '–' : f1(v)) },
     { key: 'rpg', label: 'RPG', get: (r: any) => r.rpg, fmt: (v: any) => (v == null ? '–' : f1(v)) },
     { key: 'apg', label: 'APG', get: (r: any) => r.apg, fmt: (v: any) => (v == null ? '–' : f1(v)) },
-    { key: 'why', label: 'Why', title: 'Main reason: age and decline, his real career ended then (destiny), or nobody signed him', left: true, get: (r: any) => r.p.retWhy ?? '', fmt: (v: any) => <span className="dim">{v === 'history' ? 'Real career ended' : v === 'unsigned' ? 'Unsigned' : v === 'age' ? 'Age / decline' : '–'}</span> },
+    { key: 'why', label: 'Why', title: 'Main reason: age and decline, his real career ended then (destiny), or nobody signed him', left: true, get: (r: any) => r.p.retWhy ?? '', fmt: (v: any, r: any) => <span className="dim">{v === 'history' ? 'Real career ended' : v === 'unsigned' ? 'Unsigned' : v === 'age' ? 'Age / decline' : '–'}<br /><span className="small-t">{vsReality(r.c, r.p.retired)}</span></span> },
     { key: 'titles', label: 'Titles', get: (r: any) => r.titles, fmt: (v: any) => (v ? `🏆 ${v}` : '') },
     { key: 'hon', label: 'Honors', title: 'MVPs and All-League selections', get: (r: any) => r.mvp * 10 + r.allLg, fmt: (_: any, r: any) => <span className="dim">{[r.mvp ? `${r.mvp}× MVP` : '', r.allLg ? `${r.allLg}× All-League` : ''].filter(Boolean).join(', ')}</span> },
   ];
@@ -261,7 +255,7 @@ export function Retirements({ lg, openPlayer }: any) {
         <span className="dim">{rows.length} players</span>
       </div>
       <SortTable cols={cols} rows={rows} initial="peak" limit={300} />
-      <p className="note">Players retire in the offseason, right after the draft. Age, a fading game and – with the destiny slider up – the end of their real careers decide it (a young player still good enough to keep a job rarely quits just because history says so); players left unsigned for a year may also call it a career. Career numbers are this league's regular seasons. Click a name for the full career: draft, teams, trades, awards.</p>
+      <p className="note">Career numbers include his real NBA seasons before this league began. Players retire in the offseason, right after the season. Age, a fading game and – with the destiny slider up – the end of their real careers decide it (a young player still good enough to keep a job rarely quits just because history says so); players left unsigned for a year may also call it a career. Career numbers are this league's regular seasons. Click a name for the full career: draft, teams, trades, awards.</p>
     </div>
   );
 }

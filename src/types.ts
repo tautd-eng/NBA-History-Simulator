@@ -177,7 +177,7 @@ export interface FreeAgency {
   flushed?: number;                 // log entries already copied into the players' histories
 }
 /** A player who retired this summer: team, age, rating and why; `back` = he would come back if asked. */
-export interface RetRow { pid: string; tid: string | null; age: number; ovr: number; why: string; back: boolean; undone?: boolean }
+export interface RetRow { pid: string; tid: string | null; age: number; ovr: number; why: string; back: boolean; undone?: boolean; rk?: number }
 /** Why a player's rating changed this summer, in displayed OVR points by cause. */
 export interface DevWhy { s: number; inj: number; perf: number; trend: number; luck: number; cap: number; destiny: number; league?: number; total: number; flop?: boolean; dz?: boolean }
 export interface FantasyDraft { order: string[]; rounds: number; picks: { round: number; pick: number; tid: string; pid: string }[]; done: boolean }

@@ -124,6 +124,7 @@ function usePanelFolding() {
 function App() {
   usePanelFolding();
   const [lg, setLg] = useState<any>(null);
+  useEffect(() => { try { (window as any).__lg = lg; } catch { /* debugging handle */ } }, [lg]);
   const [ready, setReady] = useState(false);
   const [rev, setRev] = useState(0);
   const [tab, setTab] = useState(() => {
