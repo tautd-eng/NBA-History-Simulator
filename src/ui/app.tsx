@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { PlayoffPreviews, SeriesDialog } from './preview';
+import { forward } from '../league/commands';
 import { useNavState, navSubs, restoreSubs } from './nav';
 import { MyBoard, BoardToggle, boardOf } from './myboard';
 import { run } from '../league/commands';
@@ -232,16 +233,19 @@ function App() {
     if (cs) setClutch(cs);
   }
 
+  /** Online: a game played on this screen goes to the host as the result (a player's own games). */
+  const sendResult = (home: string, away: string, res: any) => { if (lg?.online?.role === 'player' && res) forward(lg, { t: 'gameResult', home, away, res: { home: res.home, away: res.away, ot: res.ot } }); };
   async function watch(home: string, away: string, startAt = 0, show = true) {
     if (!lg || busy) return;
     // a watched game is recorded only when the viewer closes: no spoilers in profiles, standings or the bracket
     const w = simDayWatching(lg, home, away, { defer: show });
-    if (w && show) { setLive({ ...w, startAt }); return; }
+    if (w && show) { setLive({ ...w, startAt, home, away }); return; }
+    if (w) sendResult(home, away, w.res);
     bump();
     setSaved((await saveLeague(lg)) ? 'ok' : 'fail');
   }
   async function closeLive() {
-    if (live?.commit) live.commit();
+    if (live?.commit) { live.commit(); sendResult(live.home, live.away, live.res); }
     setLive(null);
     bump();
     if (lg) setSaved((await saveLeague(lg)) ? 'ok' : 'fail');
@@ -282,6 +286,15 @@ function App() {
   const openTeam = (tid: string) => { if (tab !== 'komandos' || team !== tid || player) remember(); setTeam(tid); setPlayer(null); setTab('komandos'); try { history.replaceState(history.state, '', '#komandos'); } catch { /* ignore */ } window.scrollTo(0, 0); };
   nav.remember = remember;
   nav.lg = lg; nav.player = openPlayer; nav.team = (tid: string) => { setPlayer(null); if (live) closeLive(); setGameView(null); openTeam(tid); };
+  /** Online: which of today's games you may play on your screen – your own, when the other side is the computer or has said it is done; the host any other game. */
+  const playable = (home: string, away: string) => {
+    if (!octx) return true;
+    const mine = home === lg.userTid || away === lg.userTid;
+    const opp = octx.members.find((m: any) => m.tid === (home === lg.userTid ? away : home));
+    const oppReady = !opp || opp.done || opp.role === 'host';
+    if (octx.role === 'host') return !mine || oppReady;
+    return mine && oppReady;
+  };
   const go = (t: string) => { if (t !== tab) { remember(); window.scrollTo(0, 0); } setTab(t); try { history.replaceState(history.state, '', '#' + t); } catch { /* ignore */ } };
 
   return (
@@ -313,7 +326,7 @@ function App() {
       </div>}
       <main className={tab === 'laisvieji' || (tab === 'apzvalga' && (lg.phase === 'freeagency' || lg.phase === 'draft')) ? 'wide' : ''}>
         {lg.phase === 'fantasy' && <FantasyRoom lg={lg} openPlayer={openPlayer} onTick={bump} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
-        {lg.phase !== 'fantasy' && tab === 'apzvalga' && <Overview lg={lg} openTeam={openTeam} openPlayer={openPlayer} openGame={openGame} watch={watch} clutch={clutchStart} busy={!!busy || !!clutch || octx?.role === 'player'} sampler={sampler} goFA={() => go('laisvieji')} onTick={bump} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
+        {lg.phase !== 'fantasy' && tab === 'apzvalga' && <Overview lg={lg} openTeam={openTeam} openPlayer={openPlayer} openGame={openGame} watch={watch} clutch={clutchStart} busy={!!busy || !!clutch} playable={playable} replay={(r: any) => setLive({ res: r, pbp: lg.replays?.games?.[r.id], startAt: 0 })} sampler={sampler} goFA={() => go('laisvieji')} onTick={bump} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'valdymas' && <TeamMgmt key={lg.userTid ?? ''} lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'reitingai' && <Rankings lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'laisvieji' && <FreeAgentsView lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
@@ -340,7 +353,7 @@ function App() {
       {showHumans && <HumansPanel lg={lg} close={() => setShowHumans(false)} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {showSettings && <SettingsPanel lg={lg} close={() => setShowSettings(false)} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {clutch && <ClutchGame lg={lg} cs={clutch} close={() => setClutch(null)} openPlayer={() => {}}
-        onFinish={async () => { finishClutch(lg, clutch); bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
+        onFinish={async () => { const res = finishClutch(lg, clutch); sendResult(clutch.home, clutch.away, res); bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {gameView && <GameModal lg={lg} res={gameView} close={() => setGameView(null)} hold={!!player} openPlayer={(pid: string) => setPlayer(pid)} />}
       {live && <LiveGame lg={lg} data={live} close={closeLive} hold={!!player} openPlayer={(pid: string) => setPlayer(pid)} />}
       {player && <PlayerPanel lg={lg} pid={player} findTrades={(pid: string) => { setPlayer(null); setTradeSeed({ pid, n: Date.now() }); go('mainai'); }} close={closePlayer} openTeam={(t) => { openTeam(t); }} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
@@ -699,7 +712,7 @@ function Setup({ onStart, onLoad }: any) {
 /** Overview panels fold like every other panel (see usePanelFolding); kept as a plain wrapper. */
 function Fold({ children }: any) { return children ?? null; }
 
-function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sampler, onSaved, goFA, onTick }: any) {
+function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, playable, replay, sampler, onSaved, goFA, onTick }: any) {
   const last = lg.history[lg.history.length - 1];
   const step = lg.phase === 'draft' ? offStep(lg) : null;
   if (step === 'recap') return (
@@ -727,7 +740,7 @@ function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sam
       <PreviewStep lg={lg} onChange={onSaved}>
         <SeasonPreview lg={lg} openTeam={openTeam} />
         <div className="grid-2">
-          <section className="col"><Fold id="today" title="Opening night"><Today lg={lg} watch={watch} clutch={clutch} busy={busy} openGame={openGame} /></Fold></section>
+          <section className="col"><Fold id="today" title="Opening night"><Today lg={lg} watch={watch} clutch={clutch} busy={busy} playable={playable} replay={replay} openGame={openGame} /></Fold></section>
           <section className="col"><Fold id="news" title="League news"><News lg={lg} /></Fold></section>
         </div>
       </PreviewStep>
@@ -757,7 +770,7 @@ function Overview({ lg, openTeam, openPlayer, openGame, watch, clutch, busy, sam
   return (
     <div className="grid-2">
       <section className="col">
-        <Fold id="today" title={lg.phase === 'playoffs' ? 'Next playoff games' : 'Today\'s games'}><Today lg={lg} watch={watch} clutch={clutch} busy={busy} openGame={openGame} /></Fold>
+        <Fold id="today" title={lg.phase === 'playoffs' ? 'Next playoff games' : 'Today\'s games'}><Today lg={lg} watch={watch} clutch={clutch} busy={busy} playable={playable} replay={replay} openGame={openGame} /></Fold>
         {lg.phase === 'playoffs' || (lg.series.length && lg.phase !== 'regular') ? <Fold id="bracket" title={`${lg.season} Playoffs`}><Bracket lg={lg} openTeam={openTeam} openGame={openGame} /></Fold> : null}
         <Fold id="standings" title="Standings"><Standings lg={lg} openTeam={openTeam} /></Fold>
       </section>
@@ -928,9 +941,12 @@ function AwardTeams({ lg, a, openPlayer, compact }: any) {
   );
 }
 
-function Today({ lg, watch, clutch, busy, openGame }: any) {
+function Today({ lg, watch, clutch, busy, playable = () => true, replay, openGame }: any) {
   const games = watchableToday(lg);
-  const done = playedToday(lg);
+  const done0 = playedToday(lg);
+  // online: the latest game day's games can be watched again (their play-by-play came with the league)
+  const ids = new Set(done0.map((r: any) => r.id));
+  const done = [...done0, ...(lg.replays ? lg.recent.filter((r: any) => lg.replays.games[r.id] && !ids.has(r.id)) : [])];
   if (!games.length && !done.length) return null;
   const mine = (g: any) => g.home === lg.userTid || g.away === lg.userTid;
   const sorted = [...games].sort((x, y) => Number(mine(y)) - Number(mine(x)));
@@ -955,11 +971,13 @@ function Today({ lg, watch, clutch, busy, openGame }: any) {
               {g.label && (seriesOf(g) ? <button className="chip tiny series-chip" title="Series: preview and games so far" onClick={() => setSer(seriesOf(g))}>{g.label} ›</button> : <span className="chip tiny">{g.label}</span>)}
             </span>
             <span className="wl-actions">
+              {playable(g.home, g.away) ? <>
               <button disabled={busy} onClick={() => watch(g.home, g.away)}>Watch live</button>
               <button disabled={busy} title="Play this game now and see the result" onClick={() => watch(g.home, g.away, 0, false)}>Sim game</button>
               <button disabled={busy} title="Watch from 5:00 left in the 4th quarter" onClick={() => watch(g.home, g.away, 2580)}>Go to last 5 min</button>
               {g.label !== 'Play-in' && (g.home === lg.userTid || g.away === lg.userTid) &&
                 <button className="primary" disabled={busy} title="Coach the last five minutes yourself" onClick={() => clutch(g.home, g.away, g.home === lg.userTid ? 'h' : 'a')}>Coach last 5 min</button>}
+              </> : <span className="dim small-t">{lg.online && (g.home === lg.userTid || g.away === lg.userTid) ? 'You can play it once the other side is done' : lg.online ? 'The host plays it – watch the replay after' : ''}</span>}
             </span>
           </li>
         ))}
@@ -973,7 +991,7 @@ function Today({ lg, watch, clutch, busy, openGame }: any) {
                 <span className={hw ? 'win' : 'dim'}><TLogo lg={lg} tid={r.home.tid} /><TL tid={r.home.tid} /> {r.home.pts}</span>
                 <span className="chip tiny">final{r.ot ? ' · OT' : ''}</span>{r.ser && <span className="chip tiny">{r.ser}</span>}
               </span>
-              <span className="wl-actions"><button onClick={() => openGame(r.id)}>Box score</button></span>
+              <span className="wl-actions">{replay && lg.replays?.games?.[r.id] && <button onClick={() => replay(r)}>Watch replay</button>}<button onClick={() => openGame(r.id)}>Box score</button></span>
             </li>
           );
         })}

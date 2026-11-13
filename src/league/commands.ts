@@ -8,6 +8,7 @@ import { fantasyOnClock, fantasyUserPick } from './fantasy';
 import { aiResponse, executeTrade, fillRoster, tradeRules, pickUsed } from '../ai/trades';
 import { propose, answer, withdraw } from './proposals';
 import { isHuman } from './humans';
+import { submitResult } from './league';
 
 export type Cmd =
   | { t: 'mgmt'; mgmt: any }                                         // rotation, positions, matchups, tactics
@@ -25,7 +26,8 @@ export type Cmd =
   | { t: 'answer'; id: number; yes: boolean }
   | { t: 'withdrawProposal'; id: number }
   | { t: 'extend'; pid: string; sal: number; yrs: number }
-  | { t: 'recall'; pid: string };
+  | { t: 'recall'; pid: string }
+  | { t: 'gameResult'; home: string; away: string; res: { home: any; away: any; ot?: number } };  // his own game, played on his screen
 
 export interface Envelope { cmd: Cmd; tid: string; at: number }
 export interface Result { ok: boolean; msg: string }
@@ -73,6 +75,10 @@ export function apply(lg: League, env: Envelope): Result {
       case 'answer': { const pr = lg.proposals?.find(x => x.id === cmd.id); if (pr?.to !== tid) return no('Not your offer to answer.'); return answer(lg, cmd.id, cmd.yes); }
       case 'withdrawProposal': { const pr = lg.proposals?.find(x => x.id === cmd.id); if (pr?.from !== tid) return no('Not your offer.'); withdraw(lg, cmd.id); return { ok: true, msg: 'Offer withdrawn.' }; }
       case 'extend': if (p?.tid !== tid) return no('Not your player.'); return userExtend(lg, cmd.pid, cmd.sal, cmd.yrs);
+      case 'gameResult': {
+        if (cmd.home !== tid && cmd.away !== tid) return no('Not your game.');
+        return submitResult(lg, cmd.home, cmd.away, cmd.res) ? { ok: true, msg: 'Result recorded.' } : no('That game is no longer today\'s.');
+      }
       case 'recall': if ((p as any)?.rights !== tid) return no('Not your draft rights.'); return recallStash(lg, cmd.pid);
     }
     return no('Unknown command.');
@@ -84,6 +90,9 @@ export function apply(lg: League, env: Envelope): Result {
 /** Where commands also go (online play sets this; locally nothing). */
 let sink: ((env: Envelope) => void) | null = null;
 export function setCommandSink(fn: ((env: Envelope) => void) | null) { sink = fn; }
+
+/** Pass on a move that is already on this screen (e.g. a game he played here) without applying it again. */
+export function forward(lg: League, cmd: Cmd) { if (lg.userTid) sink?.({ cmd, tid: lg.userTid, at: Date.now() }); }
 
 /** A person acts for the team he is playing: apply now, and pass it on. */
 export function run(lg: League, cmd: Cmd): Result {

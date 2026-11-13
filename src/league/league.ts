@@ -597,6 +597,7 @@ export function playSingle(lg: League, home: string, away: string, opts: { defer
     if (done) return;
     done = true;
     recordResult(lg, res, rng);
+    if ((lg as any).online && r.pbp) keepReplay(lg, res, r.pbp);
     applyDeferred(lg, d, res, rng);
     saveRng(lg, rng);
   };
@@ -681,14 +682,39 @@ function applySeries(lg: League, s: Series, home: string, res: GameResult) {
 
 export function playGame(lg: League, g: { home: string; away: string }, po: boolean, rng: Rng): GameResult {
   const h = lg.teams[g.home], a = lg.teams[g.away];
+  const online = !!(lg as any).online;
   const r = simGame(
     teamIn(lg, h, rng, a.tid),
     teamIn(lg, a, rng, h.tid),
-    { season: lg.season, po, rng },
+    { season: lg.season, po, rng, pbp: online },
   );
   const res: GameResult = { id: lg.nextGameId++, season: lg.season, day: lg.day, po, home: r.home, away: r.away, ot: r.ot };
   recordResult(lg, res, rng);
+  if (online && r.pbp) keepReplay(lg, res, r.pbp);
   return res;
+}
+
+/** Online: the play-by-play of the latest day's games, so everyone can watch them (older days are dropped). */
+export function keepReplay(lg: League, res: GameResult, pbp: PbpEv[]) {
+  const key = `${res.season}|${res.po ? 'po' : 'reg'}|${res.day}`;
+  const rp = ((lg as any).replays ??= { key, games: {} });
+  if (rp.key !== key) { rp.key = key; rp.games = {}; }
+  rp.games[res.id] = pbp;
+}
+
+/**
+ * A game a person played himself (watched or coached on his own screen): record that result for today's game.
+ * Returns false if that game is no longer today's (the league moved on).
+ */
+export function submitResult(lg: League, home: string, away: string, r: { home: any; away: any; ot?: number }): boolean {
+  const d = findTodayGame(lg, home, away);
+  if (!d || d.kind === 'playin') return false;
+  const rng = rngOf(lg);
+  const res: GameResult = { id: lg.nextGameId++, season: lg.season, day: d.kind === 'reg' ? d.g.day : lg.day, po: lg.phase === 'playoffs', home: r.home, away: r.away, ot: r.ot ?? 0 };
+  recordResult(lg, res, rng);
+  applyDeferred(lg, d, res, rng);
+  saveRng(lg, rng);
+  return true;
 }
 
 /** Games that can still be played today (regular season, or the next playoff games). */
