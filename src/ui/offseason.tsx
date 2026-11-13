@@ -2,6 +2,7 @@
 // Off-season screens: draft day (one pick at a time), the free-agency hub
 // (three stages) and the free-agent list where the user makes offers.
 import { Linkify, PL, TL, nav } from './nav';
+import { MyBoard, BoardToggle, boardOf } from './myboard';
 import { run } from '../league/commands';
 import { RoleCell, roleSortKey, projectedZ } from './roles';
 import { money, usd, showDollars, dollarsOf } from './money';
@@ -107,6 +108,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
     { key: 'pos', label: 'Pos', get: (p: any) => posNum(p.pos), fmt: (_: any, p: any) => <span className="dim">{p.pos}</span> },
     { key: 'age', label: 'Age', asc: true, get: (p: any) => ageIn(p, d.year + 1) },
     { key: 'cons', label: 'Rank', title: 'Consensus rank of the scouts (overall and potential stay hidden until he is picked)', asc: true, get: (p: any) => p.draft?.realPick ?? 99 },
+    ...(lg.userTid ? [{ key: 'my', label: 'My board', title: 'Your own board – + adds him, the number is his place on it', asc: true, get: (p: any) => { const i = boardOf(lg, d.year).indexOf(p.id); return i < 0 ? 999 : i; }, fmt: (_: any, p: any) => <BoardToggle lg={lg} year={d.year} pid={p.id} onChange={() => act(() => {})} /> }] : []),
     ...attrCols((p: any) => p, d.year + 1, proj),
     { key: 'act', label: '', get: () => 0, fmt: (_: any, p: any) => myTurn ? <button className={`small ${p.id === suggestion ? 'primary' : ''}`} onClick={() => act(() => run(lg, { t: 'draftPick', pid: p.id }))}>Pick</button> : null },
   ];
@@ -140,7 +142,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
         {d.lottery && <p className="note"><Linkify text={d.lottery} /></p>}
         <div className="def-row">
           {myTurn ? <>
-            <span className="hint">You're on the clock – pick from the list{suggestion ? ` (GM suggests: ${lg.players[suggestion].name})` : ''}.</span>
+            <span className="hint">You're on the clock – pick from the list{suggestion ? (boardOf(lg, d.year).includes(suggestion) ? ` (top of your board: ${lg.players[suggestion].name})` : ` (GM suggests: ${lg.players[suggestion].name})`) : ''}.</span>
             <button onClick={() => act(() => run(lg, { t: 'draftPick' }))}>Let the GM pick</button>
           </> : canRun(lg) ? <button className="primary host-only" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'one'))}>Next pick</button> : <span className="hint">Waiting for the host to move the draft on.</span>}
           {canRun(lg) && <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={!on || myTurn} />}
@@ -158,6 +160,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
         <p className="note">Overall and potential stay hidden until a player is drafted – judge him by his ratings, his role and the scouts' rank.</p>
       </section>
       <section className="col">
+        {lg.userTid && <MyBoard lg={lg} year={d.year} pool={d.pool} openPlayer={openPlayer} onChange={() => act(() => {})} />}
         <div className="panel">
           <h2>Picks</h2>
           {recent.length ? (

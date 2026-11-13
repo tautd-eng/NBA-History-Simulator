@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Statistics: league leaders, sortable player stats and team stats, for any season played.
 import { useMemo, useState } from 'react';
+import { useNavState } from './nav';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm } from '../data';
 import { ageIn } from '../players';
 import { seasonGames } from '../league/league';
@@ -40,7 +41,7 @@ export function StatsView({ lg, openPlayer, openTeam }: any) {
     if (lg.phase === 'regular' || lg.phase === 'playoffs') s.add(lg.season);
     return [...s].sort((a, b) => b - a);
   }, [lg.history.length, lg.season, lg.phase]);
-  const [view, setView] = useState<'leaders' | 'players' | 'teams'>('leaders');
+  const [view, setView] = useNavState<'leaders' | 'players' | 'teams'>('stats.view', 'leaders');
   const [season, setSeason] = useState<number>(seasons[0] ?? lg.season);
   const [po, setPo] = useState(false);
   const [mode, setMode] = useState<'pg' | 'tot'>('pg');

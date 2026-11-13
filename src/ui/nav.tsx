@@ -1,9 +1,30 @@
 // @ts-nocheck
 // Links to player cards and team pages from anywhere, and plain text (news,
 // logs, notes) with player and team names turned into links.
-import { Fragment } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
-export const nav: { lg: any; player: (pid: string) => void; team: (tid: string) => void } = { lg: null, player: () => {}, team: () => {} };
+export const nav: { lg: any; player: (pid: string) => void; team: (tid: string) => void; remember?: () => void } = { lg: null, player: () => {}, team: () => {} };
+
+// ---- sub-sections (a team's tab, a ranking, a history page …) are part of where you are: Back returns to them
+let subs: Record<string, any> = {};
+const subListeners = new Map<string, Set<(v: any) => void>>();
+export const navSubs = () => ({ ...subs });
+export function restoreSubs(saved: Record<string, any>) {
+  subs = { ...saved };
+  for (const [k, ls] of subListeners) for (const f of ls) f(subs[k]);
+}
+/** useState that Back remembers: changing it is a step you can go back from. */
+export function useNavState<T>(key: string, initial: T): [T, (v: T) => void] {
+  const [v, setV] = useState<T>(() => (key in subs ? subs[key] : initial));
+  useEffect(() => {
+    const f = (x: any) => setV(x === undefined ? initial : x);
+    if (!subListeners.has(key)) subListeners.set(key, new Set());
+    subListeners.get(key)!.add(f);
+    return () => { subListeners.get(key)!.delete(f); };
+  }, [key]);
+  const set = (x: T) => { if (x === v) return; nav.remember?.(); subs[key] = x; setV(x); };
+  return [v, set];
+}
 
 /** Player name that opens his card. */
 export function PL({ pid, children }: any) {

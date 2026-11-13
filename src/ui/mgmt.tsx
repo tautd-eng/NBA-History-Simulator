@@ -24,7 +24,7 @@ export { GROUPS, SYSTEMS, tacFrom };
 export { natural as naturalSlot };
 
 export function TeamMgmt({ lg, openPlayer, onChange }: any) {
-  const [sec, setSec] = useState<'rot' | 'pos' | 'mm' | 'tac' | 'ext'>('rot');
+  const [sec, setSec] = useNavState<'rot' | 'pos' | 'mm' | 'tac' | 'ext'>('mgmt.sec', 'rot');
   if (!lg.userTid) return <div className="panel"><h2>Team management</h2><p className="note">Pick a team to run in the settings – then its rotation, tactics and contracts are yours to manage.</p></div>;
   const t = lg.teams[lg.userTid];
   // every change to the team's settings goes out as one command (online: to the host)

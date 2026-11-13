@@ -2,6 +2,7 @@
 // League-wide rankings: every player in the league sortable by any rating,
 // and power rankings of the teams (roster strength plus how they actually play).
 import { TLogo, PFace } from './art';
+import { useNavState } from './nav';
 import { useMemo, useState } from 'react';
 import { devReason } from './offsteps';
 import { shownOvr as ovrOf, shownFromRaw, histShown, shownFromBpm, bpmOf, RATING_LABELS, ratingOf, perD, rimD } from '../data';
@@ -31,7 +32,7 @@ const POS = [['all', 'All'], ['g', 'Guards'], ['f', 'Forwards'], ['c', 'Centers'
 const posOk = (p: any, pos: string) => pos === 'all' || (pos === 'g' ? posNum(p.pos) <= 2.5 : pos === 'c' ? posNum(p.pos) >= 4.5 : posNum(p.pos) > 2.5 && posNum(p.pos) < 4.5);
 
 export function Rankings({ lg, openPlayer, openTeam }: any) {
-  const [view, setView] = useState<'players' | 'power' | 'prog'>('players');
+  const [view, setView] = useNavState<'players' | 'power' | 'prog'>('rankings.view', 'players');
   return (
     <div className="col">
       <div className="seg" role="group" aria-label="Rankings">

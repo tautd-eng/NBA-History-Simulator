@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Franchise history (season by season), franchise and league record books.
 import { TL } from './nav';
+import { useNavState } from './nav';
 import { useMemo, useState } from 'react';
 import { GAME_CATS, TEAM_CATS, finishLabel, ensureRecords, gmsc } from '../league/records';
 import { TLogo } from './art';
@@ -155,7 +156,7 @@ export function TeamRecords({ lg, tid, openPlayer }: any) {
 // ---------------------------------------------------------------- league
 export function LeagueRecords({ lg, openPlayer }: any) {
   ensureRecords(lg);
-  const [view, setView] = useState<'game' | 'season' | 'career' | 'team' | 'fr'>('game');
+  const [view, setView] = useNavState<'game' | 'season' | 'career' | 'team' | 'fr'>('records.view', 'game');
   const [ft, setFt] = useState<string>(lg.userTid ?? Object.keys(lg.teams).filter(t => lg.teams[t].active).sort()[0]);
   const lines = useMemo(() => seasonLines(lg), [lg, lg.history.length, lg.day]);
   const careers = useMemo(() => sumBy(lines), [lines]);

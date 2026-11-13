@@ -379,13 +379,15 @@ export function updateModes(lg: League, announce = true) {
 export function rotationPreview(lg: League, tid: string, m: NonNullable<Team['mgmt']>, po = false) {
   const players = lg.teams[tid].roster.map(pid => lg.players[pid]).filter(p => !p.injury);
   const save = players.map(p => (p as any).rotQ);
-  for (const p of players) { const a = ageIn(p, lg.season); (p as any).rotQ = m.mode === 'auto' && !po ? 1 + m.youth * 0.7 * (a <= 21 ? 1 : a <= 23 ? 0.7 : a <= 25 ? 0.3 : 0) : 1; }
+  for (const p of players) { const a = ageIn(p, lg.season); (p as any).rotQ = m.mode === 'auto' && !po ? youthQ(a, m.youth) : 1; }
   const r = planPreview(players, lg.season, { minutes: m.mode === 'manual' ? m.minutes : undefined, depth: m.mode === 'auto' && !po ? m.depth : undefined, po, starters: (m.starters ?? []).filter(Boolean) });
   players.forEach((p, i) => ((p as any).rotQ = save[i]));
   return r;
 }
 
 /** What the engine gets for a team: tonight's players, and – for the user's team – his rotation and tactics. */
+/** The coach's push for the young: their weight in the minutes plan (Play the kids: a 20-year-old counts ~3.5 times). */
+export const youthQ = (age: number, youth: number) => 1 + youth * 2.5 * (age <= 21 ? 1 : age <= 23 ? 0.75 : age <= 25 ? 0.35 : 0);
 export function teamIn(lg: League, t: Team, rng: Rng, opp?: string) {
   const players = availablePlayers(lg, t.tid, rng);
   // a person's team – or an AI team whose rotation was imported from a sheet
@@ -393,7 +395,7 @@ export function teamIn(lg: League, t: Team, rng: Rng, opp?: string) {
   if (!m) return { tid: t.tid, players, paceZ: t.paceZ };
   if (m.mode === 'auto' && lg.phase !== 'playoffs' && m.youth > 0) {
     // more minutes for the young: the younger, the bigger the push
-    for (const p of players) { const a = ageIn(p, lg.season); (p as any).rotQ = 1 + m.youth * 0.7 * (a <= 21 ? 1 : a <= 23 ? 0.7 : a <= 25 ? 0.3 : 0); }
+    for (const p of players) { const a = ageIn(p, lg.season); (p as any).rotQ = youthQ(a, m.youth); }
   }
   const here = new Set(players.map(p => p.id));
   const pos = Object.fromEntries(Object.entries(m.pos ?? {}).filter(([pid, v]) => here.has(pid) && v));

@@ -12,8 +12,8 @@ const pc = (x: number) => `${(x * 100).toFixed(1)}%`;
 
 export function SalaryView({ lg, openPlayer, openTeam }: any) {
   const teams = Object.values(lg.teams).filter((t: any) => t.active).sort((a: any, b: any) => a.name.localeCompare(b.name)) as any[];
-  const [tid, setTid] = useState<string>(lg.userTid ?? teams[0].tid);
-  const [mode, setMode] = useState<'team' | 'league'>('team');
+  const [tid, setTid] = useNavState<string>('sal.tid', lg.userTid ?? teams[0].tid);
+  const [mode, setMode] = useNavState<'team' | 'league'>('sal.mode', 'team');
   return (
     <div className="col">
       <div className="panel">

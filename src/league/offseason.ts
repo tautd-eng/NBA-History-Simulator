@@ -324,9 +324,21 @@ export function draftOnClock(lg: League) {
 /** AI's choice for a team from the current board. */
 export function draftSuggest(lg: League, tid: string) {
   const d = lg.draftDay!;
+  const mine = myBoardPick(lg, tid, d.year, d.pool);
+  if (mine) return mine;
   const rng = rngOf(lg);
   const best = pickBest(lg, d.pool.map(pid => lg.players[pid]), lg.teams[tid], d.year, rng);
   return best?.id;
+}
+/** A person's own board for this class (null if he made none). */
+export function myBoard(lg: League, tid: string | null | undefined, year: number): string[] | null {
+  const b = tid ? lg.teams[tid]?.mgmt?.board : null;
+  return b && b.year === year && b.order.length ? b.order : null;
+}
+/** The best player still there on his own board. */
+function myBoardPick(lg: League, tid: string, year: number, pool: string[]) {
+  const b = myBoard(lg, tid, year);
+  return b?.find(pid => pool.includes(pid)) ?? null;
 }
 
 /** Make the pick on the clock: pid chosen by hand, otherwise the team's own board. */
@@ -337,7 +349,9 @@ export function draftPick(lg: League, pid?: string) {
   const rng = rngOf(lg);
   const Y = d.year;
   const team = lg.teams[on.tid];
-  const best = pid && d.pool.includes(pid) ? lg.players[pid] : pickBest(lg, d.pool.map(x => lg.players[x]), team, Y, rng);
+  // chosen by hand – or the team's own board (a person's board first, if he made one)
+  const own = !pid ? myBoardPick(lg, on.tid, Y, d.pool) : null;
+  const best = pid && d.pool.includes(pid) ? lg.players[pid] : own ? lg.players[own] : pickBest(lg, d.pool.map(x => lg.players[x]), team, Y, rng);
   d.pool = d.pool.filter(x => x !== best.id);
   delete best.prospect;
   best.draft!.pick = on.pick; best.draft!.round = on.round; best.draft!.tid = on.tid;

@@ -1,5 +1,7 @@
 // @ts-nocheck
 import { PlayoffPreviews, SeriesDialog } from './preview';
+import { useNavState, navSubs, restoreSubs } from './nav';
+import { MyBoard, BoardToggle, boardOf } from './myboard';
 import { run } from '../league/commands';
 import { money, usd, showDollars, setShowDollars } from './money';
 import { Linkify, PL, TL, nav } from './nav';
@@ -168,13 +170,13 @@ function App() {
   const octx = useOnline();
   const stop = useRef(false);
   // going back: every move to another section, team or player card is remembered (the browser's Back works too)
-  const views = useRef<{ tab: string; team: string | null; player: string | null; y: number }[]>([]);
+  const views = useRef<{ tab: string; team: string | null; player: string | null; y: number; subs: Record<string, any> }[]>([]);
   const [depth, setDepth] = useState(0);
   const restore = () => {
     const v = views.current.pop();
     setDepth(views.current.length);
     if (!v) return;
-    setTab(v.tab); setTeam(v.team); setPlayer(v.player);
+    setTab(v.tab); setTeam(v.team); setPlayer(v.player); restoreSubs(v.subs);
     try { history.replaceState(history.state, '', '#' + v.tab); } catch { /* ignore */ }
     // the page may still be filling in: keep trying for a moment until the old position exists
     let n = 0; const tryScroll = () => { window.scrollTo(0, v.y); if (Math.abs(window.scrollY - v.y) > 4 && ++n < 25) setTimeout(tryScroll, 40); };
@@ -269,7 +271,7 @@ function App() {
   if (!lg) return <><div className="setup-online"><button onClick={() => setShowOnline(true)}>🌐 Online league – join with a code or open yours</button></div><Setup onStart={start} onLoad={switchTo} />{onlinePanel}</>;
 
   const remember = () => {
-    views.current.push({ tab, team, player, y: window.scrollY });
+    views.current.push({ tab, team, player, y: window.scrollY, subs: navSubs() });
     if (views.current.length > 60) views.current.shift();
     setDepth(views.current.length);
     try { history.pushState({ nba: views.current.length }, '', location.hash); } catch { /* ignore */ }
@@ -278,6 +280,7 @@ function App() {
   const openPlayer = (pid: string) => { if (pid !== player) remember(); setPlayer(pid); };
   const closePlayer = () => { const top = views.current[views.current.length - 1]; if (top && top.player !== player && top.tab === tab) goBack(); else setPlayer(null); };
   const openTeam = (tid: string) => { if (tab !== 'komandos' || team !== tid || player) remember(); setTeam(tid); setPlayer(null); setTab('komandos'); try { history.replaceState(history.state, '', '#komandos'); } catch { /* ignore */ } window.scrollTo(0, 0); };
+  nav.remember = remember;
   nav.lg = lg; nav.player = openPlayer; nav.team = (tid: string) => { setPlayer(null); if (live) closeLive(); setGameView(null); openTeam(tid); };
   const go = (t: string) => { if (t !== tab) { remember(); window.scrollTo(0, 0); } setTab(t); try { history.replaceState(history.state, '', '#' + t); } catch { /* ignore */ } };
 
@@ -315,9 +318,9 @@ function App() {
         {lg.phase !== 'fantasy' && tab === 'reitingai' && <Rankings lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'laisvieji' && <FreeAgentsView lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'mainai' && <Trades key={(lg.userTid ?? '') + (tradeSeed?.n ?? '')} seed={tradeSeed?.pid} lg={lg} openPlayer={openPlayer} onDone={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
-        {lg.phase !== 'fantasy' && tab === 'komandos' && <TeamView lg={lg} tid={team ?? 'LAL'} setTid={setTeam} openPlayer={openPlayer} openGame={openGame} />}
+        {lg.phase !== 'fantasy' && tab === 'komandos' && <TeamView lg={lg} tid={team ?? 'LAL'} setTid={(t: string) => { if (t !== team) remember(); setTeam(t); }} openPlayer={openPlayer} openGame={openGame} />}
         {lg.phase !== 'fantasy' && tab === 'algos' && <SalaryView lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
-        {lg.phase !== 'fantasy' && tab === 'draftai' && <div className="col"><Drafts lg={lg} openPlayer={openPlayer} openTeam={openTeam} />{lg.fantasy?.done && <FantasyResults lg={lg} openPlayer={openPlayer} />}</div>}
+        {lg.phase !== 'fantasy' && tab === 'draftai' && <div className="col"><Drafts lg={lg} openPlayer={openPlayer} openTeam={openTeam} onChange={async () => { setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />{lg.fantasy?.done && <FantasyResults lg={lg} openPlayer={openPlayer} />}</div>}
         {lg.phase !== 'fantasy' && tab === 'istorija' && <HistoryView lg={lg} openPlayer={openPlayer} openTeam={openTeam} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'statistika' && <StatsView lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'rungtynes' && <Games lg={lg} openPlayer={openPlayer} />}
@@ -1026,7 +1029,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
   const strat = t.mode ? { allin: 'All-in', tank: 'Tanking', rising: 'Rising', capclear: 'Clearing salary', retool: 'Retooling' }[t.mode] : { contend: 'Contender', middle: 'Middle of the pack', rebuild: 'Rebuilding' }[t.strategy];
   const titles = lg.history.filter((s: any) => s.champion === t.tid).map((s: any) => s.season);
   const plan = !isHuman(lg, t.tid) ? planOf(lg, t.tid) : null;
-  const [view, setView] = useState<'stats' | 'attr' | 'hist' | 'rec'>('stats');
+  const [view, setView] = useNavState<'stats' | 'attr' | 'hist' | 'rec'>('team.view', 'stats');
   const inSeason = lg.phase === 'regular' || lg.phase === 'playoffs';
   const calNow = inSeason ? nextCal(lg, todayIndex(lg)) : 0;
   const RT = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
@@ -1199,8 +1202,10 @@ function FantasyResults({ lg, openPlayer }: any) {
 }
 
 /** Next summer's class, public from the start of the season: consensus order and (with a team) your scouts' board. */
-function UpcomingClass({ lg, openPlayer }: any) {
+function UpcomingClass({ lg, openPlayer, onChange }: any) {
   const proj = false;
+  const [, bump] = useState(0);
+  const changed = () => { bump(x => x + 1); onChange?.(); };
   const c = lg.draftClass;
   if (!c) return null;
   const ps = c.pool.map((id: string) => lg.players[id]).filter((p: any) => p?.prospect);
@@ -1212,6 +1217,7 @@ function UpcomingClass({ lg, openPlayer }: any) {
     { key: 'cons', label: 'Rank', title: 'Consensus rank of the scouts', asc: true, get: (r: any) => r.cons },
     ...(yours ? [{ key: 'mine', label: 'Your board', title: 'Where your own scouts rank him (talent, their projection and your needs) – other teams do not see this', asc: true, get: (r: any) => r.mine }] : []),
     { key: 'name', label: 'Prospect', left: true, asc: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button> },
+    ...(you ? [{ key: 'my', label: 'My board', title: 'Your own board – + adds him, the number is his place on it', asc: true, get: (r: any) => { const i = boardOf(lg, c.year).indexOf(r.p.id); return i < 0 ? 999 : i; }, fmt: (_: any, r: any) => <BoardToggle lg={lg} year={c.year} pid={r.p.id} onChange={changed} /> }] : []),
     { key: 'pos', label: 'Pos', left: true, get: (r: any) => r.p.pos },
     { key: 'age', label: 'Age', get: (r: any) => Math.floor(c.year + 1 - r.p.born) },
     ...attrCols((r: any) => r.p, c.year + 1, proj),
@@ -1221,14 +1227,15 @@ function UpcomingClass({ lg, openPlayer }: any) {
       <h2>{c.year} draft class</h2>
       <p className="dim">Announced at the start of the season – every front office scouts it all year and values this season's picks by how deep it is.{you ? ' Your board is your scouts\' view and your needs; other teams have their own, which you do not see.' : ''}</p>
       <SortTable cols={cols} rows={rows.slice(0, 60)} initial="cons" initialAsc={true} />
+      {you && <MyBoard lg={lg} year={c.year} pool={c.pool} openPlayer={openPlayer} onChange={changed} />}
     </div>
   );
 }
 
-function Drafts({ lg, openPlayer, openTeam }: any) {
+function Drafts({ lg, openPlayer, openTeam, onChange }: any) {
   const years = lg.history.filter((s: any) => s.draft?.length).map((s: any) => s.season);
   const [y, setY] = useState(years[years.length - 1] ?? null);
-  if (!years.length) return <><UpcomingClass lg={lg} openPlayer={openPlayer} /><div className="panel empty"><h2>Draft classes</h2><p>The first draft takes place after the {(lg.start ?? 1980) - 1}–{String(lg.start ?? 1980).slice(2)} season. Sim the season to the end.</p></div></>;
+  if (!years.length) return <><UpcomingClass lg={lg} openPlayer={openPlayer} onChange={onChange} /><div className="panel empty"><h2>Draft classes</h2><p>The first draft takes place after the {(lg.start ?? 1980) - 1}–{String(lg.start ?? 1980).slice(2)} season. Sim the season to the end.</p></div></>;
   const s = lg.history.find((h: any) => h.season === y) ?? lg.history[lg.history.length - 1];
   const rows = s.draft.map((d: any) => {
     const p = lg.players[d.pid];
@@ -1260,7 +1267,7 @@ function Drafts({ lg, openPlayer, openTeam }: any) {
   ];
   return (
     <>
-    <UpcomingClass lg={lg} openPlayer={openPlayer} />
+    <UpcomingClass lg={lg} openPlayer={openPlayer} onChange={onChange} />
     <div className="panel">
       <div className="team-head">
         <select aria-label="Draft year" value={s.season} onChange={e => setY(+e.target.value)}>
@@ -1308,7 +1315,7 @@ function AwardsExplorer({ lg, openPlayer }: any) {
 }
 
 function HistoryView({ lg, openPlayer, openTeam, onSaved }: any) {
-  const [tab, setTab] = useState<'main' | 'stand' | 'tstats' | 'fa' | 'hof'>('main');
+  const [tab, setTab] = useNavState<'main' | 'stand' | 'tstats' | 'fa' | 'hof'>('history.tab', 'main');
   const tabs = (
     <div className="seg hist-tabs" role="group" aria-label="History section">
       {([['main', 'Champions & records'], ['stand', 'Standings'], ['tstats', 'Team stats'], ['fa', 'Free agency'], ['hof', 'Hall of Fame']] as const).map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
