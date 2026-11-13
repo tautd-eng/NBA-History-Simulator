@@ -1,4 +1,4 @@
-import { H, NK, K, ovrOf, bpmOf, RealSeason, RATING_LABELS, ratingOf, shownOvr } from './data';
+import { H, NK, K, ovrOf, bpmOf, RealSeason, RATING_LABELS, ratingOf, shownOvr, agingIndex } from './data';
 import { Player, emptyLine } from './types';
 import { hash01, Rng } from './rng';
 
@@ -28,7 +28,7 @@ export function realTarget(pid: string, season: number): { z: number[]; mp: numb
   if (!hp || !hp.s.length) return undefined;
   const s = hp.s;
   const exact = s.find(x => x[0] === season);
-  if (exact) return { z: exact[7], mp: exact[3], interp: false };
+  if (exact) return { z: smoothZ(pid, season), mp: exact[3], interp: false };
   const before = [...s].reverse().find(x => x[0] < season);
   const after = s.find(x => x[0] > season);
   if (before && after) {
@@ -36,6 +36,35 @@ export function realTarget(pid: string, season: number): { z: number[]; mp: numb
     return { z: before[7].map((v, i) => v + (after[7][i] - v) * t), mp: 0, interp: true };
   }
   return undefined;
+}
+
+/**
+ * A season's ratings evened out with the seasons around it: the neighbours (aged to this season with the mean
+ * aging curve) count at NEIGHBOUR_W of their minutes, so a one-off career year or a short, hot stretch is
+ * softened while a real step up or down (it shows in the next season too) stays.
+ */
+export const NEIGHBOUR_W = 0.5;
+const smoothCache = new Map<string, number[]>();
+export function smoothZ(pid: string, season: number): number[] {
+  const key = pid + '|' + season;
+  const hit = smoothCache.get(key); if (hit) return hit;
+  const hp = H.players[pid];
+  const own = hp.s.find(x => x[0] === season)!;
+  const born = birthYear(hp.b);
+  const age = Math.floor(season + 1 / 12 - born);
+  const z = own[7].map(v => v * own[3]);
+  let w = own[3];
+  for (const dy of [-1, 1]) {
+    const r = hp.s.find(x => x[0] === season + dy);
+    if (!r || r[3] <= 0) continue;
+    const ww = NEIGHBOUR_W * Math.min(r[3], Math.max(own[3], 500) * 1.5);
+    const ai = agingIndex(dy < 0 ? age - 1 : age);
+    for (let i = 0; i < NK; i++) { const m = H.aging[H.keys[i]].mean[ai]; z[i] += ww * (r[7][i] + (dy < 0 ? m : -m)); }
+    w += ww;
+  }
+  const out = w > 0 ? z.map(v => v / w) : own[7].slice();
+  smoothCache.set(key, out);
+  return out;
 }
 
 export function lastRealSeason(pid: string): number | undefined {

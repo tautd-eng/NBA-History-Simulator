@@ -79,7 +79,7 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
     pids.forEach((pid, i) => {
       const hp = H.players[pid];
       if (!hp) return;
-      const z = future ? (hp.s.length ? recentZ(pid) : prospectZ(pid, 2026, 0, rng)) : hp.s.find(r => r[0] === season)![7];
+      const z = future ? (hp.s.length ? recentZ(pid) : prospectZ(pid, 2026, 0, rng)) : realTarget(pid, season)!.z;
       const p = newPlayer(pid, z, i < 15 ? tid : null, season);
       p.entered = season === 1980 ? (hp.f === 1980 ? 1980 : 1979) : hp.s.length ? Math.min(season, hp.s[0][0]) : season;
       withDraft(p);
