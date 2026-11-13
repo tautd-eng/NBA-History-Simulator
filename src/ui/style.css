@@ -961,3 +961,4 @@ body.online-player .host-only { display: none !important; }
 .min-in { width: 3.4em; text-align: center; font-weight: 700; padding: 2px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg, transparent); color: inherit; font-variant-numeric: tabular-nums; }
 .min-in::-webkit-inner-spin-button { opacity: .4; }
 .mg-min, td .chip.on-clock { } td .link + .chip { margin-left: 6px; }
+.tabs .back-btn { font-weight: 700; color: var(--accent); display: inline-flex; align-items: center; gap: 4px; }

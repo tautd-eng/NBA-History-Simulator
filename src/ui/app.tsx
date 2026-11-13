@@ -167,6 +167,27 @@ function App() {
   const joinCode = (/[?&]join=([A-Za-z0-9]+)/.exec(location.search) ?? [])[1];
   const octx = useOnline();
   const stop = useRef(false);
+  // going back: every move to another section, team or player card is remembered (the browser's Back works too)
+  const views = useRef<{ tab: string; team: string | null; player: string | null; y: number }[]>([]);
+  const [depth, setDepth] = useState(0);
+  const restore = () => {
+    const v = views.current.pop();
+    setDepth(views.current.length);
+    if (!v) return;
+    setTab(v.tab); setTeam(v.team); setPlayer(v.player);
+    try { history.replaceState(history.state, '', '#' + v.tab); } catch { /* ignore */ }
+    // the page may still be filling in: keep trying for a moment until the old position exists
+    let n = 0; const tryScroll = () => { window.scrollTo(0, v.y); if (Math.abs(window.scrollY - v.y) > 4 && ++n < 25) setTimeout(tryScroll, 40); };
+    setTimeout(tryScroll, 0);
+  };
+  const restoreRef = useRef(restore);
+  restoreRef.current = restore;
+  useEffect(() => {
+    try { history.scrollRestoration = 'manual'; } catch { /* ignore */ }
+    const on = () => { if (views.current.length) restoreRef.current(); };
+    window.addEventListener('popstate', on);
+    return () => window.removeEventListener('popstate', on);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -247,10 +268,18 @@ function App() {
     onOpen={(l: any, id: string) => { setSlot(slotOf(id)); ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); setTab('apzvalga'); setPlayer(null); saveLeague(l, slotOf(id)); }} />;
   if (!lg) return <><div className="setup-online"><button onClick={() => setShowOnline(true)}>🌐 Online league – join with a code or open yours</button></div><Setup onStart={start} onLoad={switchTo} />{onlinePanel}</>;
 
-  const openPlayer = (pid: string) => setPlayer(pid);
-  const openTeam = (tid: string) => { setTeam(tid); setTab('komandos'); location.hash = 'komandos'; };
+  const remember = () => {
+    views.current.push({ tab, team, player, y: window.scrollY });
+    if (views.current.length > 60) views.current.shift();
+    setDepth(views.current.length);
+    try { history.pushState({ nba: views.current.length }, '', location.hash); } catch { /* ignore */ }
+  };
+  const goBack = () => { if (!views.current.length) return; try { history.back(); } catch { restore(); } };
+  const openPlayer = (pid: string) => { if (pid !== player) remember(); setPlayer(pid); };
+  const closePlayer = () => { const top = views.current[views.current.length - 1]; if (top && top.player !== player && top.tab === tab) goBack(); else setPlayer(null); };
+  const openTeam = (tid: string) => { if (tab !== 'komandos' || team !== tid || player) remember(); setTeam(tid); setPlayer(null); setTab('komandos'); try { history.replaceState(history.state, '', '#komandos'); } catch { /* ignore */ } window.scrollTo(0, 0); };
   nav.lg = lg; nav.player = openPlayer; nav.team = (tid: string) => { setPlayer(null); if (live) closeLive(); setGameView(null); openTeam(tid); };
-  const go = (t: string) => { setTab(t); try { history.replaceState(null, '', '#' + t); } catch { /* ignore */ } };
+  const go = (t: string) => { if (t !== tab) { remember(); window.scrollTo(0, 0); } setTab(t); try { history.replaceState(history.state, '', '#' + t); } catch { /* ignore */ } };
 
   return (
     <div className="shell">
@@ -267,6 +296,7 @@ function App() {
       </header>
       {octx && <OnlineBar lg={lg} openPanel={() => setShowOnline(true)} onLeave={() => { setSlot(newSlotId()); setLg(null); }} />}
       <nav className="tabs" aria-label="Sections">
+        {depth > 0 && <button className="back-btn" onClick={goBack} aria-label="Back" title="Back to the previous screen (or the browser's Back)"><span aria-hidden="true">←</span><span className="tl">Back</span></button>}
         {tabsFor(lg).map(([k, l, main]) => (
           <button key={k} className={`${tab === k ? 'on' : ''} ${main ? '' : 'sec'}`} onClick={() => { go(k); setMore(false); }} aria-label={l}><TabIcon k={k} /><span className="tl">{l}</span></button>
         ))}
@@ -310,7 +340,7 @@ function App() {
         onFinish={async () => { finishClutch(lg, clutch); bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {gameView && <GameModal lg={lg} res={gameView} close={() => setGameView(null)} hold={!!player} openPlayer={(pid: string) => setPlayer(pid)} />}
       {live && <LiveGame lg={lg} data={live} close={closeLive} hold={!!player} openPlayer={(pid: string) => setPlayer(pid)} />}
-      {player && <PlayerPanel lg={lg} pid={player} findTrades={(pid: string) => { setPlayer(null); setTradeSeed({ pid, n: Date.now() }); go('mainai'); }} close={() => setPlayer(null)} openTeam={(t) => { setPlayer(null); openTeam(t); }} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
+      {player && <PlayerPanel lg={lg} pid={player} findTrades={(pid: string) => { setPlayer(null); setTradeSeed({ pid, n: Date.now() }); go('mainai'); }} close={closePlayer} openTeam={(t) => { openTeam(t); }} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
     </div>
   );
 }
