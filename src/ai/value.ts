@@ -1,6 +1,6 @@
 // Player valuation shared by every AI decision (draft, contracts, free agency,
 // expansion protection, roster cuts) so the GMs act consistently.
-import { H, NK, bpmOf, agingIndex } from '../data';
+import { H, NK, bpmOf, valueBpm, agingIndex } from '../data';
 import { Player, Team, League } from '../types';
 import { ageIn } from '../players';
 import { hiddenBoost } from '../hboost';
@@ -12,7 +12,7 @@ export function projectBpm(z: number[], age: number, years: number): number[] {
   const out: number[] = [];
   let cur = z.slice();
   for (let y = 0; y < years; y++) {
-    out.push(bpmOf(cur));
+    out.push(valueBpm(cur));
     const ai = agingIndex(age + y);
     cur = cur.map((v, i) => v + H.aging[H.keys[i]].mean[ai]);
   }
