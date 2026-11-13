@@ -5,6 +5,7 @@ import { payroll, hardCap, deadPay } from '../ai/value';
 import { ageIn } from '../players';
 import { money, usd } from './money';
 import { SortTable } from './sorttable';
+import { useNavState } from './nav';
 import { registerTable } from './export';
 
 const seasonLabel = (s: number) => `${s - 1}–${String(s).slice(2)}`;

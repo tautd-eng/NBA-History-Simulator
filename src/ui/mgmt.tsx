@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react';
 import { K } from '../data';
 import { run } from '../league/commands';
-import { TL } from './nav';
+import { TL, useNavState } from './nav';
 import { shownOvr as ovrOf, bpmOf } from '../data';
 import { ageIn } from '../players';
 import { rotationPreview } from '../league/league';
