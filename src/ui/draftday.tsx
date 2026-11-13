@@ -57,6 +57,7 @@ export function ExpansionRoom({ lg, onChange, onTick, openPlayer, openTeam }: an
   const act = (fn: () => void) => { fn(); onChange(); };
   const on = expOnClock(lg);
   const myTurn = on && on.nt === lg.userTid;
+  const humanLeft = e.order.slice(e.idx).some((t: string) => isHuman(lg, t));
   useAutoPlay(playing, speed, () => {
     const c = expOnClock(lg);
     if (!c) return false;
@@ -122,6 +123,7 @@ export function ExpansionRoom({ lg, onChange, onTick, openPlayer, openTeam }: an
               {myTurn ? <span className="hint">You're on the clock – pick from the list.</span>
                 : <button className="primary host-only" disabled={!on || playing} onClick={() => act(() => expAdvance(lg, 'one'))}>Next pick</button>}
               <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={!on || myTurn} />
+              {!myTurn && on && humanLeft && <button className="host-only" disabled={playing} onClick={() => act(() => expAdvance(lg, 'user'))}>{(lg.humans?.length ?? 0) > 1 ? 'To the next user pick' : 'To my pick'}</button>}
               <button className="host-only" onClick={() => { setPlaying(false); act(() => expAdvance(lg, 'all')); }}>To the end</button>
             </div>
             <h3>Available players ({avail.length}) <span className="dim">– from {new Set(avail.map((a: any) => a.from)).size} teams that haven't lost anyone yet</span></h3>

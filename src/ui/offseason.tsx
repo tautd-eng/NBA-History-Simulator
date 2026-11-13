@@ -144,7 +144,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
             <button onClick={() => act(() => run(lg, { t: 'draftPick' }))}>Let the GM pick</button>
           </> : <button className="primary host-only" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'one'))}>Next pick</button>}
           <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={!on || myTurn} />
-          {!myTurn && myLeft && <button className="host-only" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'user'))}>{(lg.humans?.length ?? 0) > 1 ? 'To the next human pick' : 'To my pick'}</button>}
+          {!myTurn && myLeft && <button className="host-only" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'user'))}>{(lg.humans?.length ?? 0) > 1 ? 'To the next user pick' : 'To my pick'}</button>}
           <button className="host-only" onClick={() => { setPlaying(false); act(() => { draftAdvance(lg, 'all'); finishDraft(lg); }); }}>{lg.userTid ? 'To the end (GM picks for me)' : 'To the end'}</button>
           {!myTurn && on && lg.online && isHuman(lg, on.tid) && <button className="host-only" title="He is not here – his GM makes the pick" onClick={() => act(() => draftPick(lg))}>GM picks for {lg.teams[on.tid].abbr}</button>}
           {d.lotto?.result && <button className="ghost" onClick={() => setReveal(true)}>Lottery</button>}

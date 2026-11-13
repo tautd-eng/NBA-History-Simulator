@@ -165,7 +165,7 @@ export function expPick(lg: League, pid?: string) {
   e.idx++;
   if (!expOnClock(lg)) expFinish(lg);
 }
-export function expAdvance(lg: League, mode: 'one' | 'all') {
+export function expAdvance(lg: League, mode: 'one' | 'user' | 'all') {
   const e = lg.draftDay?.exp;
   if (!e) return;
   if (!e.confirmed) e.confirmed = true;
