@@ -3,6 +3,7 @@
 // (protection lists, then the new teams picking) and the lottery (odds, then
 // the draw revealed slot by slot).
 import { Linkify, PL, TL, nav } from './nav';
+import { run } from '../league/commands';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm } from '../data';
 import { ageIn } from '../players';
@@ -77,7 +78,7 @@ export function ExpansionRoom({ lg, onChange, onTick, openPlayer, openTeam }: an
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
     { key: 'sal', label: 'Salary', title: 'Salary as a share of the cap', get: (r: any) => r.p.contract.sal, fmt: (v: any, r: any) => `${Math.round(v * 100)}% through ${r.p.contract.exp}` },
     ...attrCols((r: any) => r.p, Y + 1),
-    ...(myTurn ? [{ key: 'act', label: '', get: () => 0, fmt: (_: any, r: any) => <button className="small" onClick={() => act(() => expPick(lg, r.p.id))}>Pick</button> }] : []),
+    ...(myTurn ? [{ key: 'act', label: '', get: () => 0, fmt: (_: any, r: any) => <button className="small" onClick={() => act(() => run(lg, { t: 'expPick', pid: r.p.id }))}>Pick</button> }] : []),
   ];
   return (
     <div className="grid-2">

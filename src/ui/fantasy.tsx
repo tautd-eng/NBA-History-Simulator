@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Fantasy draft room.
 import { useMemo, useState } from 'react';
+import { run } from '../league/commands';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, RATING_LABELS, ratingOf } from '../data';
 import { ageIn } from '../players';
 import { fantasyOnClock, fantasyPool, fantasyUserPick, fantasyAdvance, fantasyStep } from '../league/fantasy';
@@ -61,7 +62,7 @@ export function FantasyRoom({ lg, onChange, onTick = () => {}, openPlayer }: any
                     <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button></td>
                     <td className="dim">{p.pos}</td><td>{ageIn(p, lg.season)}</td><td><b>{ovrOf(p.z)}</b></td>
                     {SHOW.map(i => <td key={i}>{R(p, i)}</td>)}
-                    <td>{myTurn && <button className="small primary" onClick={() => act(() => { fantasyUserPick(lg, p.id); })}>Pick</button>}</td>
+                    <td>{myTurn && <button className="small primary" onClick={() => act(() => { run(lg, { t: 'fantasyPick', pid: p.id }); })}>Pick</button>}</td>
                   </tr>
                 );
               })}

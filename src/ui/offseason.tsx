@@ -2,6 +2,7 @@
 // Off-season screens: draft day (one pick at a time), the free-agency hub
 // (three stages) and the free-agent list where the user makes offers.
 import { Linkify, PL, TL, nav } from './nav';
+import { run } from '../league/commands';
 import { RoleCell, roleSortKey, projectedZ } from './roles';
 import { money, usd, showDollars, dollarsOf } from './money';
 import { useMemo, useState } from 'react';
@@ -107,7 +108,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
     { key: 'age', label: 'Age', asc: true, get: (p: any) => ageIn(p, d.year + 1) },
     { key: 'cons', label: 'Rank', title: 'Consensus rank of the scouts (overall and potential stay hidden until he is picked)', asc: true, get: (p: any) => p.draft?.realPick ?? 99 },
     ...attrCols((p: any) => p, d.year + 1, proj),
-    { key: 'act', label: '', get: () => 0, fmt: (_: any, p: any) => myTurn ? <button className={`small ${p.id === suggestion ? 'primary' : ''}`} onClick={() => act(() => draftPick(lg, p.id))}>Pick</button> : null },
+    { key: 'act', label: '', get: () => 0, fmt: (_: any, p: any) => myTurn ? <button className={`small ${p.id === suggestion ? 'primary' : ''}`} onClick={() => act(() => run(lg, { t: 'draftPick', pid: p.id }))}>Pick</button> : null },
   ];
   const recent = [...d.picks].reverse();
   const trades = d.trades ?? [];
@@ -140,7 +141,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
         <div className="def-row">
           {myTurn ? <>
             <span className="hint">You're on the clock – pick from the list{suggestion ? ` (GM suggests: ${lg.players[suggestion].name})` : ''}.</span>
-            <button onClick={() => act(() => draftPick(lg))}>Let the GM pick</button>
+            <button onClick={() => act(() => run(lg, { t: 'draftPick' }))}>Let the GM pick</button>
           </> : <button className="primary" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'one'))}>Next pick</button>}
           <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={!on || myTurn} />
           {!myTurn && myLeft && <button disabled={playing} onClick={() => act(() => draftAdvance(lg, 'user'))}>{(lg.humans?.length ?? 0) > 1 ? 'To the next human pick' : 'To my pick'}</button>}
@@ -346,8 +347,8 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
                   <td>{moneyOf(d.sal, N)}</td>
                   <td className="l dim">{d.rec ? (d.kind === 'team' ? 'keep' : 'tender') : (d.kind === 'team' ? 'decline' : 'don\'t tender')}</td>
                   <td className="l">
-                    <button className={`small ${yes === true ? 'primary' : ''}`} onClick={() => act(() => faDecide(lg, d.pid, true))}>{d.kind === 'team' ? 'Keep' : 'Tender'}</button>{' '}
-                    <button className={`small ${yes === false ? 'primary' : ''}`} onClick={() => act(() => faDecide(lg, d.pid, false))}>{d.kind === 'team' ? 'Decline' : 'Don\'t tender'}</button>
+                    <button className={`small ${yes === true ? 'primary' : ''}`} onClick={() => act(() => run(lg, { t: 'decide', pid: d.pid, yes: true }))}>{d.kind === 'team' ? 'Keep' : 'Tender'}</button>{' '}
+                    <button className={`small ${yes === false ? 'primary' : ''}`} onClick={() => act(() => run(lg, { t: 'decide', pid: d.pid, yes: false }))}>{d.kind === 'team' ? 'Decline' : 'Don\'t tender'}</button>
                   </td>
                 </tr>;
               })}</tbody>
@@ -361,8 +362,8 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
             <ul className="news">{sheets.map((sh: any) => {
               const p = lg.players[sh.pid];
               return <li key={sh.pid}><span className="yr">{lg.teams[sh.tid].abbr}</span><span><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">OVR {ovrOf(p.z)}, age {ageIn(p, N)} · {moneyOf(sh.sal, N)} through {sh.exp}</span>{' '}
-                <button className="small primary" onClick={() => act(() => faMatch(lg, sh.pid, true))}>Match</button>{' '}
-                <button className="small" onClick={() => act(() => faMatch(lg, sh.pid, false))}>Let go</button></span></li>;
+                <button className="small primary" onClick={() => act(() => run(lg, { t: 'match', pid: sh.pid, yes: true }))}>Match</button>{' '}
+                <button className="small" onClick={() => act(() => run(lg, { t: 'match', pid: sh.pid, yes: false }))}>Let go</button></span></li>;
             })}</ul>
           </div>
         )}
@@ -378,7 +379,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
                   <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">{p.pos}</span></td>
                   <td>{ageIn(p, N)}</td><td><Ovr v={ovrOf(p.z)} /></td><td>{potOf(p, N)}</td>
                   <td>{moneyOf(need, N)}</td>
-                  <td className="l"><button className={`small ${neg === p.id ? '' : 'primary'}`} onClick={() => setNeg(neg === p.id ? null : p.id)}>{neg === p.id ? 'Close' : 'Negotiate'}</button> <button className="small" onClick={() => act(() => faRenounce(lg, p.id))}>Let go</button></td>
+                  <td className="l"><button className={`small ${neg === p.id ? '' : 'primary'}`} onClick={() => setNeg(neg === p.id ? null : p.id)}>{neg === p.id ? 'Close' : 'Negotiate'}</button> <button className="small" onClick={() => act(() => run(lg, { t: 'faRenounce', pid: p.id }))}>Let go</button></td>
                 </tr>;
               })}</tbody>
             </table></div>
@@ -567,13 +568,13 @@ export function FreeAgentsView({ lg, onChange, openPlayer }: any) {
               <td><Ovr v={ovrOf(p.z)} /></td>
               <td className="l dim">{moneyOf(p.contract.sal, N)} through {p.contract.exp}</td>
               <td>{canSign && (rel === p.id
-                ? <><button className="small danger" onClick={() => { const r = faRelease(lg, p.id); setMsg(r.msg); setRel(null); onChange(); }}>Really release</button> <button className="small ghost" onClick={() => setRel(null)}>No</button></>
+                ? <><button className="small danger" onClick={() => { const r = run(lg, { t: 'release', pid: p.id }); setMsg(r.msg); setRel(null); onChange(); }}>Really release</button> <button className="small ghost" onClick={() => setRel(null)}>No</button></>
                 : <button className="small" onClick={() => setRel(p.id)}>Release</button>)}</td>
             </tr>)}</tbody>
           </table></div>
           {offersOn && (lg.offers ?? []).some((o: any) => o.tid === u.tid) && <>
             <h3>Your open offers</h3>
-            <ul className="news">{(lg.offers ?? []).filter((o: any) => o.tid === u.tid).map((o: any) => { const q = lg.players[o.pid]; return <li key={o.pid}><span className="yr">{o.yrs} yr</span><span><button className="link" onClick={() => setSel(o.pid)}>{q.name}</button> <span className="dim">{moneyOf(o.sal, N)} per season · answers {lg.phase === 'freeagency' ? 'at the end of the wave' : 'tomorrow'}</span> <button className="small ghost" onClick={() => { withdrawOffer(lg, o.pid); setMsg('Offer withdrawn.'); onChange(); }}>Withdraw</button></span></li>; })}</ul>
+            <ul className="news">{(lg.offers ?? []).filter((o: any) => o.tid === u.tid).map((o: any) => { const q = lg.players[o.pid]; return <li key={o.pid}><span className="yr">{o.yrs} yr</span><span><button className="link" onClick={() => setSel(o.pid)}>{q.name}</button> <span className="dim">{moneyOf(o.sal, N)} per season · answers {lg.phase === 'freeagency' ? 'at the end of the wave' : 'tomorrow'}</span> <button className="small ghost" onClick={() => { run(lg, { t: 'faWithdraw', pid: o.pid }); setMsg('Offer withdrawn.'); onChange(); }}>Withdraw</button></span></li>; })}</ul>
           </>}
         </section>
       )}
@@ -629,9 +630,9 @@ export function FAOfferBox({ lg, p, onDone, onCancel }: any) {
         {' '}He answers {lg.phase === 'freeagency' ? 'at the end of this wave' : 'tomorrow'}.
       </div>
       <p className="note">{others.length ? <>Also interested: <b>{others.map((t: any) => lg.teams[t].abbr).join(', ')}</b> – their offers stay secret until he signs.</> : 'No other team is interested right now.'}
-        {mineNow ? <> Your offer on the table: <b>{pc(mineNow.sal)}</b> × {mineNow.yrs} yrs{mineNow.sal + 1e-9 < faDemand(lg, p, tid, mineNow.yrs) ? ' (under his number)' : ''} <button className="small ghost" onClick={() => { withdrawOffer(lg, p.id); onDone({ ok: false, msg: 'Offer withdrawn.' }); }}>Withdraw</button></> : null}</p>
+        {mineNow ? <> Your offer on the table: <b>{pc(mineNow.sal)}</b> × {mineNow.yrs} yrs{mineNow.sal + 1e-9 < faDemand(lg, p, tid, mineNow.yrs) ? ' (under his number)' : ''} <button className="small ghost" onClick={() => { run(lg, { t: 'faWithdraw', pid: p.id }); onDone({ ok: false, msg: 'Offer withdrawn.' }); }}>Withdraw</button></> : null}</p>
       <div className="def-row">
-        <button className="primary" onClick={() => onDone(faOffer(lg, p.id, offer, years))}>{mineNow ? 'Change offer' : 'Make offer'}: {years} yr{years > 1 ? 's' : ''} at {dol ? $(offer) : pc(offer)}</button>
+        <button className="primary" onClick={() => onDone(run(lg, { t: 'faOffer', pid: p.id, sal: offer, yrs: years }))}>{mineNow ? 'Change offer' : 'Make offer'}: {years} yr{years > 1 ? 's' : ''} at {dol ? $(offer) : pc(offer)}</button>
         <button className="ghost" onClick={onCancel}>Cancel</button>
       </div>
     </div>

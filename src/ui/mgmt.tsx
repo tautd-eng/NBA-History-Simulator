@@ -2,6 +2,7 @@
 // Team management – only for the user's team: the rotation (automatic, with how deep and how much the young
 // play, or minutes by hand), the tactical set-up, and contract extensions.
 import { useMemo, useState } from 'react';
+import { run } from '../league/commands';
 import { TL } from './nav';
 import { shownOvr as ovrOf, bpmOf } from '../data';
 import { ageIn } from '../players';
@@ -24,6 +25,8 @@ export function TeamMgmt({ lg, openPlayer, onChange }: any) {
   const [sec, setSec] = useState<'rot' | 'pos' | 'mm' | 'tac' | 'ext'>('rot');
   if (!lg.userTid) return <div className="panel"><h2>Team management</h2><p className="note">Pick a team to run in the settings – then its rotation, tactics and contracts are yours to manage.</p></div>;
   const t = lg.teams[lg.userTid];
+  // every change to the team's settings goes out as one command (online: to the host)
+  const changed = () => { run(lg, { t: 'mgmt', mgmt: mgmtOf(lg) }); onChange(); };
   const nExt = t.roster.filter((pid: string) => extendable(lg, lg.players[pid])).length;
   return (
     <div className="col">
@@ -33,11 +36,11 @@ export function TeamMgmt({ lg, openPlayer, onChange }: any) {
           {[['rot', 'Rotation'], ['pos', 'Lineup & positions'], ['mm', 'Matchups'], ['tac', 'Tactics'], ['ext', `Extensions${nExt ? ` (${nExt})` : ''}`]].map(([k, l]) => <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => setSec(k as any)}>{l}</button>)}
         </div>
       </div>
-      {sec === 'rot' && <Rotation lg={lg} openPlayer={openPlayer} onChange={onChange} />}
-      {sec === 'pos' && <Positions lg={lg} openPlayer={openPlayer} onChange={onChange} />}
-      {sec === 'mm' && <Matchups lg={lg} openPlayer={openPlayer} onChange={onChange} />}
-      {sec === 'tac' && <TacticsPanel lg={lg} onChange={onChange} />}
-      {sec === 'ext' && <Extensions lg={lg} openPlayer={openPlayer} onChange={onChange} />}
+      {sec === 'rot' && <Rotation lg={lg} openPlayer={openPlayer} onChange={changed} />}
+      {sec === 'pos' && <Positions lg={lg} openPlayer={openPlayer} onChange={changed} />}
+      {sec === 'mm' && <Matchups lg={lg} openPlayer={openPlayer} onChange={changed} />}
+      {sec === 'tac' && <TacticsPanel lg={lg} onChange={changed} />}
+      {sec === 'ext' && <Extensions lg={lg} openPlayer={openPlayer} onChange={changed} />}
     </div>
   );
 }

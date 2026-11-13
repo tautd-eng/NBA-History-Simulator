@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Trade screen: build a proposal with another team and see the AI's answer before sending it.
 import { TL } from './nav';
+import { run } from '../league/commands';
 import { money, usd } from './money';
 import { useEffect, useMemo, useState } from 'react';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, seasonInfo } from '../data';
@@ -89,10 +90,16 @@ export function Trades({ lg, openPlayer, onDone, seed }: any) {
   const propose = () => {
     if (!reply?.accept) return;
     if (toHuman) {
-      const r = sendOffer(lg, a, b, aGives, bGives);
+      const r = run(lg, { t: 'propose', to: b, gives: aGives, gets: bGives });
       if (r.ok) { setSelA(new Set()); setSelB(new Set()); }
       setMsg(r.msg); onDone(); return;
     }
+    if (a === lg.userTid) {
+      const r = run(lg, { t: 'trade', partner: b, gives: aGives, gets: bGives });
+      if (r.ok) { setSelA(new Set()); setSelB(new Set()); }
+      setMsg(r.msg); onDone(); return;
+    }
+    // acting for another team (no team of your own picked as “your side”)
     const rec = executeTrade(lg, a, b, bGives, aGives, true);
     fillRoster(lg, a); fillRoster(lg, b);
     setSelA(new Set()); setSelB(new Set());
@@ -154,7 +161,7 @@ export function Trades({ lg, openPlayer, onDone, seed }: any) {
 
   const trades = (lg.trades ?? []).slice().reverse();
   const inc = inbox(lg, lg.userTid), out = outbox(lg, lg.userTid);
-  const reply2 = (id: number, yes: boolean) => { const r = answer(lg, id, yes); setMsg(r.msg); onDone(); };
+  const reply2 = (id: number, yes: boolean) => { const r = run(lg, { t: 'answer', id, yes }); setMsg(r.msg); onDone(); };
   return (
     <div className="col">
       {(inc.length > 0 || out.length > 0) && <div className="panel accent">
@@ -169,7 +176,7 @@ export function Trades({ lg, openPlayer, onDone, seed }: any) {
         })}</ul>}
         {out.length > 0 && <><p className="dim">Your offers waiting for an answer:</p><ul className="news">{out.map((pr: any) => <li key={pr.id}><span className="yr"><TL tid={pr.to} abbr /></span><span>
           You offer {describeSide(lg, pr.fromGives)} for {describeSide(lg, pr.toGives)}.{' '}
-          <button className="small" onClick={() => { withdraw(lg, pr.id); setMsg('Offer withdrawn.'); onDone(); }}>Withdraw</button></span></li>)}</ul></>}
+          <button className="small" onClick={() => { run(lg, { t: 'withdrawProposal', id: pr.id }); setMsg('Offer withdrawn.'); onDone(); }}>Withdraw</button></span></li>)}</ul></>}
       </div>}
       <div className="panel">
         <h2>Trade proposal</h2>

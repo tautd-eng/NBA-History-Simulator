@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { PlayoffPreviews, SeriesDialog } from './preview';
+import { run } from '../league/commands';
 import { money, usd, showDollars, setShowDollars } from './money';
 import { Linkify, PL, TL, nav } from './nav';
 import { TeamHistory, TeamRecords, LeagueRecords, Retirements, SeasonArchive } from './history';
@@ -1071,7 +1072,7 @@ function OverseasRights({ lg, tid, openPlayer }: any) {
             <td>{p.pos}</td><td>{ageIn(p, lg.season)}</td><td><Ovr v={ovrOf(p.z)} /></td><td>{potOf(p, lg.season)}</td>
             <td className="l dim">{p.draft ? `${p.draft.year}, No. ${p.draft.pick}` : '–'}</td>
             <td className="l dim">{p.stash - 1}–{String(p.stash).slice(2)}</td>
-            {mine && <td><button className="small primary" onClick={() => { const r = recallStash(lg, p.id); setMsg(r.msg); bump(x => x + 1); if (r.ok) saveLeague(lg); }}>Bring over now</button></td>}
+            {mine && <td><button className="small primary" onClick={() => { const r = run(lg, { t: 'recall', pid: p.id }); setMsg(r.msg); bump(x => x + 1); if (r.ok) saveLeague(lg); }}>Bring over now</button></td>}
           </tr>
         ))}</tbody>
       </table></div>

@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Player card: ratings, progression year by year, and sortable career statistics.
 import { Linkify } from './nav';
+import { run } from '../league/commands';
 import { showDollars, dollarsOf } from './money';
 import { useEffect, useMemo, useState } from 'react';
 import { fatigueAt, nextCal, fatigueLabel } from '../league/fatigue';
@@ -210,7 +211,7 @@ export function ExtensionBox({ lg, p, onChange, compact }: any) {
           : est.out ? <>He wants out: what he would ask to stay is more than a max contract – he is going to free agency.</>
           : <>He will not take this – {est.interest < 40 ? 'he is not sold on staying, so no discount at all.' : 'too far under his number.'}</>}
       </div>
-      <button className="primary" disabled={cooling || ch.chance <= 0} onClick={() => { const r = userExtend(lg, p.id, offer, years); setMsg(r.msg); setSal(null); onChange?.(); }}>Offer {years} yr{years > 1 ? 's' : ''} at {dol ? $(offer) : pc(offer)}</button>
+      <button className="primary" disabled={cooling || ch.chance <= 0} onClick={() => { const r = run(lg, { t: 'extend', pid: p.id, sal: offer, yrs: years }); setMsg(r.msg); setSal(null); onChange?.(); }}>Offer {years} yr{years > 1 ? 's' : ''} at {dol ? $(offer) : pc(offer)}</button>
       {msg && <span className="hint" role="status">{msg}</span>}
     </div>
   );
@@ -305,7 +306,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange, findTrades }: 
             <p className="dim">{p.pos} · {(p.ht * 0.0254).toFixed(2)} m · age {ageIn(p, lg.season)} · {p.tid ? <button className="link" onClick={() => openTeam(p.tid)}>{status}</button> : status}</p>
             {p.tid && (lg.phase === 'regular' || lg.phase === 'playoffs') && <p className="dim">Status: {p.injury > 0 ? `injured – ${p.inj ? injName(p.inj.k) : 'injury'}, out ~${p.injury} more games` : fatigueLabel(fatigueAt(lg, p, nextCal(lg, todayIndex(lg)))).toLowerCase()}</p>}
             {p.draft?.tid && <p className="dim">Draft {p.draft.year}: No. {p.draft.pick} ({lg.teams[p.draft.tid]?.abbr ?? p.draft.tid})</p>}
-            {(p as any).stash && <p className="dim">Playing overseas – expected to come over for {(p as any).stash - 1}–{String((p as any).stash).slice(2)}.{(p as any).rights === lg.userTid && <> <button className="small primary" onClick={() => { const r = recallStash(lg, p.id); setRecallMsg(r.msg); onChange?.(); bump(x => x + 1); }}>Bring him over now</button></>}</p>}
+            {(p as any).stash && <p className="dim">Playing overseas – expected to come over for {(p as any).stash - 1}–{String((p as any).stash).slice(2)}.{(p as any).rights === lg.userTid && <> <button className="small primary" onClick={() => { const r = run(lg, { t: 'recall', pid: p.id }); setRecallMsg(r.msg); onChange?.(); bump(x => x + 1); }}>Bring him over now</button></>}</p>}
             {recallMsg && <p className="hint">{recallMsg}</p>}
             {findTrades && p.tid && lg.userTid && lg.teams[p.tid]?.active && lg.phase !== 'fantasy' && <p><button className="small" onClick={() => findTrades(p.id)} title={p.tid === lg.userTid ? 'Deals other teams would take for him' : 'What it would take to get him'}>{p.tid === lg.userTid ? 'Find trades for him' : 'Find a trade for him'}</button></p>}
           </div>
