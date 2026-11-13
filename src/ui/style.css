@@ -958,3 +958,6 @@ main.wide { max-width: 1920px; }
 body.online-player .host-only { display: none !important; }
 .setup-online { display: flex; justify-content: center; padding: 12px 16px 0; }
 .setup-online button { font-weight: 600; }
+.min-in { width: 3.4em; text-align: center; font-weight: 700; padding: 2px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg, transparent); color: inherit; font-variant-numeric: tabular-nums; }
+.min-in::-webkit-inner-spin-button { opacity: .4; }
+.mg-min, td .chip.on-clock { } td .link + .chip { margin-left: 6px; }

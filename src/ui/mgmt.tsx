@@ -2,6 +2,7 @@
 // Team management – only for the user's team: the rotation (automatic, with how deep and how much the young
 // play, or minutes by hand), the tactical set-up, and contract extensions.
 import { useMemo, useState } from 'react';
+import { K } from '../data';
 import { run } from '../league/commands';
 import { TL } from './nav';
 import { shownOvr as ovrOf, bpmOf } from '../data';
@@ -20,6 +21,7 @@ export const mgmtOf = (lg: any) => { const t = lg.teams[lg.userTid]; return (t.m
 
 import { GROUPS, SYSTEMS, tacFrom, defaultChoice } from '../league/tactics';
 export { GROUPS, SYSTEMS, tacFrom };
+export { natural as naturalSlot };
 
 export function TeamMgmt({ lg, openPlayer, onChange }: any) {
   const [sec, setSec] = useState<'rot' | 'pos' | 'mm' | 'tac' | 'ext'>('rot');
@@ -55,7 +57,7 @@ function Rotation({ lg, openPlayer, onChange }: any) {
   const auto = rotationPreview(lg, lg.userTid, { ...m, mode: 'auto' });
   const rows = [...ps].sort((a, b) => (plan[b.id] ?? -1) - (plan[a.id] ?? -1) || ovrOf(b.z) - ovrOf(a.z));
   const total = ps.reduce((a: number, p: any) => a + (m.minutes[p.id] ?? 0), 0);
-  const setMin = (pid: string, v: number) => upd(m => { m.minutes[pid] = Math.max(0, Math.min(44, Math.round(v))); });
+  const setMin = (pid: string, v: number) => upd(m => { m.minutes[pid] = Math.max(0, Math.min(48, Math.round(v || 0))); });
   const fromAuto = () => upd(m => { m.minutes = Object.fromEntries(ps.map((p: any) => [p.id, Math.round(auto[p.id] ?? 0)])); m.mode = 'manual'; });
   const mpg = (p: any) => (p.cur?.gp ? p.cur.min / p.cur.gp : 0);
   return (
@@ -80,7 +82,7 @@ function Rotation({ lg, openPlayer, onChange }: any) {
         </div>
       ) : (
         <div className="mg-settings">
-          <p className="note">Set each player's minutes per game. The total should be 240 (5 × 48) – the coach scales it to fit, and the minutes of a player who is out go to the others. Your top five by minutes start and close games. Total now: <b className={Math.abs(total - 240) > 4 ? 'neg' : ''}>{total}</b>.</p>
+          <p className="note">Set each player's minutes per game – type them in or use − / +. The total should be 240 (5 × 48) – the coach scales it to fit, and the minutes of a player who is out go to the others. Your top five by minutes start and close games. Total now: <b className={Math.abs(total - 240) > 4 ? 'neg' : ''}>{total}</b>.</p>
           <div className="def-row"><button className="small" onClick={fromAuto}>Start from the auto plan</button></div>
         </div>
       )}
@@ -89,13 +91,14 @@ function Rotation({ lg, openPlayer, onChange }: any) {
         <tbody>{rows.map((p: any) => {
           const v = plan[p.id];
           return <tr key={p.id} className={p.injury ? 'dim' : ''}>
-            <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button>{p.injury ? <span className="inj"> out {p.injury}</span> : null}</td>
+            <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button>{(m.starters ?? []).includes(p.id) ? <span className="chip tiny on-clock" title="Named starter (Lineup & positions)">Starter · {SLOTS[(m.starters ?? []).indexOf(p.id)]}</span> : null}{p.injury ? <span className="inj"> out {p.injury}</span> : null}</td>
             <td className="dim">{p.pos}</td><td>{ageIn(p, lg.season)}</td><td>{ovrOf(p.z)}</td><td>{mpg(p) ? mpg(p).toFixed(1) : '–'}</td>
             <td><span className="pr-bar" style={{ width: `${Math.round((v ?? 0) * 1.6)}px` }}></span>{v === undefined ? '–' : v.toFixed(0)}</td>
             {m.mode === 'manual' && <td className="mg-min">
-              <button className="small" onClick={() => setMin(p.id, (m.minutes[p.id] ?? 0) - 2)} aria-label="2 minutes less">−</button>
-              <b>{m.minutes[p.id] ?? 0}</b>
-              <button className="small" onClick={() => setMin(p.id, (m.minutes[p.id] ?? 0) + 2)} aria-label="2 minutes more">+</button>
+              <button className="small" onClick={() => setMin(p.id, (m.minutes[p.id] ?? 0) - 1)} aria-label="1 minute less">−</button>
+              <input type="number" min={0} max={48} inputMode="numeric" className="min-in" aria-label={`Minutes for ${p.name}`} value={m.minutes[p.id] ?? 0}
+                onChange={e => setMin(p.id, e.target.value === '' ? 0 : +e.target.value)} onFocus={e => e.target.select()} />
+              <button className="small" onClick={() => setMin(p.id, (m.minutes[p.id] ?? 0) + 1)} aria-label="1 minute more">+</button>
             </td>}
           </tr>;
         })}</tbody>
@@ -205,7 +208,28 @@ function Extensions({ lg, openPlayer, onChange }: any) {
 
 const SLOTS = ['PG', 'SG', 'SF', 'PF', 'C'];
 /** Natural slot (1 … 5) from his listed position. */
-const natural = (p: any) => Math.max(1, Math.min(5, Math.round(posNum(p.pos))));
+/** The slots his listed position covers (G = PG/SG, F = SF/PF, G-F = SG/SF, F-C = PF/C …). */
+function slotsOf(pos: string): number[] {
+  const m: Record<string, number[]> = { PG: [1], SG: [2], SF: [3], PF: [4], C: [5], G: [1, 2], F: [3, 4], GF: [2, 3], 'G-F': [2, 3], 'F-G': [2, 3], FC: [4, 5], 'F-C': [4, 5], 'C-F': [4, 5] };
+  return m[pos] ?? m[pos.split('-')[0]] ?? [3];
+}
+/** Where he naturally plays: within his listed position, by size and game – a small playmaker is the point guard, a big rebounder the power forward. */
+function natural(p: any) {
+  const opts = slotsOf(p.pos);
+  if (opts.length === 1) return opts[0];
+  const [lo, hi] = opts, z = p.z, ht = p.ht;
+  const ast = z[K.ast], reb = z[K.orb] + z[K.drb], tpr = z[K.tpr], blk = z[K.blk];
+  // a guard or wing who runs the offence is the point guard (Magic Johnson at 6'9")
+  if (lo <= 2 && ast >= 1.8 && ht <= 82) return 1;
+  // above 0 leans to the bigger slot; each term against what is usual for that listed position
+  const lean = lo === 1 ? (ht - 75) * 0.5 - (ast - 0.8) + 0.3 * (reb + 1.9)                              // PG or SG
+    : lo === 2 ? (ht - 78) * 0.5 + 0.3 * (reb + 1) - 0.5 * (ast - 0.1)                                    // SG or SF
+    : lo === 3 ? (ht - 80) * 0.35 + 0.6 * (reb - 0.8) - 0.5 * (tpr - 0.2) - 0.3 * (ast + 0.6)             // SF or PF
+    : (ht - 82) * 0.5 + 0.5 * (blk - 0.8) - 0.6 * (tpr + 0.7) - 0.2 * (ast + 0.7);                        // PF or C
+  return lean > 0 ? hi : lo;
+}
+/** Playing him there is a stretch: outside his listed position (one slot over is fine for a specialist). */
+const outOf = (p: any, slot: number) => { const o = slotsOf(p.pos); return o.length === 1 ? Math.abs(o[0] - slot) > 1 : !o.includes(slot); };
 
 /** The starting five by position, and where everyone else plays. */
 function Positions({ lg, openPlayer, onChange }: any) {
@@ -232,7 +256,7 @@ function Positions({ lg, openPlayer, onChange }: any) {
               <option value="">Auto – the coach decides</option>
               {ps.map((q: any) => <option key={q.id} value={q.id}>{q.name} ({q.pos}, {ovrOf(q.z)}){q.injury ? ' – injured' : ''}</option>)}
             </select></td>
-            <td className="l">{p ? <><RoleCell p={p} S={lg.season} />{natural(p) !== i + 1 ? <span className="chip tiny" title={`Listed as ${p.pos}`}>out of position</span> : null}</> : null}</td>
+            <td className="l">{p ? <><RoleCell p={p} S={lg.season} />{outOf(p, i + 1) ? <span className="chip tiny" title={`Listed as ${p.pos} – usually plays ${SLOTS[natural(p) - 1]}`}>out of position</span> : null}</> : null}</td>
           </tr>;
         })}</tbody></table>
         <div className="def-row"><button className="small ghost" disabled={!named} onClick={() => upd(m => { m.starters = ['', '', '', '', '']; })}>Clear – all Auto</button></div>
