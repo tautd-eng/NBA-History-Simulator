@@ -39,11 +39,12 @@ export function realTarget(pid: string, season: number): { z: number[]; mp: numb
 }
 
 /**
- * A season's ratings evened out with the seasons before it (never the ones after): the previous season counts
- * at PREV_W[0] of its minutes, the one before at PREV_W[1], each aged to this season with the mean aging curve –
- * so a one-off career year or a short, hot stretch is softened, while a real step up still shows.
+ * A season's ratings as a blend of three seasons, never later ones: this one 50%, the one before 30%, the one
+ * before that 20% (each earlier season aged to this one with the mean aging curve). A season with few minutes
+ * counts less (full weight from 1500 minutes); missing seasons simply drop out of the blend.
  */
-export const PREV_W = [0.5, 0.25];
+export const SEASON_W = [0.5, 0.3, 0.2];
+const FULL_MIN = 1500;
 const smoothCache = new Map<string, number[]>();
 export function smoothZ(pid: string, season: number): number[] {
   const key = pid + '|' + season;
@@ -51,12 +52,12 @@ export function smoothZ(pid: string, season: number): number[] {
   const hp = H.players[pid];
   const own = hp.s.find(x => x[0] === season)!;
   const age = Math.floor(season + 1 / 12 - birthYear(hp.b));
-  const z = own[7].map(v => v * own[3]);
-  let w = own[3];
-  for (let k = 1; k <= PREV_W.length; k++) {
-    const r = hp.s.find(x => x[0] === season - k);
+  const z = new Array(NK).fill(0);
+  let w = 0;
+  for (let k = 0; k < SEASON_W.length; k++) {
+    const r = k ? hp.s.find(x => x[0] === season - k) : own;
     if (!r || r[3] <= 0) continue;
-    const ww = PREV_W[k - 1] * Math.min(r[3], Math.max(own[3], 500) * 1.5);
+    const ww = SEASON_W[k] * Math.max(0.15, Math.min(1, r[3] / FULL_MIN));
     const zz = r[7].slice();
     for (let a = age - k; a < age; a++) { const ai = agingIndex(a); for (let i = 0; i < NK; i++) zz[i] += H.aging[H.keys[i]].mean[ai]; }
     for (let i = 0; i < NK; i++) z[i] += ww * zz[i];
