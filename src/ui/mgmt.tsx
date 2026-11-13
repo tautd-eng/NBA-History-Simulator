@@ -113,7 +113,12 @@ function SheetImport({ lg, onChange }: any) {
   const load = async (f: File | undefined) => {
     if (!f) return;
     setErr(''); setRep(null);
-    try { const rows = await readSheet(f); setRep(importRotations(lg, rows)); onChange(); }
+    try {
+      const rows = await readSheet(f);
+      // online: only your own team, and it goes to the host as your team's settings
+      setRep(importRotations(lg, rows, lg.online?.role === 'player' ? lg.userTid : undefined));
+      onChange();
+    }
     catch (e: any) { setErr(e?.message ?? String(e)); }
   };
   const template = () => {

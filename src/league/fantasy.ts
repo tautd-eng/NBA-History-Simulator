@@ -1,7 +1,7 @@
 // Fantasy draft: every player of the starting season's league goes into one pool and the
 // teams build new rosters in a snake draft. AI teams pick by value and need.
 import { League, Player } from '../types';
-import { isHuman } from './humans';
+import { isHuman, handTo } from './humans';
 import { rngOf, beginFirstSeason } from './league';
 import { askingSalary, contractYears, MIN_SAL, hardCap, payroll } from '../ai/value';
 import { marketPlayerValue } from '../ai/trades';
@@ -82,7 +82,7 @@ export function fantasyUserPick(lg: League, pid: string) {
 /** One AI pick (not when the user is on the clock). Returns whether a pick was made. */
 export function fantasyStep(lg: League) {
   const on = fantasyOnClock(lg);
-  if (!on || isHuman(lg, on.tid)) { if (on) lg.userTid = on.tid; return false; }
+  if (!on || isHuman(lg, on.tid)) { if (on) handTo(lg, on.tid); return false; }
   take(lg, on.tid, aiChoice(lg, on.tid));
   if (!fantasyOnClock(lg)) fantasyFinish(lg);
   return true;
@@ -95,7 +95,7 @@ export function fantasyAdvance(lg: League, all = false) {
     take(lg, on.tid, aiChoice(lg, on.tid));
     on = fantasyOnClock(lg);
   }
-  if (on && !all) lg.userTid = on.tid; // hot seat: the controls go to whoever is on the clock
+  if (on && !all) handTo(lg, on.tid); // hot seat: the controls go to whoever is on the clock
   if (!on) fantasyFinish(lg);
 }
 

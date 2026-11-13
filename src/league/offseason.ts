@@ -1,4 +1,4 @@
-import { isHuman, humans } from './humans';
+import { isHuman, handTo, humans } from './humans';
 // Off-season: expansion, lottery and draft, retirements, development, contracts,
 // arrivals and free agency.
 import { nextPayroll } from './extensions';
@@ -171,7 +171,7 @@ export function expAdvance(lg: League, mode: 'one' | 'all') {
   if (!e.confirmed) e.confirmed = true;
   while (expOnClock(lg)) {
     const on = expOnClock(lg)!;
-    if (mode !== 'all' && isHuman(lg, on.nt)) { lg.userTid = on.nt; break; }
+    if (mode !== 'all' && isHuman(lg, on.nt)) { handTo(lg, on.nt); break; }
     expPick(lg);
     if (mode === 'one') break;
   }
@@ -370,11 +370,11 @@ export function draftAdvance(lg: League, mode: 'one' | 'user' | 'all') {
     const on = draftOnClock(lg);
     if (!on) break;
     // a person's pick: stop, and hand the controls to that team (hot seat)
-    if (mode !== 'all' && isHuman(lg, on.tid)) { lg.userTid = on.tid; break; }
+    if (mode !== 'all' && isHuman(lg, on.tid)) { handTo(lg, on.tid); break; }
     // a pick on the clock may change hands first (trade up / trade down)
     if (!isHuman(lg, on.tid) && aiDraftTrade(lg, rngOf(lg))) {
       const now = draftOnClock(lg);
-      if (now && mode !== 'all' && isHuman(lg, now.tid)) { lg.userTid = now.tid; break; }
+      if (now && mode !== 'all' && isHuman(lg, now.tid)) { handTo(lg, now.tid); break; }
     }
     draftPick(lg);
     n++;

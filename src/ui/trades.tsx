@@ -182,7 +182,7 @@ export function Trades({ lg, openPlayer, onDone, seed }: any) {
         <h2>Trade proposal</h2>
         <p className="note">{closed ? (lg.phase === 'playoffs' ? 'Trading is closed during the playoffs.' : 'This season\'s trade deadline has passed. Trading reopens on draft day.') : lg.phase === 'regular' ? `Trade deadline: day ${deadlineDay(lg) + 1} of the season (today is day ${lg.day + 1}).` : lg.phase === 'draft' ? 'Draft day: picks can be traded until they are used – move up or down the board.' : 'Offseason: trading is open.'} AI teams trade among themselves; with your team they only trade when you propose.{lg.humans?.length > 1 ? ' Offers to another person\'s team wait for their answer.' : ''}</p>
         <div className="trade-pick">
-          <label htmlFor="trade-a">Your side
+          <label htmlFor="trade-a" className="host-only">Your side
             <select id="trade-a" value={a} onChange={e => { setA(e.target.value); setSelA(new Set()); if (e.target.value === b) setB(teams.find((t: any) => t.tid !== e.target.value).tid); }}>
               {teams.map((t: any) => <option key={t.tid} value={t.tid}>{t.name}</option>)}
             </select>
@@ -204,9 +204,9 @@ export function Trades({ lg, openPlayer, onDone, seed }: any) {
           </> : <p className="dim">Select players or picks on both sides – the AI's answer appears here. “Value” is how much the partner GM values an asset: on-court benefit over the next few years (a star is worth far more than two average players) minus salary cost; a cheap deal or rookie contract adds value, an overpay subtracts it. A pick is the expected rookie at that slot on a cheap deal.</p>}
           <div className="def-row">
             <button className="primary" disabled={!reply?.accept || closed} onClick={propose}>{toHuman ? 'Send offer' : 'Propose trade'}</button>
-            {commish && <button className="danger" disabled={!!ruleAny || closed} title={ruleAny ?? 'Execute this trade whatever the teams think'} onClick={force}>Force trade (commissioner)</button>}
+            {commish && <button className="danger host-only" disabled={!!ruleAny || closed} title={ruleAny ?? 'Execute this trade whatever the teams think'} onClick={force}>Force trade (commissioner)</button>}
           </div>
-          <label className="commish"><input type="checkbox" checked={commish} onChange={e => { lg.commish = e.target.checked; onDone(); }} /> Commissioner mode – execute any trade between any two teams, accepted or not (cap and roster rules still apply)</label>
+          <label className="commish host-only"><input type="checkbox" checked={commish} onChange={e => { lg.commish = e.target.checked; onDone(); }} /> Commissioner mode – execute any trade between any two teams, accepted or not (cap and roster rules still apply)</label>
         </div>
         <div className="finder">
           <h3>Trade finder</h3>

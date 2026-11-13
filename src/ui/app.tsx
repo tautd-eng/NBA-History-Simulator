@@ -14,6 +14,9 @@ import { offStep } from '../league/offseason';
 import { Devices } from './devices';
 import { PlayingAs, HumansPanel } from './humans';
 import { SalaryView } from './salaries';
+import { OnlinePanel, OnlineBar, useOnline } from './online';
+import { openOnline, bindApp, slotOf } from '../online/sync';
+import { currentUser } from '../online/client';
 import { installTableExport } from './export';
 import { isHuman } from '../league/humans';
 import { roleOf } from '../archetypes';
@@ -160,14 +163,32 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHumans, setShowHumans] = useState(false);
   const [showSaves, setShowSaves] = useState(false);
+  const [showOnline, setShowOnline] = useState(() => /[?&]join=/.test(location.search));
+  const joinCode = (/[?&]join=([A-Za-z0-9]+)/.exec(location.search) ?? [])[1];
+  const octx = useOnline();
   const stop = useRef(false);
 
   useEffect(() => {
-    loadLeague().then(l => {
+    (async () => {
+      // an online league reopens online (its newest version), not from the copy in this browser
+      const sl = currentSlot();
+      if (sl.startsWith('online-') && currentUser()) {
+        try { const l = await openOnline(sl.slice(7)); ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); setReady(true); return; } catch { /* fall back to the local copy */ }
+      }
+      const l = await loadLeague();
       if (l) { ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); }
       setReady(true);
+    })();
+  }, []);
+  // a new version of the online league arrived / the host applied others' moves
+  useEffect(() => {
+    bindApp({
+      replace: (l: any) => { ensurePicks(l); l.trades ??= []; setLg(l); setRev(x => x + 1); saveLeague(l); },
+      refresh: () => { setRev(x => x + 1); },
+      status: (l: any) => `${seasonLabel(l.season)} · ${phaseLabel(l)}`,
     });
   }, []);
+  useEffect(() => { document.body.classList.toggle('online-player', octx?.role === 'player'); }, [octx?.role]);
 
   const bump = () => setRev(r => r + 1);
 
@@ -214,12 +235,17 @@ function App() {
   const [tradeSeed, setTradeSeed] = useState<{ pid: string; n: number } | null>(null);
   if (!ready) return <div className="loading">Loading league…</div>;
   const switchTo = async (id: string) => {
+    if (id.startsWith('online-') && currentUser()) {
+      try { const l = await openOnline(id.slice(7)); setSlot(id); ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); setTab('apzvalga'); setPlayer(null); setShowSaves(false); return; } catch { /* the copy in this browser */ }
+    }
     setSlot(id);
     const l = await loadLeague(id);
     if (l) { ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); setTab('apzvalga'); setPlayer(null); setShowSaves(false); }
   };
   const startNew = () => { setSlot(newSlotId()); setLg(null); setShowSaves(false); };
-  if (!lg) return <Setup onStart={start} onLoad={switchTo} />;
+  const onlinePanel = showOnline && <OnlinePanel lg={lg} joinCode={joinCode} close={() => { setShowOnline(false); if (joinCode) try { history.replaceState(null, '', location.pathname + location.hash); } catch { /* ignore */ } }}
+    onOpen={(l: any, id: string) => { setSlot(slotOf(id)); ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); setTab('apzvalga'); setPlayer(null); saveLeague(l, slotOf(id)); }} />;
+  if (!lg) return <><div className="setup-online"><button onClick={() => setShowOnline(true)}>🌐 Online league – join with a code or open yours</button></div><Setup onStart={start} onLoad={switchTo} />{onlinePanel}</>;
 
   const openPlayer = (pid: string) => setPlayer(pid);
   const openTeam = (tid: string) => { setTeam(tid); setTab('komandos'); location.hash = 'komandos'; };
@@ -239,6 +265,7 @@ function App() {
         </div>
         <Controls lg={lg} busy={busy} run={run} stop={() => (stop.current = true)} saved={saved} />
       </header>
+      {octx && <OnlineBar lg={lg} openPanel={() => setShowOnline(true)} onLeave={() => { setSlot(newSlotId()); setLg(null); }} />}
       <nav className="tabs" aria-label="Sections">
         {tabsFor(lg).map(([k, l, main]) => (
           <button key={k} className={`${tab === k ? 'on' : ''} ${main ? '' : 'sec'}`} onClick={() => { go(k); setMore(false); }} aria-label={l}><TabIcon k={k} /><span className="tl">{l}</span></button>
@@ -253,7 +280,7 @@ function App() {
       </div>}
       <main className={tab === 'laisvieji' || (tab === 'apzvalga' && (lg.phase === 'freeagency' || lg.phase === 'draft')) ? 'wide' : ''}>
         {lg.phase === 'fantasy' && <FantasyRoom lg={lg} openPlayer={openPlayer} onTick={bump} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
-        {lg.phase !== 'fantasy' && tab === 'apzvalga' && <Overview lg={lg} openTeam={openTeam} openPlayer={openPlayer} openGame={openGame} watch={watch} clutch={clutchStart} busy={!!busy || !!clutch} sampler={sampler} goFA={() => go('laisvieji')} onTick={bump} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
+        {lg.phase !== 'fantasy' && tab === 'apzvalga' && <Overview lg={lg} openTeam={openTeam} openPlayer={openPlayer} openGame={openGame} watch={watch} clutch={clutchStart} busy={!!busy || !!clutch || octx?.role === 'player'} sampler={sampler} goFA={() => go('laisvieji')} onTick={bump} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'valdymas' && <TeamMgmt key={lg.userTid ?? ''} lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
         {lg.phase !== 'fantasy' && tab === 'reitingai' && <Rankings lg={lg} openPlayer={openPlayer} openTeam={openTeam} />}
         {lg.phase !== 'fantasy' && tab === 'laisvieji' && <FreeAgentsView lg={lg} openPlayer={openPlayer} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
@@ -268,13 +295,15 @@ function App() {
       <footer className="foot">
         <span>Data: Basketball-Reference (via sumitrodatta/bball-reference-datasets). The league is saved in this browser. <span className="dim">Version {BUILD}</span></span>
         <span className="foot-actions">
-          <button className="ghost small" onClick={() => setShowSettings(true)}>Season format</button>
-          <button className="ghost small" onClick={() => setShowHumans(true)}>Players & teams</button>
+          <button className="ghost small host-only" onClick={() => setShowSettings(true)}>Season format</button>
+          <button className="ghost small" onClick={() => setShowOnline(true)}>Online league</button>
+          {!octx && <button className="ghost small" onClick={() => setShowHumans(true)}>Players & teams</button>}
           <button className="ghost small" onClick={() => setShowSaves(true)}>Saves</button>
           <button className="ghost small" onClick={startNew}>New league</button>
         </span>
       </footer>
       {showSaves && <SavesPanel lg={lg} close={() => setShowSaves(false)} onLoad={switchTo} onNew={startNew} />}
+      {onlinePanel}
       {showHumans && <HumansPanel lg={lg} close={() => setShowHumans(false)} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {showSettings && <SettingsPanel lg={lg} close={() => setShowSettings(false)} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {clutch && <ClutchGame lg={lg} cs={clutch} close={() => setClutch(null)} openPlayer={() => {}}
@@ -331,16 +360,16 @@ function phaseLabel(lg: any) {
 
 function Controls({ lg, busy, run, stop, saved }: any) {
   if (busy) return (
-    <div className="controls">
+    <div className="controls host-only">
       <span className="busy"><span className="dot"></span>{busy}…</span>
       <button className="ghost" onClick={stop}>Stop</button>
     </div>
   );
-  if (lg.phase === 'fantasy') return <div className="controls"><span className="hint">Fantasy draft in progress – the season starts when it ends.</span></div>;
-  if (lg.ended) return <div className="controls"><span className="hint">Reached the {seasonLabel(LAST_SEASON)} season – the historical data ends here.</span></div>;
+  if (lg.phase === 'fantasy') return <div className="controls host-only"><span className="hint">Fantasy draft in progress – the season starts when it ends.</span></div>;
+  if (lg.ended) return <div className="controls host-only"><span className="hint">Reached the {seasonLabel(LAST_SEASON)} season – the historical data ends here.</span></div>;
   const b = (t: Target, l: string, primary = false) => <button className={primary ? 'primary' : ''} onClick={() => run(t, l)}>{l}</button>;
   return (
-    <div className="controls">
+    <div className="controls host-only">
       {awaitingPlayoffs(lg) && b('day', 'Start the playoffs', true)}
       {(lg.phase === 'regular' || lg.phase === 'playoffs') && !awaitingPlayoffs(lg) && <>
         {b('day', 'Day')}

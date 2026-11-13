@@ -16,7 +16,7 @@ import {
   enterFreeAgency, faStage, startSeason, faOffer, faDemand, offersOn, withdrawOffer, faRenounce, faRelease, faDecide, faMatch, prevTeam, faOffersFor,
 } from '../league/offseason';
 import { DecisionsBoard } from './offsteps';
-import { isHuman } from '../league/humans';
+import { isHuman, handTo } from '../league/humans';
 import { OthersWaiting } from './humans';
 import { SortTable, f1 } from './sorttable';
 import { ExpansionRoom, LotteryRoom, LotteryReveal, AutoControls, useAutoPlay } from './draftday';
@@ -71,7 +71,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
   useAutoPlay(playing, speed, () => {
     const c = draftOnClock(lg);
     if (!c) return false;
-    if (isHuman(lg, c.tid)) { lg.userTid = c.tid; return false; } // hot seat: that team picks
+    if (isHuman(lg, c.tid)) { handTo(lg, c.tid); return false; } // hot seat: that team picks
     const before = lg.draftDay?.trades?.length ?? 0;
     draftAdvance(lg, 'one'); onTick();
     if ((lg.draftDay?.trades?.length ?? 0) > before) return false; // a trade: stop so it can be seen
@@ -84,7 +84,7 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
       <div className="panel accent">
         <h2>Draft day awaits</h2>
         <p className="note">The {lg.season} season is over. On draft day {seasonInfo(lg.season + 1).teams && Object.keys(seasonInfo(lg.season + 1).teams).some(t => !lg.teams[t]) ? 'there will first be an expansion draft for the new teams, then ' : ''}you'll see the lottery odds and the draw, and then teams pick one by one. You can make your own picks or skip ahead.</p>
-        <div className="def-row"><button className="primary" onClick={() => act(() => initDraft(lg))}>Start draft day</button></div>
+        <div className="def-row"><button className="primary host-only" onClick={() => act(() => initDraft(lg))}>Start draft day</button></div>
         {last?.champion && <p className="note">Champions: <TL tid={last.champion} />.</p>}
       </div>
     );
@@ -142,12 +142,14 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
           {myTurn ? <>
             <span className="hint">You're on the clock – pick from the list{suggestion ? ` (GM suggests: ${lg.players[suggestion].name})` : ''}.</span>
             <button onClick={() => act(() => run(lg, { t: 'draftPick' }))}>Let the GM pick</button>
-          </> : <button className="primary" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'one'))}>Next pick</button>}
+          </> : <button className="primary host-only" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'one'))}>Next pick</button>}
           <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={!on || myTurn} />
-          {!myTurn && myLeft && <button disabled={playing} onClick={() => act(() => draftAdvance(lg, 'user'))}>{(lg.humans?.length ?? 0) > 1 ? 'To the next human pick' : 'To my pick'}</button>}
-          <button onClick={() => { setPlaying(false); act(() => { draftAdvance(lg, 'all'); finishDraft(lg); }); }}>{lg.userTid ? 'To the end (GM picks for me)' : 'To the end'}</button>
+          {!myTurn && myLeft && <button className="host-only" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'user'))}>{(lg.humans?.length ?? 0) > 1 ? 'To the next human pick' : 'To my pick'}</button>}
+          <button className="host-only" onClick={() => { setPlaying(false); act(() => { draftAdvance(lg, 'all'); finishDraft(lg); }); }}>{lg.userTid ? 'To the end (GM picks for me)' : 'To the end'}</button>
+          {!myTurn && on && lg.online && isHuman(lg, on.tid) && <button className="host-only" title="He is not here – his GM makes the pick" onClick={() => act(() => draftPick(lg))}>GM picks for {lg.teams[on.tid].abbr}</button>}
           {d.lotto?.result && <button className="ghost" onClick={() => setReveal(true)}>Lottery</button>}
         </div>
+        {!myTurn && on && lg.online && isHuman(lg, on.tid) && <p className="note">Waiting for {lg.teams[on.tid].name} to pick.</p>}
         <div className="def-row">
           <div className="seg" role="group" aria-label="Position">{POS.map(([k, l]) => <button key={k} className={pos === k ? 'on' : ''} onClick={() => setPos(k)}>{l}</button>)}</div>
           <span className="hint">{d.pool.length} players left on the board</span>
@@ -209,7 +211,7 @@ function DraftSummary({ lg, d, openPlayer, openTeam, onNext }: any) {
       <div className="panel accent">
         <div className="team-head">
           <h2>{d.year} draft recap</h2>
-          <button className="primary" onClick={onNext}>To free agency →</button>
+          <button className="primary host-only" onClick={onNext}>To free agency →</button>
         </div>
         {d.lottery && <p className="note"><Linkify text={d.lottery} /></p>}
         {lg.classSrc?.[d.year] && <p className="note"><b>Revealed:</b> this year brought the real {lg.classSrc[d.year]} draft class.</p>}
@@ -316,8 +318,8 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
           </div>}
           <div className="def-row">
             {fa.stage <= 3
-              ? <button className="primary" onClick={() => act(() => faStage(lg))}>{fa.stage === 0 ? 'Confirm decisions →' : `Finish wave ${fa.stage} →`}</button>
-              : <button className="primary" onClick={() => act(() => startSeason(lg))}>To the season preview →</button>}
+              ? <button className="primary host-only" onClick={() => act(() => faStage(lg))}>{fa.stage === 0 ? 'Confirm decisions →' : `Finish wave ${fa.stage} →`}</button>
+              : <button className="primary host-only" onClick={() => act(() => startSeason(lg))}>To the season preview →</button>}
             <button onClick={goFA}>All free agents</button>
           </div>
           {msg && <p className="hint" role="status">{msg}</p>}

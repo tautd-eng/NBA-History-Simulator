@@ -25,3 +25,6 @@ export function setHuman(lg: League, tid: string, on: boolean) {
   if (on && !lg.userTid) lg.userTid = tid;
   if (!on && lg.userTid === tid) lg.userTid = lg.humans[0] ?? null;
 }
+
+/** Hot seat: the controls go to the team on the clock. Online every person has his own screen, so nothing moves. */
+export function handTo(lg: League, tid: string) { if (!(lg as any).online) lg.userTid = tid; }

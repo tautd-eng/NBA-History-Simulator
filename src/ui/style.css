@@ -942,3 +942,19 @@ main.wide { max-width: 1920px; }
 .bids-list { display: inline-flex; flex-wrap: wrap; gap: 4px; font-size: 0.75rem; }
 .bids-list span { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--muted); }
 .bids-list span.won { border-color: var(--accent); color: inherit; font-weight: 600; }
+/* online league */
+.online-bar { background: var(--surface); border-bottom: 1px solid var(--line); padding: 8px 16px; display: flex; flex-direction: column; gap: 4px; }
+.online-bar .note { margin: 0; }
+.ob-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ob-sp { flex: 1; }
+.ob-done { font-weight: 700; font-size: 0.85rem; }
+.ob-people { display: flex; flex-wrap: wrap; gap: 6px; }
+.ob-p { font-size: 0.78rem; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; display: inline-flex; align-items: center; gap: 4px; }
+.ob-p.done { border-color: var(--accent); }
+.ob-on { width: 7px; height: 7px; border-radius: 50%; background: #1f9d55; display: inline-block; }
+.online-form { display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+.online-form input, .online-dlg input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg, inherit); color: inherit; }
+.team-pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+body.online-player .host-only { display: none !important; }
+.setup-online { display: flex; justify-content: center; padding: 12px 16px 0; }
+.setup-online button { font-weight: 600; }

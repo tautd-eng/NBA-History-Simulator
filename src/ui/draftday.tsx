@@ -14,7 +14,7 @@ import { SortTable } from './sorttable';
 import { posNum } from '../engine/game';
 import { colorsOf } from './art';
 import { pickOwner } from '../ai/trades';
-import { isHuman } from '../league/humans';
+import { isHuman, handTo } from '../league/humans';
 import { attrCols } from './offseason';
 
 function Ovr({ v }: any) {
@@ -39,7 +39,7 @@ export function useAutoPlay(on: boolean, delay: number, step: () => boolean, sto
 
 export function AutoControls({ playing, setPlaying, speed, setSpeed, label = 'Watch', disabled }: any) {
   return (
-    <span className="auto-ctl">
+    <span className="auto-ctl host-only">
       <button className={playing ? 'primary' : ''} disabled={disabled && !playing} onClick={() => setPlaying(!playing)}>{playing ? '⏸ Pause' : `▶ ${label}`}</button>
       <span className="seg" role="group" aria-label="Speed">
         {SPEEDS.map(([v, l]) => <button key={v} className={speed === v ? 'on' : ''} onClick={() => setSpeed(v)}>{l}</button>)}
@@ -60,7 +60,7 @@ export function ExpansionRoom({ lg, onChange, onTick, openPlayer, openTeam }: an
   useAutoPlay(playing, speed, () => {
     const c = expOnClock(lg);
     if (!c) return false;
-    if (isHuman(lg, c.nt)) { lg.userTid = c.nt; return false; } // hot seat: that team picks
+    if (isHuman(lg, c.nt)) { handTo(lg, c.nt); return false; } // hot seat: that team picks
     expPick(lg); onTick();
     return !!expOnClock(lg);
   }, () => { setPlaying(false); onChange(); });
@@ -96,8 +96,8 @@ export function ExpansionRoom({ lg, onChange, onTick, openPlayer, openTeam }: an
               </div>
             ) : <p className="hint">All teams have set their protected lists.</p>}
             <div className="def-row">
-              <button className="primary" onClick={() => act(() => expConfirm(lg))}>Confirm lists and start</button>
-              <button onClick={() => act(() => expAdvance(lg, 'all'))}>To the end</button>
+              <button className="primary host-only" onClick={() => act(() => expConfirm(lg))}>Confirm lists and start</button>
+              <button className="host-only" onClick={() => act(() => expAdvance(lg, 'all'))}>To the end</button>
             </div>
             {userOld && (
               <div className="tbl-wrap"><table className="tbl">
@@ -120,9 +120,9 @@ export function ExpansionRoom({ lg, onChange, onTick, openPlayer, openTeam }: an
           <>
             <div className="def-row">
               {myTurn ? <span className="hint">You're on the clock – pick from the list.</span>
-                : <button className="primary" disabled={!on || playing} onClick={() => act(() => expAdvance(lg, 'one'))}>Next pick</button>}
+                : <button className="primary host-only" disabled={!on || playing} onClick={() => act(() => expAdvance(lg, 'one'))}>Next pick</button>}
               <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={!on || myTurn} />
-              <button onClick={() => { setPlaying(false); act(() => expAdvance(lg, 'all')); }}>To the end</button>
+              <button className="host-only" onClick={() => { setPlaying(false); act(() => expAdvance(lg, 'all')); }}>To the end</button>
             </div>
             <h3>Available players ({avail.length}) <span className="dim">– from {new Set(avail.map((a: any) => a.from)).size} teams that haven't lost anyone yet</span></h3>
             <SortTable cols={cols} rows={avail.map((r: any) => ({ ...r, key: r.p.id }))} initial="ovr" limit={60} />
@@ -188,7 +188,7 @@ export function LotteryRoom({ lg, onChange, onDrawn }: any) {
       ) : <p className="note">Every team made the playoffs – no lottery.</p>}
       {traded.length > 0 && <p className="note">Traded picks: {traded.map((t: any, i: number) => <span key={t.tid}>{i ? '; ' : ''}<TL tid={t.tid} abbr />'s pick belongs to <b><TL tid={owner(t.tid)} /></b></span>)}. Wherever the lottery puts it, that team makes the selection.</p>}
       <div className="def-row">
-        <button className="primary big" onClick={() => { lotteryDraw(lg); onChange(); onDrawn(); }}>{L.kind === 'coin' ? 'Flip the coin' : 'Run the lottery'}</button>
+        <button className="primary big host-only" onClick={() => { lotteryDraw(lg); onChange(); onDrawn(); }}>{L.kind === 'coin' ? 'Flip the coin' : 'Run the lottery'}</button>
       </div>
       <p className="note">Odds come from simulating the lottery 20,000 times under that era's rules.</p>
     </div>

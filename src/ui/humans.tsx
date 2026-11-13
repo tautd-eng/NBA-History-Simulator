@@ -6,7 +6,7 @@ import { inbox } from '../league/proposals';
 /** Header switch between the human-run teams (shown with two or more). */
 export function PlayingAs({ lg, onChange }: any) {
   const hs = humans(lg);
-  if (hs.length < 2) return null;
+  if (hs.length < 2 || lg.online) return null; // online: everyone plays his own team on his own screen
   return (
     <label className="playing-as" htmlFor="playing-as">Playing as
       <select id="playing-as" value={lg.userTid ?? ''} onChange={e => { playAs(lg, e.target.value); onChange(); }}>

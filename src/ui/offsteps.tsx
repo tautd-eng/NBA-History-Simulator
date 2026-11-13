@@ -63,7 +63,7 @@ export function RecapStep({ lg, onChange, children }: any) {
       <div className="panel accent step-head">
         <div className="team-head">
           <h2>The {seasonLabel(lg.season)} season is over</h2>
-          <button className="primary" onClick={() => { offRetire(lg); onChange(); top(); }}>Start the offseason →</button>
+          <button className="primary host-only" onClick={() => { offRetire(lg); onChange(); top(); }}>Start the offseason →</button>
         </div>
         {last && <p className="lead"><b><TL tid={last.champion} /></b> are the champions{fin ? <> – they beat the <TL tid={fin.winner === fin.hi ? fin.lo : fin.hi} /> {Math.max(fin.hw, fin.lw)}–{Math.min(fin.hw, fin.lw)} in the Finals</> : ''}.{last.fmvp ? <> Finals MVP: <PL pid={last.fmvp} />.</> : null}</p>}
         <p className="note">Next: retirements, then player development over the summer, the draft, contract decisions and free agency – one step at a time.</p>
@@ -316,7 +316,7 @@ export function RetireStep({ lg, onChange, openPlayer }: any) {
       <div className="panel accent step-head">
         <div className="team-head">
           <h2>Retirements · summer {Y}</h2>
-          <button className="primary" onClick={() => { offDevelop(lg); onChange(); top(); }}>Continue to player development →</button>
+          <button className="primary host-only" onClick={() => { offDevelop(lg); onChange(); top(); }}>Continue to player development →</button>
         </div>
         <p className="note">{rows.length} players have announced their retirement. Some of them could still play and would listen if asked – “Talk him out of it” brings him back for another season (to his team if it has room and he is under contract, otherwise to free agency). Once development starts, the decisions are final.</p>
         {mine.length > 0 && <p className="hint">From your team: {mine.map((r: any) => r.p.name).join(', ')}.</p>}
@@ -376,7 +376,7 @@ export function DevStep({ lg, onChange, children }: any) {
       <div className="panel accent step-head">
         <div className="team-head">
           <h2>Player development · summer {lg.season}</h2>
-          <button className="primary" onClick={() => { initDraft(lg); onChange(); top(); }}>Continue to {hasNew ? 'the expansion draft' : 'the draft lottery'} →</button>
+          <button className="primary host-only" onClick={() => { initDraft(lg); onChange(); top(); }}>Continue to {hasNew ? 'the expansion draft' : 'the draft lottery'} →</button>
         </div>
         <p className="note">Every player changed over the summer: age, potential, last season's play, injuries and some luck. Each line says what moved him most.</p>
       </div>
@@ -424,7 +424,7 @@ export function PreviewStep({ lg, onChange, children }: any) {
       <div className="panel accent step-head">
         <div className="team-head">
           <h2>The {seasonLabel(lg.season)} season is about to start</h2>
-          <button className="primary" onClick={() => { lg.previewOpen = null; onChange(); top(); }}>Start the season ▶</button>
+          <button className="primary host-only" onClick={() => { lg.previewOpen = null; onChange(); top(); }}>Start the season ▶</button>
         </div>
         <p className="note">Rosters are set. Here is how the league looks before opening night.</p>
       </div>
