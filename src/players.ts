@@ -39,27 +39,27 @@ export function realTarget(pid: string, season: number): { z: number[]; mp: numb
 }
 
 /**
- * A season's ratings evened out with the seasons around it: the neighbours (aged to this season with the mean
- * aging curve) count at NEIGHBOUR_W of their minutes, so a one-off career year or a short, hot stretch is
- * softened while a real step up or down (it shows in the next season too) stays.
+ * A season's ratings evened out with the seasons before it (never the ones after): the previous season counts
+ * at PREV_W[0] of its minutes, the one before at PREV_W[1], each aged to this season with the mean aging curve –
+ * so a one-off career year or a short, hot stretch is softened, while a real step up still shows.
  */
-export const NEIGHBOUR_W = 0.5;
+export const PREV_W = [0.5, 0.25];
 const smoothCache = new Map<string, number[]>();
 export function smoothZ(pid: string, season: number): number[] {
   const key = pid + '|' + season;
   const hit = smoothCache.get(key); if (hit) return hit;
   const hp = H.players[pid];
   const own = hp.s.find(x => x[0] === season)!;
-  const born = birthYear(hp.b);
-  const age = Math.floor(season + 1 / 12 - born);
+  const age = Math.floor(season + 1 / 12 - birthYear(hp.b));
   const z = own[7].map(v => v * own[3]);
   let w = own[3];
-  for (const dy of [-1, 1]) {
-    const r = hp.s.find(x => x[0] === season + dy);
+  for (let k = 1; k <= PREV_W.length; k++) {
+    const r = hp.s.find(x => x[0] === season - k);
     if (!r || r[3] <= 0) continue;
-    const ww = NEIGHBOUR_W * Math.min(r[3], Math.max(own[3], 500) * 1.5);
-    const ai = agingIndex(dy < 0 ? age - 1 : age);
-    for (let i = 0; i < NK; i++) { const m = H.aging[H.keys[i]].mean[ai]; z[i] += ww * (r[7][i] + (dy < 0 ? m : -m)); }
+    const ww = PREV_W[k - 1] * Math.min(r[3], Math.max(own[3], 500) * 1.5);
+    const zz = r[7].slice();
+    for (let a = age - k; a < age; a++) { const ai = agingIndex(a); for (let i = 0; i < NK; i++) zz[i] += H.aging[H.keys[i]].mean[ai]; }
+    for (let i = 0; i < NK; i++) z[i] += ww * zz[i];
     w += ww;
   }
   const out = w > 0 ? z.map(v => v / w) : own[7].slice();
