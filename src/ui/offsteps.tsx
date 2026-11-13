@@ -10,6 +10,7 @@ import { offStep, offRetire, offDevelop, unretire, initDraft } from '../league/o
 import { SortTable } from './sorttable';
 import { injName } from '../league/injuries';
 import { posNum } from '../engine/game';
+import { canRun } from '../league/humans';
 
 const seasonLabel = (s: number) => `${s - 1}–${String(s).slice(2)}`;
 const top = () => { try { window.scrollTo({ top: 0 }); } catch { /* */ } };
@@ -306,7 +307,7 @@ export function RetireStep({ lg, onChange, openPlayer }: any) {
     { key: 'apg', label: 'APG', get: (r: any) => r.c.apg, fmt: (v: any) => v.toFixed(1) },
     { key: 'hon', label: 'Honors', left: true, get: (r: any) => r.c.rings * 100 + r.c.mvp * 10 + r.c.allLg, fmt: (_: any, r: any) => <span className="dim small-t">{[r.c.rings ? `🏆 ${r.c.rings}` : '', r.c.mvp ? `${r.c.mvp}× MVP` : '', r.c.allLg ? `${r.c.allLg}× All-League` : ''].filter(Boolean).join(' · ') || '–'}</span> },
     { key: 'why', label: 'Why / history', left: true, get: (r: any) => r.why, fmt: (v: any, r: any) => <>{WHY[v] ?? v}{r.p.injury > 0 ? <span className="neg"> · injured ({r.p.injury} games left)</span> : null}<br /><span className="dim small-t">{vsReality(r.c, Y)}</span></> },
-    { key: 'act', label: '', get: (r: any) => (r.undone ? 2 : r.back ? 1 : 0), fmt: (_: any, r: any) => r.undone ? <span className="chip tiny">coming back</span> : r.back ? <button className="small" onClick={() => { const x = unretire(lg, r.pid); setMsg(x.msg); onChange(); }}>Talk him out of it</button> : <span className="dim small-t">final</span> },
+    { key: 'act', label: '', get: (r: any) => (r.undone ? 2 : r.back ? 1 : 0), fmt: (_: any, r: any) => r.undone ? <span className="chip tiny">coming back</span> : r.back ? (lg.commish && canRun(lg) ? <button className="small" onClick={() => { const x = unretire(lg, r.pid); setMsg(x.msg); onChange(); }}>Talk him out of it</button> : <span className="dim small-t" title="Only the commissioner can bring a player back – turn on Commissioner mode">could return</span>) : <span className="dim small-t">final</span> },
   ];
   const mine = rows.filter((r: any) => r.tid && r.tid === lg.userTid);
   const legends = rows.filter((r: any) => r.c.hof || r.c.mvp || r.c.peak >= 90).sort((a: any, b: any) => b.c.peak - a.c.peak).slice(0, 4);
@@ -318,7 +319,8 @@ export function RetireStep({ lg, onChange, openPlayer }: any) {
           <h2>Retirements · summer {Y}</h2>
           <button className="primary host-only" onClick={() => { offDevelop(lg); onChange(); top(); }}>Continue to player development →</button>
         </div>
-        <p className="note">{rows.length} players have announced their retirement. Some of them could still play and would listen if asked – “Talk him out of it” brings him back for another season (to his team if it has room and he is under contract, otherwise to free agency). Once development starts, the decisions are final.</p>
+        <p className="note">{rows.length} players have announced their retirement. Some of them could still play and would listen if asked – the commissioner's “Talk him out of it” brings him back for another season (to his team if it has room and he is under contract, otherwise to free agency). Once development starts, the decisions are final.</p>
+        <label className="commish host-only"><input type="checkbox" checked={!!lg.commish} onChange={e => { lg.commish = e.target.checked; onChange(); }} /> Commissioner mode – only the commissioner can talk a player out of retiring</label>
         {mine.length > 0 && <p className="hint">From your team: {mine.map((r: any) => r.p.name).join(', ')}.</p>}
         {msg && <p className="hint" role="status">{msg}</p>}
       </div>
