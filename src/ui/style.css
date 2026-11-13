@@ -962,3 +962,6 @@ body.online-player .host-only { display: none !important; }
 .min-in::-webkit-inner-spin-button { opacity: .4; }
 .mg-min, td .chip.on-clock { } td .link + .chip { margin-left: 6px; }
 .tabs .back-btn { font-weight: 700; color: var(--accent); display: inline-flex; align-items: center; gap: 4px; }
+.back-top { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--accent); font-size: 1.3rem; font-weight: 800; line-height: 1; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; padding: 0; }
+.back-top:hover:not(:disabled) { border-color: var(--accent); }
+.back-top:disabled { color: var(--muted); opacity: .45; cursor: default; }

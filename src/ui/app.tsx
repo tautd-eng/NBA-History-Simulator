@@ -285,6 +285,7 @@ function App() {
     <div className="shell">
       <header className="top">
         <div className="brand">
+          <button className="back-top" onClick={goBack} disabled={depth === 0} aria-label="Back to the previous screen" title={depth ? 'Back to the previous screen (the browser\'s Back works too)' : 'Nothing to go back to yet'}>←</button>
           <span className="ball" aria-hidden="true"></span>
           <div>
             <div className="name">NBA History Simulator</div>
@@ -296,7 +297,6 @@ function App() {
       </header>
       {octx && <OnlineBar lg={lg} openPanel={() => setShowOnline(true)} onLeave={() => { setSlot(newSlotId()); setLg(null); }} />}
       <nav className="tabs" aria-label="Sections">
-        {depth > 0 && <button className="back-btn" onClick={goBack} aria-label="Back" title="Back to the previous screen (or the browser's Back)"><span aria-hidden="true">←</span><span className="tl">Back</span></button>}
         {tabsFor(lg).map(([k, l, main]) => (
           <button key={k} className={`${tab === k ? 'on' : ''} ${main ? '' : 'sec'}`} onClick={() => { go(k); setMore(false); }} aria-label={l}><TabIcon k={k} /><span className="tl">{l}</span></button>
         ))}
