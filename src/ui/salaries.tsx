@@ -38,7 +38,7 @@ export function SalaryView({ lg, openPlayer, openTeam }: any) {
 function TeamSalary({ lg, tid, openPlayer, openTeam }: any) {
   const t = lg.teams[tid];
   const S = lg.season, YRS = [S, S + 1, S + 2, S + 3, S + 4];
-  const ps = t.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
+  const ps = t.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z, b.id) - ovrOf(a.z, a.id));
   const pay = payroll(lg, tid), hc = hardCap(lg);
   const on = (p: any, s: number) => s <= p.contract.exp;
   const opt = (p: any, s: number) => p.contract.opts?.find((o: any) => o.s === s)?.k;
@@ -47,7 +47,7 @@ function TeamSalary({ lg, tid, openPlayer, openTeam }: any) {
   const after = (p: any) => (p.contract.rookie ? 'RFA' : 'UFA');
   const fmtS = (x: number, s: number) => money(x, s);
   const rows: (string | number)[][] = [['Player', 'Pos', 'Age', 'OVR', ...YRS.map(seasonLabel)],
-    ...ps.map((p: any) => [p.name, p.pos, ageIn(p, S), ovrOf(p.z), ...YRS.map(s => on(p, s) ? pc(p.contract.sal) + (opt(p, s) ? ` (${opt(p, s)} option)` : '') : (s === p.contract.exp + 1 ? after(p) : ''))]),
+    ...ps.map((p: any) => [p.name, p.pos, ageIn(p, S), ovrOf(p.z, p.id), ...YRS.map(s => on(p, s) ? pc(p.contract.sal) + (opt(p, s) ? ` (${opt(p, s)} option)` : '') : (s === p.contract.exp + 1 ? after(p) : ''))]),
     ...dead.map((d: any) => [`${lg.players[d.pid]?.name ?? d.pid} (released)`, '', '', '', ...YRS.map(s => (s <= d.exp ? pc(d.sal) : ''))]),
     ['Total', '', '', '', ...YRS.map(s => pc(total(s)))]];
   return (
@@ -64,7 +64,7 @@ function TeamSalary({ lg, tid, openPlayer, openTeam }: any) {
         <tbody>
           {ps.map((p: any) => <tr key={p.id} className={tid === lg.userTid ? '' : ''}>
             <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button>{p.contract.rookie ? <span className="chip tiny" title="Rookie contract – a restricted free agent when it ends">R</span> : null}</td>
-            <td className="dim">{p.pos}</td><td>{ageIn(p, S)}</td><td>{ovrOf(p.z)}</td>
+            <td className="dim">{p.pos}</td><td>{ageIn(p, S)}</td><td>{ovrOf(p.z, p.id)}</td>
             {YRS.map(s => {
               const o = opt(p, s);
               return <td key={s} className={on(p, s) ? `sal ${o ? 'opt-' + o : p.contract.rookie ? 'rk' : ''}` : 'dim'} title={o ? `${o === 'team' ? 'Team' : 'Player'} option` : undefined}>

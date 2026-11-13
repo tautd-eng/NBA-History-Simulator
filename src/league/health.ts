@@ -221,7 +221,7 @@ export function develop(lg: League, rng: Rng) {
     const ai = agingIndex(age - dev.peak);
     const z0 = p.z.slice();
     // the summer's change by cause, in displayed OVR points (for the progression screen)
-    const sh = () => shownOvr(p.z);
+    const sh = () => shownOvr(p.z, p.id);
     const pre = p.ovrHist?.find(h => h[0] === Y);
     const s0 = sh();
     const why: any = { s: Y + 1, inj: pre ? s0 - histShown(pre) : 0, perf: 0, trend: 0, luck: 0, cap: 0, destiny: 0, total: 0 };

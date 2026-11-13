@@ -398,7 +398,7 @@ export function DecisionsBoard({ lg, openPlayer }: any) {
     return x.kind === 'resign' ? 'Re-signed' : x.kind === 'qo' ? 'Qualifying offer' : x.kind === 'leave' ? 'Let go' : x.kind;
   };
   const rows = (fa?.log ?? []).filter((x: any) => x.st === 0 && x.pid && lg.players[x.pid] && ['option', 'resign', 'qo', 'leave'].includes(x.kind))
-    .map((x: any, i: number) => ({ ...x, key: i, p: lg.players[x.pid], o: ovrOf(lg.players[x.pid].z) }))
+    .map((x: any, i: number) => ({ ...x, key: i, p: lg.players[x.pid], o: ovrOf(lg.players[x.pid].z, lg.players[x.pid].id) }))
     .filter((r: any) => all || r.o >= 74 || r.tid === lg.userTid);
   const cols = [
     { key: 'team', label: 'Team', left: true, get: (r: any) => lg.teams[r.tid]?.abbr ?? '', fmt: (_: any, r: any) => <TL tid={r.tid} abbr /> },

@@ -53,7 +53,7 @@ export function assessTeam(lg: League, t: Team, rankFrac?: number): TeamPlan {
     rankFrac = ts.findIndex(r => r.x === t) / Math.max(1, ts.length - 1);
   }
   const all = people(lg, t);
-  const ovr = new Map(all.map(p => [p.id, shownOvr(p.z)]));
+  const ovr = new Map(all.map(p => [p.id, shownOvr(p.z, p.id)]));
   const sorted = [...all].sort((a, b) => ovr.get(b.id)! - ovr.get(a.id)!);
   const third = sorted[2] ? ovr.get(sorted[2].id)! : 0;
   // core: the stars, and the best players of a team that is good enough to build around them

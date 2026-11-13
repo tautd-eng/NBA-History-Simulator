@@ -779,7 +779,7 @@ export function lateMarket(lg: League, rng: Rng) {
     .sort((a, b) => playerValue(b, N) - playerValue(a, N));
   for (const p of pool) {
     // a star nobody had room for: a team makes the room (trading or releasing contracts it can do without)
-    const best = bestBid(lg, p, rng, undefined, shownOvr(p.z) >= 82);
+    const best = bestBid(lg, p, rng, undefined, shownOvr(p.z, p.id) >= 82);
     if (!best) continue;
     const from = prevTeam(p);
     delete p.cut;
@@ -1044,7 +1044,7 @@ function teamOffers(lg: League, p: Player, stage: number, rng: { next(): number;
     if (t.strategy === 'rebuild' && ageIn(p, N) > 30 && sal > MIN_SAL * 2.5) continue;
     // a tanking team does not pay veterans – it keeps the cap and the minutes for youth
     // (a star still in his prime is not a veteran to avoid – he is the kind of player a rebuild is for)
-    if (t.mode === 'tank' && ageIn(p, N) > 27 && sal > MIN_SAL * 2.5 && !(shownOvr(p.z) >= 85 && ageIn(p, N) <= 30)) continue;
+    if (t.mode === 'tank' && ageIn(p, N) > 27 && sal > MIN_SAL * 2.5 && !(shownOvr(p.z, p.id) >= 85 && ageIn(p, N) <= 30)) continue;
     // the player picks the offer he likes best: money against his ask, plus the team's appeal to him
     const score = offerUtility(lg, p, t.tid, sal, ask, yrsOffer) + 0.06 * rng.normal();
     offers.push({ t, sal, score, mle, cut, needRoom });
@@ -1329,7 +1329,7 @@ function retirements(lg: League, rng: Rng, notes: string[]): RetRow[] {
   const posRank = new Map<string, number>();
   for (const g of ['g', 'f', 'c']) {
     Object.values(lg.players).filter(p => !p.retired && !p.prospect && !(p as any).stash && grp(p) === g)
-      .sort((a, b) => shownOvr(b.z) - shownOvr(a.z)).forEach((p, i) => posRank.set(p.id, i + 1));
+      .sort((a, b) => shownOvr(b.z, b.id) - shownOvr(a.z, a.id)).forEach((p, i) => posRank.set(p.id, i + 1));
   }
   for (const p of Object.values(lg.players)) {
     if (p.retired || (p as any).stash || p.prospect) continue;
@@ -1341,7 +1341,7 @@ function retirements(lg: League, rng: Rng, notes: string[]): RetRow[] {
     const base0 = age < 28 ? 1 / (1 + Math.exp(-((age - 35.5) * 0.9 + (46 - ovr) * 0.09)))
       : 1 / (1 + Math.exp(-(0.22 * (age - 45.3) - 0.47 * b + (age > 39 ? 0.6 * (age - 39) : 0))));
     // a rotation-calibre player in his twenties practically never walks away on his own
-    const shNow = shownOvr(p.z);
+    const shNow = shownOvr(p.z, p.id);
     const base = shNow >= 74 && age < 32 ? base0 * (age < 30 ? 0.1 : 0.3) : base0;
     let pr = base, hist = 0, uns = 0;
     const lr = lastRealSeason(p.id);
@@ -1352,7 +1352,7 @@ function retirements(lg: League, rng: Rng, notes: string[]): RetRow[] {
       const endedInReality = last <= Y;
       // destiny ends real careers on time, but a young player who is good enough in this league to keep
       // a job rarely walks away: the pull of history fades with youth and quality
-      const sh = shownOvr(p.z);
+      const sh = shownOvr(p.z, p.id);
       // (a star in his prime does not walk away because his real career had a gap)
       const w = age < 30 ? (sh >= 86 ? 0.01 : sh >= 78 ? 0.06 : sh >= 74 ? 0.15 : sh >= 70 ? 0.4 : 0.8)
         : age < 33 ? (sh >= 86 ? 0.06 : sh >= 78 ? 0.25 : sh >= 74 ? 0.45 : 0.8) : 1;
@@ -1364,7 +1364,7 @@ function retirements(lg: League, rng: Rng, notes: string[]): RetRow[] {
       const lastPlayed = Math.max(p.entered, ...p.career.map(c => c.s));
       // a player who sat out hurt, or who is plainly good enough for a job, comes back instead
       const hurt = (p.injHist ?? []).some(h => h.s >= Y - 1 && h.g >= 30) || p.injury > 0;
-      const sh = shownOvr(p.z);
+      const sh = shownOvr(p.z, p.id);
       if (Y - lastPlayed >= 1 && !hurt && (sh < 72 || (age >= 33 && sh < 76))) { uns = (age >= 30 ? 0.7 : 0.35) * (sh >= 70 ? 0.5 : 1); pr = Math.max(pr, uns); }
     }
     // a player who is still among the best at his position does not walk away: top 20 practically never
@@ -1375,7 +1375,7 @@ function retirements(lg: League, rng: Rng, notes: string[]): RetRow[] {
     if (rng.chance(pr)) {
       (p as any).retWhy = uns >= Math.max(hist, base) ? 'unsigned' : hist > base ? 'history' : 'age';
       if (bpmOf(p.z) > 3 || p.awards.some(a => a.includes('MVP'))) famous.push(tagOf(p, Y));
-      const why = (p as any).retWhy, o = shownOvr(p.z);
+      const why = (p as any).retWhy, o = shownOvr(p.z, p.id);
       // would he come back if asked? a player who can still play and did not leave because nobody wanted him
       const back = why !== 'unsigned' && p.injury < 40 && ((why === 'history' && o >= 70 && age <= 38) || (o >= 74 && age <= 37));
       rows.push({ pid: p.id, tid: p.tid, age, ovr: o, why, back, rk, pr: Math.round(pr * 1000) / 1000 } as any);
@@ -1424,7 +1424,7 @@ function aiTeamOption(lg: League, t: Team, p: Player, Y: number, log: FreeAgency
   const o = p.contract.opts?.find(x => x.s === N && x.k === 'team');
   if (!o) return;
   const worth = worthKeeping(lg, p, p.contract.sal, N, t.strategy);
-  const mustKeep = (ageIn(p, N) <= 25 && shownOvr(p.z) >= 76) || keeps(lg, t.tid, p);
+  const mustKeep = (ageIn(p, N) <= 25 && shownOvr(p.z, p.id) >= 76) || keeps(lg, t.tid, p);
   const fits = () => hardCap(lg) - pay();
   const keep = worth && (fits() >= 0 || clearRoom(lg, t, fits, worthTo(lg, p, t.tid) * (mustKeep ? 1.5 : 1), N, `to keep ${p.name} (team option)`) || mustKeep);
   if (keep) {

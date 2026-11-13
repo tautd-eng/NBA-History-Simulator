@@ -47,9 +47,9 @@ function h2h(lg: any, a: string, b: string) {
 
 function TeamSide({ lg, tid, seed, row }: any) {
   const t = lg.teams[tid];
-  const ps = t.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
+  const ps = t.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z, b.id) - ovrOf(a.z, a.id));
   const stars = ps.filter((p: any) => !(p.injury > 0)).slice(0, 3);
-  const hurt = ps.filter((p: any) => p.injury > 0 && ovrOf(p.z) >= 70);
+  const hurt = ps.filter((p: any) => p.injury > 0 && ovrOf(p.z, p.id) >= 70);
   const per = (p: any, k: string) => (p.cur.gp ? (k === 'reb' ? (p.cur.orb + p.cur.drb) : p.cur[k]) / p.cur.gp : 0).toFixed(1);
   const rk = (k: string) => row?.[k + 'Rk'] ? <span className="dim"> ({row[k + 'Rk']})</span> : null;
   return (
@@ -60,7 +60,7 @@ function TeamSide({ lg, tid, seed, row }: any) {
         {row.ortg != null && <><span>ORtg {row.ortg.toFixed(1)}{rk('ortg')}</span><span>DRtg {row.drtg.toFixed(1)}{rk('drtg')}</span><span>Net {(row.net > 0 ? '+' : '') + row.net.toFixed(1)}{rk('net')}</span></>}
       </div>}
       <ul className="pv-players">{stars.map((p: any) => (
-        <li key={p.id}><PFace lg={lg} p={p} size={24} /><span><PL pid={p.id} /> <span className="dim">{p.pos} · OVR {ovrOf(p.z)}</span><br /><span className="dim small-t">{per(p, 'pts')} pts · {per(p, 'reb')} reb · {per(p, 'ast')} ast</span></span></li>
+        <li key={p.id}><PFace lg={lg} p={p} size={24} /><span><PL pid={p.id} /> <span className="dim">{p.pos} · OVR {ovrOf(p.z, p.id)}</span><br /><span className="dim small-t">{per(p, 'pts')} pts · {per(p, 'reb')} reb · {per(p, 'ast')} ast</span></span></li>
       ))}</ul>
       {hurt.length > 0 && <p className="pv-inj">Injured: {hurt.map((p: any, i: number) => <span key={p.id}>{i ? ', ' : ''}<PL pid={p.id} /> <span className="dim">({p.inj ? injName(p.inj.k) : 'injury'}, ~{p.injury} g)</span></span>)}</p>}
     </div>
@@ -194,16 +194,16 @@ function seriesStory(lg: any, s: any, rh: any, rl: any, odds: any, wa: number, w
   }
   out.push('¶');
   // stars
-  const top = (tid: string) => T(tid).roster.map((pid: string) => lg.players[pid]).filter((p: any) => !(p.injury > 0)).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
+  const top = (tid: string) => T(tid).roster.map((pid: string) => lg.players[pid]).filter((p: any) => !(p.injury > 0)).sort((a: any, b: any) => ovrOf(b.z, b.id) - ovrOf(a.z, a.id));
   const th = top(s.hi), tl = top(s.lo);
   const per = (p: any) => { const c = p.cur; if (!c.gp) return ''; const pts = c.pts / c.gp, reb = (c.orb + c.drb) / c.gp, ast = c.ast / c.gp; const parts = [`${pts.toFixed(1)} pts`]; if (reb >= 8) parts.push(`${reb.toFixed(1)} reb`); if (ast >= 6) parts.push(`${ast.toFixed(1)} ast`); return ` (${parts.join(', ')})`; };
   if (th[0] && tl[0]) {
     out.push(`The marquee duel: ${th[0].name}${per(th[0])} against ${tl[0].name}${per(tl[0])}.`);
-    const stars = (xs: any[]) => xs.filter(p => ovrOf(p.z) >= 88).length;
+    const stars = (xs: any[]) => xs.filter(p => ovrOf(p.z, p.id) >= 88).length;
     const sh = stars(th), sl2 = stars(tl);
     if (sh >= 2 && sl2 <= 1) out.push(`${ab(s.hi)} have more star power – ${th.slice(0, sh).map(p => short(p.name)).join(', ')} can each take over a game.`);
     else if (sl2 >= 2 && sh <= 1) out.push(`${ab(s.lo)} have more star power – ${tl.slice(0, sl2).map(p => short(p.name)).join(', ')} can each take over a game.`);
-    const depth = (xs: any[]) => xs.slice(5, 9).reduce((a, p) => a + ovrOf(p.z), 0) / Math.max(1, Math.min(4, xs.length - 5));
+    const depth = (xs: any[]) => xs.slice(5, 9).reduce((a, p) => a + ovrOf(p.z, p.id), 0) / Math.max(1, Math.min(4, xs.length - 5));
     const dH = depth(th), dL = depth(tl);
     if (Math.abs(dH - dL) >= 3) out.push(`The bench favours ${ab(dH > dL ? s.hi : s.lo)}, who can keep the pressure on when the starters rest.`);
   }
@@ -216,7 +216,7 @@ function seriesStory(lg: any, s: any, rh: any, rl: any, odds: any, wa: number, w
   }
   if (wa + wb > 0) out.push(wa === wb ? `They split the season series ${wa}–${wb}.` : `${ab(wa > wb ? s.hi : s.lo)} won the season series ${Math.max(wa, wb)}–${Math.min(wa, wb)}${Math.min(wa, wb) === 0 && Math.max(wa, wb) >= 2 ? ' without a loss' : ''}.`);
   // injuries
-  const hurt = (tid: string) => T(tid).roster.map((pid: string) => lg.players[pid]).filter((p: any) => p.injury > 0 && ovrOf(p.z) >= 52).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
+  const hurt = (tid: string) => T(tid).roster.map((pid: string) => lg.players[pid]).filter((p: any) => p.injury > 0 && ovrOf(p.z, p.id) >= 52).sort((a: any, b: any) => ovrOf(b.z, b.id) - ovrOf(a.z, a.id));
   for (const tid of [s.hi, s.lo]) {
     const h = hurt(tid);
     const left = s.bestOf - s.hw - s.lw;

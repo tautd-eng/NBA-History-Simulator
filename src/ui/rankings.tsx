@@ -67,13 +67,13 @@ function AllPlayers({ lg, openPlayer, openTeam }: any) {
     .map((p: any) => ({ key: p.id, p, l: inSeason ? p.cur : [...p.career].reverse().find((c: any) => !c.po) })),
   [lg, who, team, pos, q, age, S, lg.trades?.length, lg.fa?.log.length, lg.day, lg.phase]);
   const cols = [
-    { key: 'rank', label: '#', get: (r: any) => -ovrOf(r.p.z), fmt: () => '' },
+    { key: 'rank', label: '#', get: (r: any) => -ovrOf(r.p.z, r.p.id), fmt: () => '' },
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <><PFace lg={lg} p={r.p} /><button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button></> },
     { key: 'team', label: 'Team', left: true, get: (r: any) => (r.p.tid ? lg.teams[r.p.tid].abbr : 'FA'), title: 'FA – free agent', fmt: (v: any, r: any) => r.p.tid ? <button className="link" onClick={() => openTeam(r.p.tid)}>{v}</button> : <span className="dim">FA</span> },
     { key: 'pos', label: 'Pos', get: (r: any) => posNum(r.p.pos), fmt: (_: any, r: any) => <span className="dim">{r.p.pos}</span> },
     { key: 'ht', label: 'Ht', title: 'Height, cm', get: (r: any) => Math.round(r.p.ht * 2.54) },
     { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, S) },
-    { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
+    { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z, r.p.id), fmt: (v: any) => <Ovr v={v} /> },
     { key: 'pot', label: 'Pot.', title: 'Potential – the level he can reach', get: (r: any) => potOf(r.p, S) },
     { key: 'off', label: 'Off', title: 'Offensive attribute rating (0–100, like OVR)', get: (r: any) => offRating(r.p) },
     { key: 'def', label: 'Def', title: 'Defensive attribute rating (0–100, like OVR)', get: (r: any) => defRating(r.p) },
@@ -82,7 +82,7 @@ function AllPlayers({ lg, openPlayer, openTeam }: any) {
     { key: 'sal', label: 'Salary', get: (r: any) => (r.p.tid ? r.p.contract.sal : null), fmt: (v: any) => (v == null ? '–' : moneyOf(v, S)) },
   ];
   // rank column: position by OVR within the filtered list
-  const order = [...rows].sort((a: any, b: any) => ovrOf(b.p.z) - ovrOf(a.p.z));
+  const order = [...rows].sort((a: any, b: any) => ovrOf(b.p.z, b.p.id) - ovrOf(a.p.z, a.p.id));
   const rankOf = new Map(order.map((r: any, i: number) => [r.key, i + 1]));
   cols[0].fmt = (_: any, r: any) => <span className="dim">{rankOf.get(r.key)}</span>;
   return (
@@ -118,7 +118,7 @@ export function teamRows(lg: any) {
   const inSeason = lg.phase === 'regular' || lg.phase === 'playoffs';
   const act = Object.values(lg.teams).filter((t: any) => t.active);
   const rows = act.map((t: any) => {
-    const ps = t.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
+    const ps = t.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z, b.id) - ovrOf(a.z, a.id));
     const top = ps.slice(0, 8);
     const wsum = W8.slice(0, top.length).reduce((a, b) => a + b, 0) || 1;
     const wavg = (f: (p: any) => number) => top.reduce((a: number, p: any, i: number) => a + f(p) * W8[i], 0) / wsum;
@@ -134,9 +134,9 @@ export function teamRows(lg: any) {
     const w = Math.min(0.75, gp / 30);
     const power = net != null ? (1 - w) * strength + w * net : strength;
     return {
-      key: t.tid, t, star: ps[0], ovr: wavg(p => ovrOf(p.z)), off: wavg(offRating), def: wavg(defRating),
+      key: t.tid, t, star: ps[0], ovr: wavg(p => ovrOf(p.z, p.id)), off: wavg(offRating), def: wavg(defRating),
       ortg, drtg, net, pace, power, strength, gp, w: t.w, l: t.l, pay: payroll(lg, t.tid), age: wavg(p => ageIn(p, S)),
-      depth: ps.slice(5, 10).reduce((a: number, p: any) => a + ovrOf(p.z), 0) / Math.max(1, Math.min(5, ps.length - 5)),
+      depth: ps.slice(5, 10).reduce((a: number, p: any) => a + ovrOf(p.z, p.id), 0) / Math.max(1, Math.min(5, ps.length - 5)),
     };
   });
   const rank = (k: string, asc = false) => {
@@ -168,7 +168,7 @@ function PowerRankings({ lg, openTeam, openPlayer }: any) {
     ] : []),
     { key: 'depth', label: 'Depth', title: 'Average OVR of players 6–10', get: (r: any) => r.depth, fmt: (v: any) => Math.round(v) },
     { key: 'age', label: 'Age', title: 'Average age (by minutes)', asc: true, get: (r: any) => r.age, fmt: f1 },
-    { key: 'star', label: 'Best player', left: true, get: (r: any) => (r.star ? ovrOf(r.star.z) : 0), fmt: (_: any, r: any) => r.star ? <><button className="link" onClick={() => openPlayer(r.star.id)}>{r.star.name}</button> <span className="dim">{ovrOf(r.star.z)}</span></> : '–' },
+    { key: 'star', label: 'Best player', left: true, get: (r: any) => (r.star ? ovrOf(r.star.z, r.star.id) : 0), fmt: (_: any, r: any) => r.star ? <><button className="link" onClick={() => openPlayer(r.star.id)}>{r.star.name}</button> <span className="dim">{ovrOf(r.star.z, r.star.id)}</span></> : '–' },
     { key: 'pay', label: 'Payroll', get: (r: any) => r.pay, fmt: (v: any) => `${Math.round(v * 100)}%` },
   ];
   return (

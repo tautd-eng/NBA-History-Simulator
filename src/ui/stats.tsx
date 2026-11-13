@@ -116,7 +116,7 @@ export function StatsView({ lg, openPlayer, openTeam }: any) {
       { key: 'name', label: 'Player', left: true, asc: true, get: (r: any) => r.p.name, fmt: (_: any, r: any) => name(r) },
       { key: 'tid', label: 'Team', left: true, asc: true, get: (r: any) => tAbbr(r.tid) },
       { key: 'age', label: 'Age', get: (r: any) => r.age },
-      { key: 'ovr', label: 'OVR', get: (r: any) => (S === lg.season ? ovrOf(r.p.z) : (r.l.ovr != null ? shownFromRaw(r.l.ovr) : null)) },
+      { key: 'ovr', label: 'OVR', get: (r: any) => (S === lg.season ? ovrOf(r.p.z, r.p.id) : (r.l.ovr != null ? shownFromRaw(r.l.ovr) : null)) },
       { key: 'gp', label: 'GP', get: (r: any) => r.l.gp },
       { key: 'min', label: 'Min', get: v('min'), fmt: pg ? f1 : f0 },
       { key: 'pts', label: 'Pts', get: v('pts'), fmt: pg ? f1 : f0 },

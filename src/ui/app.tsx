@@ -1042,7 +1042,7 @@ function News({ lg }: any) {
 function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
   const t = lg.teams[tid] ?? Object.values(lg.teams)[0];
   const teams = Object.values(lg.teams).filter((x: any) => x.active).sort((a: any, b: any) => a.name.localeCompare(b.name));
-  const roster = t.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z));
+  const roster = t.roster.map((pid: string) => lg.players[pid]).sort((a: any, b: any) => ovrOf(b.z, b.id) - ovrOf(a.z, a.id));
   const pay = payroll(lg, t.tid);
   const strat = t.mode ? { allin: 'All-in', tank: 'Tanking', rising: 'Rising', capclear: 'Clearing salary', retool: 'Retooling' }[t.mode] : { contend: 'Contender', middle: 'Middle of the pack', rebuild: 'Rebuilding' }[t.strategy];
   const titles = lg.history.filter((s: any) => s.champion === t.tid).map((s: any) => s.season);
@@ -1057,7 +1057,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
     { key: 'role', label: 'Role', left: true, asc: true, get: (r: any) => roleOf(r.p.z, r.p.pos).arch.name, fmt: (_: any, r: any) => { const ro = roleOf(r.p.z, r.p.pos); return <><RoleBadge id={ro.arch.id} />{ro.second && <RoleBadge id={ro.second.id} small />}</>; } },
     { key: 'ht', label: 'Ht', title: 'Height, cm', get: (r: any) => Math.round(r.p.ht * 2.54) },
     { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, lg.season) },
-    { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} small /> },
+    { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z, r.p.id), fmt: (v: any) => <Ovr v={v} small /> },
     { key: 'pot', label: 'Pot.', title: 'Potential', get: (r: any) => potOf(r.p, lg.season) },
     { key: 'off', label: 'Off', title: 'Offensive attribute rating (0–100, like OVR)', get: (r: any) => offRating(r.p) },
     { key: 'def', label: 'Def', title: 'Defensive attribute rating (0–100, like OVR)', get: (r: any) => defRating(r.p) },
@@ -1111,7 +1111,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
                     return <span title={`${ro.arch.name} – ${ro.arch.blurb}${job ? ` (${job})` : ''}`}><RoleBadge id={ro.arch.id} />{ro.second && <RoleBadge id={ro.second.id} />}</span>;
                   })()}</td>
                   <td>{ageIn(p, lg.season)}</td>
-                  <td><Ovr v={ovrOf(p.z)} small /></td>
+                  <td><Ovr v={ovrOf(p.z, p.id)} small /></td>
                   <td>{p.cur.gp || '–'}</td>
                   <td>{per(p.cur.min, p.cur.gp)}</td>
                   <td>{per(p.cur.pts, p.cur.gp)}</td>
@@ -1138,7 +1138,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
 function OverseasRights({ lg, tid, openPlayer }: any) {
   const [msg, setMsg] = useState('');
   const [, bump] = useState(0);
-  const ps = (Object.values(lg.players) as any[]).filter(p => p.stash && p.rights === tid && !p.retired).sort((a, b) => ovrOf(b.z) - ovrOf(a.z));
+  const ps = (Object.values(lg.players) as any[]).filter(p => p.stash && p.rights === tid && !p.retired).sort((a, b) => ovrOf(b.z, b.id) - ovrOf(a.z, a.id));
   if (!ps.length) return null;
   const mine = tid === lg.userTid;
   return (
@@ -1149,7 +1149,7 @@ function OverseasRights({ lg, tid, openPlayer }: any) {
         <tbody>{ps.map(p => (
           <tr key={p.id}>
             <td className="l"><PFace lg={lg} p={p} /><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button></td>
-            <td>{p.pos}</td><td>{ageIn(p, lg.season)}</td><td><Ovr v={ovrOf(p.z)} /></td><td>{potOf(p, lg.season)}</td>
+            <td>{p.pos}</td><td>{ageIn(p, lg.season)}</td><td><Ovr v={ovrOf(p.z, p.id)} /></td><td>{potOf(p, lg.season)}</td>
             <td className="l dim">{p.draft ? `${p.draft.year}, No. ${p.draft.pick}` : '–'}</td>
             <td className="l dim">{p.stash - 1}–{String(p.stash).slice(2)}</td>
             {mine && <td><button className="small primary" onClick={() => { const r = run(lg, { t: 'recall', pid: p.id }); setMsg(r.msg); bump(x => x + 1); if (r.ok) saveLeague(lg); }}>Bring over now</button></td>}
@@ -1264,7 +1264,7 @@ function Drafts({ lg, openPlayer, openTeam, onChange }: any) {
     return {
       key: d.pid, d, p, gp, seasons: reg.length,
       ppg: gp ? sum('pts') / gp : NaN, rpg: gp ? (sum('orb') + sum('drb')) / gp : NaN, apg: gp ? sum('ast') / gp : NaN,
-      peak: p.ovrHist.length ? shownFromRaw(Math.max(...p.ovrHist.map((o: any) => o[1]))) : ovrOf(p.z), now: ovrOf(p.z),
+      peak: p.ovrHist.length ? shownFromRaw(Math.max(...p.ovrHist.map((o: any) => o[1]))) : ovrOf(p.z, p.id), now: ovrOf(p.z, p.id),
       awards: p.awards.filter((a: string) => !/(Champion|čempionas)/.test(a)).length, titles: p.awards.filter((a: string) => /(Champion|čempionas)/.test(a)).length,
     };
   });

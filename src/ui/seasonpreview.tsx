@@ -42,7 +42,7 @@ export function makePreview(lg: any) {
     const star = ps[0], second = ps[1];
     const rk = rankOf.get(star?.id) ?? 99;
     const two = second && (rankOf.get(second.id) ?? 99) <= 20;
-    const tag = (p: any) => `${p.name} (${ovrOf(p.z)})`;
+    const tag = (p: any) => `${p.name} (${ovrOf(p.z, p.id)})`;
     if (star && rk <= 5) why.push({ w: 9 - rk, good: true, t: `${tag(star)} – one of the ${rk <= 2 ? 'two' : 'five'} best players in the league${two ? `, with ${tag(second)} beside him` : ''}` });
     else if (star && two) why.push({ w: 5, good: true, t: `Two stars: ${tag(star)} and ${tag(second)}` });
     else if (star && rk <= 15) why.push({ w: 3, good: true, t: `Built around ${tag(star)}` });
@@ -56,12 +56,12 @@ export function makePreview(lg: any) {
     if (depthRank[i] <= 3) why.push({ w: 4, good: true, t: 'One of the deepest benches in the league' });
     else if (depthRank[i] > ts.length - 3) why.push({ w: 3, good: false, t: 'Thin bench – one injury away from trouble' });
     // summer moves
-    const arr = ps.filter((p: any) => { const pt = prevTid(p); return pt && pt !== t.tid; }).filter((p: any) => ovrOf(p.z) >= 82).slice(0, 2);
-    for (const p of arr) why.push({ w: 3 + (ovrOf(p.z) - 82) / 3, good: true, t: `Added ${p.name} (${ovrOf(p.z)}) from ${lg.teams[prevTid(p)]?.abbr ?? '?'}` });
-    const rook = ps.find((p: any) => p.draft?.year === S - 1 && ovrOf(p.z) >= 78 && !prevTid(p));
+    const arr = ps.filter((p: any) => { const pt = prevTid(p); return pt && pt !== t.tid; }).filter((p: any) => ovrOf(p.z, p.id) >= 82).slice(0, 2);
+    for (const p of arr) why.push({ w: 3 + (ovrOf(p.z, p.id) - 82) / 3, good: true, t: `Added ${p.name} (${ovrOf(p.z, p.id)}) from ${lg.teams[prevTid(p)]?.abbr ?? '?'}` });
+    const rook = ps.find((p: any) => p.draft?.year === S - 1 && ovrOf(p.z, p.id) >= 78 && !prevTid(p));
     if (rook) why.push({ w: 2, good: true, t: `Rookie ${rook.name} (No. ${rook.draft.pick} pick) should help right away` });
-    const lost = allPlayers.filter(p => prevTid(p) === t.tid && p.tid !== t.tid && ovrOf(p.z) >= 85).sort(byB).slice(0, 2);
-    for (const p of lost) why.push({ w: 3 + (ovrOf(p.z) - 85) / 3, good: false, t: `Lost ${p.name} (${p.retired ? 'retired' : p.tid ? 'to ' + lg.teams[p.tid].abbr : 'free agent'})` });
+    const lost = allPlayers.filter(p => prevTid(p) === t.tid && p.tid !== t.tid && ovrOf(p.z, p.id) >= 85).sort(byB).slice(0, 2);
+    for (const p of lost) why.push({ w: 3 + (ovrOf(p.z, p.id) - 85) / 3, good: false, t: `Lost ${p.name} (${p.retired ? 'retired' : p.tid ? 'to ' + lg.teams[p.tid].abbr : 'free agent'})` });
     // last season
     const ls = last?.standings.find((x: any) => x.tid === t.tid);
     if (last?.champion === t.tid) why.push({ w: 6, good: true, t: 'Defending champions' });
@@ -81,11 +81,11 @@ export function makePreview(lg: any) {
     // material for the team-by-team write-up
     const xf = ps.filter((p: any) => p !== star && p !== second && ageIn(p, S) <= 23).sort(byB)[0];
     const extra = {
-      core: ps.slice(0, 3).map((p: any) => ({ id: p.id, n: p.name, o: ovrOf(p.z) })),
-      added: arr.map((p: any) => ({ id: p.id, n: p.name, o: ovrOf(p.z), from: lg.teams[prevTid(p)]?.abbr ?? '?' })),
-      lost: lost.map((p: any) => ({ id: p.id, n: p.name, o: ovrOf(p.z), to: p.retired ? 'retired' : p.tid ? lg.teams[p.tid].abbr : 'FA' })),
+      core: ps.slice(0, 3).map((p: any) => ({ id: p.id, n: p.name, o: ovrOf(p.z, p.id) })),
+      added: arr.map((p: any) => ({ id: p.id, n: p.name, o: ovrOf(p.z, p.id), from: lg.teams[prevTid(p)]?.abbr ?? '?' })),
+      lost: lost.map((p: any) => ({ id: p.id, n: p.name, o: ovrOf(p.z, p.id), to: p.retired ? 'retired' : p.tid ? lg.teams[p.tid].abbr : 'FA' })),
       rook: rook ? { id: rook.id, n: rook.name, pick: rook.draft.pick } : null,
-      xf: xf ? { id: xf.id, n: xf.name, o: ovrOf(xf.z), age: ageIn(xf, S) } : null,
+      xf: xf ? { id: xf.id, n: xf.name, o: ovrOf(xf.z, xf.id), age: ageIn(xf, S) } : null,
       mode: t.mode ?? null, strat: t.strategy ?? null, age: Math.round(age * 10) / 10, oR, dR, depthR: depthRank[i], fit,
       allWhy: why.map(x => ({ t: x.t, good: x.good })),
     };

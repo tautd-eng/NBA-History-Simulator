@@ -237,7 +237,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange, findTrades }: 
   const rows = useMemo(() => {
     const out = p.career.filter((c: any) => c.po === po).map((c: any) => ({ key: c.s, s: c.s, tid: c.tid, age: c.age, ovr: c.ovr != null ? shownFromRaw(c.ovr) : null, l: c }));
     const cur = po ? p.curPo : p.cur;
-    if (live && cur.gp) out.push({ key: lg.season, s: lg.season, tid: p.tid, age: ageIn(p, lg.season), ovr: ovrOf(p.z), l: cur, now: true });
+    if (live && cur.gp) out.push({ key: lg.season, s: lg.season, tid: p.tid, age: ageIn(p, lg.season), ovr: ovrOf(p.z, p.id), l: cur, now: true });
     return out;
   }, [pid, po, lg.day]);
   const tot = useMemo(() => {
@@ -300,7 +300,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange, findTrades }: 
         <button className="close ghost" onClick={close} aria-label="Close">✕</button>
         <div className="p-head">
           <button className="face-btn" title="Edit face" onClick={() => setEditFace(!editFace)}><PFace lg={lg} p={p} size={76} /></button>
-          {p.prospect ? <span className="ovr low" title="Overall stays hidden until he is drafted – judge him by his ratings">?</span> : <Ovr v={ovrOf(p.z)} />}
+          {p.prospect ? <span className="ovr low" title="Overall stays hidden until he is drafted – judge him by his ratings">?</span> : <Ovr v={ovrOf(p.z, p.id)} />}
           <div>
             <h2>{p.name}</h2>
             <p className="dim">{p.pos} · {(p.ht * 0.0254).toFixed(2)} m · age {ageIn(p, lg.season)} · {p.tid ? <button className="link" onClick={() => openTeam(p.tid)}>{status}</button> : status}</p>

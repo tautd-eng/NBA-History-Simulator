@@ -28,7 +28,7 @@ export function FantasyRoom({ lg, onChange, onTick = () => {}, openPlayer }: any
   const pool = useMemo(() => fantasyPool(lg)
     .filter((p: any) => pos === 'all' || (pos === 'g' ? posNum(p.pos) <= 2.5 : pos === 'c' ? posNum(p.pos) >= 4.5 : posNum(p.pos) > 2.5 && posNum(p.pos) < 4.5))
     .filter((p: any) => !q || p.name.toLowerCase().includes(q.toLowerCase()))
-    .sort((a: any, b: any) => ovrOf(b.z) - ovrOf(a.z)).slice(0, 120), [f.picks.length, pos, q]);
+    .sort((a: any, b: any) => ovrOf(b.z, b.id) - ovrOf(a.z, a.id)).slice(0, 120), [f.picks.length, pos, q]);
   const R = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
   const SHOW = [0, 1, 4, 6, 7, 10];
   const act = (fn: () => void) => { fn(); onChange(); };
@@ -61,7 +61,7 @@ export function FantasyRoom({ lg, onChange, onTick = () => {}, openPlayer }: any
                 return (
                   <tr key={p.id}>
                     <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button></td>
-                    <td className="dim">{p.pos}</td><td>{ageIn(p, lg.season)}</td><td><b>{ovrOf(p.z)}</b></td>
+                    <td className="dim">{p.pos}</td><td>{ageIn(p, lg.season)}</td><td><b>{ovrOf(p.z, p.id)}</b></td>
                     {SHOW.map(i => <td key={i}>{R(p, i)}</td>)}
                     <td>{myTurn && <button className="small primary" onClick={() => act(() => { run(lg, { t: 'fantasyPick', pid: p.id }); })}>Pick</button>}</td>
                   </tr>
@@ -76,14 +76,14 @@ export function FantasyRoom({ lg, onChange, onTick = () => {}, openPlayer }: any
           <div className="panel">
             <h2>{lg.teams[lg.userTid].name}</h2>
             {mine.length ? (
-              <ul className="news">{mine.map((p: any, i: number) => <li key={p.id}><span className="yr">{f.picks.find((x: any) => x.pid === p.id)?.pick}</span><span>{p.name} <span className="dim">{p.pos} · OVR {ovrOf(p.z)}</span></span></li>)}</ul>
+              <ul className="news">{mine.map((p: any, i: number) => <li key={p.id}><span className="yr">{f.picks.find((x: any) => x.pid === p.id)?.pick}</span><span>{p.name} <span className="dim">{p.pos} · OVR {ovrOf(p.z, p.id)}</span></span></li>)}</ul>
             ) : <p className="note">You haven't picked anyone yet.</p>}
           </div>
         )}
         <div className="panel">
           <h2>Latest picks</h2>
           <ul className="news">
-            {recent.map((x: any) => <li key={x.pick} className={`pop-in ${x.tid === lg.userTid ? 'mine' : ''}`}><span className="yr">{x.pick}</span><span><b>{lg.teams[x.tid].abbr}</b> {lg.players[x.pid].name} <span className="dim">OVR {ovrOf(lg.players[x.pid].z)}</span></span></li>)}
+            {recent.map((x: any) => <li key={x.pick} className={`pop-in ${x.tid === lg.userTid ? 'mine' : ''}`}><span className="yr">{x.pick}</span><span><b>{lg.teams[x.tid].abbr}</b> {lg.players[x.pid].name} <span className="dim">OVR {ovrOf(lg.players[x.pid].z, lg.players[x.pid].id)}</span></span></li>)}
           </ul>
           {!recent.length && <p className="note">The draft hasn't started yet.</p>}
         </div>

@@ -212,7 +212,7 @@ export function faMovesOf(lg: any, S: number) {
   if (lg.fa && S === lg.season) {
     return lg.fa.log.filter((x: any) => x.pid && x.tid && KIND[x.kind] && !(x.kind === 'sheet' && x.desc?.includes('awaiting')) && lg.players[x.pid]).map((x: any) => {
       const p = lg.players[x.pid];
-      return { pid: x.pid, kind: x.kind, tid: x.tid, from: x.from ?? '', sal: x.sal ?? 0, exp: x.exp ?? S, ovr: shownOvr(p.z), age: ageIn(p, S), st: x.st };
+      return { pid: x.pid, kind: x.kind, tid: x.tid, from: x.from ?? '', sal: x.sal ?? 0, exp: x.exp ?? S, ovr: shownOvr(p.z, p.id), age: ageIn(p, S), st: x.st };
     });
   }
   return [];

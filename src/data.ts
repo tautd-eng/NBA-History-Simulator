@@ -1,3 +1,4 @@
+import { hiddenBoost } from './hboost';
 // Historical data (built by prep/prepare.py) and helpers that turn era-relative
 // z-scores into rates for a given season.
 
@@ -167,7 +168,8 @@ export function valueBpm(z: number[]): number {
   const d = ovrW[K.def] * z[K.def] + ovrW[K.stl] * z[K.stl];
   return bpmOf(z) - (d > DEF_KNEE ? (1 - DEF_SOFT) * (d - DEF_KNEE) : 0);
 }
-export function shownOvr(z: number[]): number { const x = valueBpm(z) + OVR_VOLUME * z[K.usg]; return shownFromBpm(-0.35 + (x + 0.35) * 0.753); }
+/** `id`: the player's standing in his own time (hidden boost: All-NBA / MVP votes beyond his numbers) counts too. */
+export function shownOvr(z: number[], id?: string): number { const x = valueBpm(z) + OVR_VOLUME * z[K.usg] + (id ? hiddenBoost(id) : 0); return shownFromBpm(-0.35 + (x + 0.35) * 0.753); }
 /** Converts a stored (simulation-scale) overall to the displayed scale. */
 export function shownFromRaw(raw: number): number { return shownFromBpm((raw - 48) / 5.5); }
 /** Displayed overall of an ovrHist entry (older saves only stored the simulation overall). */

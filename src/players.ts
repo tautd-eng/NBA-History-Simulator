@@ -148,7 +148,7 @@ export function snapRatings(p: Player, season: number) {
   const ovr = ovrOf(p.z);
   const last = p.ovrHist[p.ovrHist.length - 1];
   // [season, simulation overall, displayed overall]
-  const sh = shownOvr(p.z);
+  const sh = shownOvr(p.z, p.id);
   if (last && last[0] === season) { last[1] = ovr; (last as any)[2] = sh; } else p.ovrHist.push([season, ovr, sh] as any);
   const row = [season, ...RATING_LABELS.map(r => ratingOf(p.z[r.k], r.inv))];
   p.rh ??= [];
@@ -158,7 +158,7 @@ export function snapRatings(p: Player, season: number) {
 
 /** "Name (OVR 85, age 27)" for news and trade texts (displayed overall scale). */
 export function tagOf(p: Player, season: number, ageOffset = 0) {
-  return `${p.name} (OVR ${shownOvr(p.z)}, age ${ageIn(p, season) + ageOffset})`;
+  return `${p.name} (OVR ${shownOvr(p.z, p.id)}, age ${ageIn(p, season) + ageOffset})`;
 }
 
 /** Add an entry to a player's career history. */

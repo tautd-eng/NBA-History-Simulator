@@ -19,7 +19,7 @@ function Assets({ lg, xs, openPlayer, info }: any) {
   if (!xs.length) return <>nothing</>;
   const meta = (pid: string) => {
     const p = lg.players[pid];
-    const v = info?.[pid] ?? (p ? [ovrOf(p.z), ageIn(p, lg.season)] : null);
+    const v = info?.[pid] ?? (p ? [ovrOf(p.z, p.id), ageIn(p, lg.season)] : null);
     return v ? <span className="dim"> (OVR {v[0]}, age {v[1]})</span> : null;
   };
   return <>{xs.map((x: any, i: number) => <span key={i}>{i ? ', ' : ''}{x.pid
@@ -109,7 +109,7 @@ export function Trades({ lg, openPlayer, onDone, seed }: any) {
 
   const Side = ({ tid, sel, setSel, label }: any) => {
     const t = lg.teams[tid];
-    const players = t.roster.map((pid: string) => lg.players[pid]).sort((x: any, y: any) => ovrOf(y.z) - ovrOf(x.z));
+    const players = t.roster.map((pid: string) => lg.players[pid]).sort((x: any, y: any) => ovrOf(y.z, y.id) - ovrOf(x.z, x.id));
     const picks = (lg.picks ?? []).filter((p: any) => p.owner === tid && !pickUsed(lg, p)).sort((x: any, y: any) => x.season - y.season || x.round - y.round);
     const other = tid === a ? b : a;
     const rights = other && lg.teams[other] ? rightOptions(lg, tid, other) : [];
@@ -125,7 +125,7 @@ export function Trades({ lg, openPlayer, onDone, seed }: any) {
                 <label className={sel.has(k) ? 'on' : ''}>
                   <input type="checkbox" id={`tr-${tid}-${p.id}`} checked={sel.has(k)} onChange={() => toggle(sel, setSel, k)} />
                   <span className="tp-name"><button type="button" className="link" onClick={e => { e.preventDefault(); e.stopPropagation(); openPlayer(p.id); }} title="Player card">{p.name}</button></span>
-                  <span className="tp-meta">age {ageIn(p, lg.season)} · OVR {ovrOf(p.z)} · {money(p.contract.sal, lg.season)} through {p.contract.exp}{b && lg.teams[b] ? <> · <span className={`tv ${valCls(tradeableValue(lg, p, b))}`} title={`How much the ${lg.teams[b].name} value this player in a trade (production minus salary cost)`}>value {tradeableValue(lg, p, b).toFixed(1)}</span></> : null}</span>
+                  <span className="tp-meta">age {ageIn(p, lg.season)} · OVR {ovrOf(p.z, p.id)} · {money(p.contract.sal, lg.season)} through {p.contract.exp}{b && lg.teams[b] ? <> · <span className={`tv ${valCls(tradeableValue(lg, p, b))}`} title={`How much the ${lg.teams[b].name} value this player in a trade (production minus salary cost)`}>value {tradeableValue(lg, p, b).toFixed(1)}</span></> : null}</span>
                 </label>
               </li>
             );

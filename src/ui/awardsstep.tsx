@@ -55,7 +55,7 @@ function AwardCard({ lg, a, k, t, rev, setRev, openPlayer }: any) {
               <span className="aw-place">{x.place === 1 ? '🏆' : x.place}</span>
               {on ? <span className="aw-who">
                 <PFace lg={lg} p={p} />
-                <span><button className="link aw-name" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">{p.pos} · age {ageIn(p, lg.season)} · OVR {ovrOf(p.z)} · {p.tid ? <TL tid={p.tid} abbr /> : 'FA'}</span><br /><Line lg={lg} p={p} k={k} /></span>
+                <span><button className="link aw-name" onClick={() => openPlayer(p.id)}>{p.name}</button> <span className="dim">{p.pos} · age {ageIn(p, lg.season)} · OVR {ovrOf(p.z, p.id)} · {p.tid ? <TL tid={p.tid} abbr /> : 'FA'}</span><br /><Line lg={lg} p={p} k={k} /></span>
               </span> : <span className="dim aw-who">?</span>}
             </li>
           );

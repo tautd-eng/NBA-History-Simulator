@@ -516,7 +516,7 @@ export function executeTrade(lg: League, a: string, b: string, aGets: TradeAsset
   fresh(lg);
   const mv: [number, number] = [Math.round(marketValue(lg, aGets) * 10) / 10, Math.round(marketValue(lg, bGets) * 10) / 10];
   const info: Record<string, [number, number]> = {};
-  for (const x of [...aGets, ...bGets]) if (x.pid) { const p = lg.players[x.pid]; info[x.pid] = [shownOvr(p.z), ageIn(p, lg.season)]; }
+  for (const x of [...aGets, ...bGets]) if (x.pid) { const p = lg.players[x.pid]; info[x.pid] = [shownOvr(p.z, p.id), ageIn(p, lg.season)]; }
   move(aGets, a, b);
   move(bGets, b, a);
   const desc = `${lg.teams[a].abbr} get ${describeAssets(lg, aGets)}; ${lg.teams[b].abbr} get ${describeAssets(lg, bGets)}.`;
@@ -661,7 +661,7 @@ function findDeal(lg: League, A: Team, others: Team[], rng: Rng) {
       // ... though an all-in team sometimes pries the star loose from a team going nowhere
       if (vb >= bestB && hB !== 'rebuild' && hB !== 'tank' && !(hA === 'allin' && (hB === 'middle' || B.mode === 'retool') && rng.chance(0.3))) continue;
       // rebuilding and tanking teams keep their young players and prime-age stars
-      if ((hB === 'tank' || hB === 'rebuild' || hB === 'rising') && (ageIn(p, S) <= 25 || (ageIn(p, S) <= 27 && (vb >= bestB || shownOvr(p.z) >= 86)))) continue;
+      if ((hB === 'tank' || hB === 'rebuild' || hB === 'rising') && (ageIn(p, S) <= 25 || (ageIn(p, S) <= 27 && (vb >= bestB || shownOvr(p.z, p.id) >= 86)))) continue;
       // contenders look for the piece that improves the roster most (fit), others for value
       // contenders and retooling teams look for the piece that improves the roster most (fit), others for value
       if (A.mode === 'retool' && ageIn(p, S) > 31) continue;
@@ -739,7 +739,7 @@ function findSale(lg: League, A: Team, others: Team[], rng: Rng) {
   // ... but never the young cornerstone: a star under 30 (or the team's best player under 28) is who the rebuild is built around
   const S2 = S, best = Math.max(...A.roster.map(pid => bpmOf(lg.players[pid].z)));
   const keepA = planKeeps(lg, A);
-  const cornerstone = (p: Player) => (shownOvr(p.z) >= 86 && ageIn(p, S2) < 30) || (bpmOf(p.z) >= best && ageIn(p, S2) < 28) || (keepA.has(p.id) && ageIn(p, S2) < 28);
+  const cornerstone = (p: Player) => (shownOvr(p.z, p.id) >= 86 && ageIn(p, S2) < 30) || (bpmOf(p.z) >= best && ageIn(p, S2) < 28) || (keepA.has(p.id) && ageIn(p, S2) < 28);
   const vets = A.roster.map(pid => lg.players[pid]).filter(p => !tradeLocked(lg, p) && !justTraded(lg, p) && !cornerstone(p) && ageIn(p, S) >= minAge && bpmOf(p.z) > 0).sort((x, y) => bpmOf(y.z) - bpmOf(x.z)).slice(0, 5);
   for (const p of rng.shuffle([...vets])) {
     const buyers = others.filter(B => (B.mode === 'allin' || B.strategy === 'contend' || B.strategy === 'middle') && !soldBy(lg, p, B.tid))
