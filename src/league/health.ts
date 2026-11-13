@@ -16,6 +16,7 @@ import { League, Player, StatLine, emptyLine, addLine } from '../types';
 import { ageIn, realTarget, snapRatings } from '../players';
 import { zClamp } from '../ai/value';
 import { roleOf } from '../archetypes';
+import { posNum } from '../engine/game';
 
 export const DEV = { noise: 0.32, ar: 0.55, maxOvrStep: 8, soft: 2.7, maxSkillStep: 0.5, primeDrop: 2.5, maxUp: 6, rookieUp: 5 };
 /**
@@ -47,7 +48,7 @@ export function initDev() {
 // trace (shooting, rebounding, passing, ...) is compared with the league that
 // season and pulled toward what he showed, more so the more he played. A role
 // player who catches fire in big minutes comes back next season much better.
-type Obs = { k: number; log: boolean; num: (l: StatLine) => number; den: (l: StatLine) => number; prior: number };
+type Obs = { k: number; log: boolean; num: (l: StatLine) => number; den: (l: StatLine) => number; prior: number; w?: number };
 const OBS: Obs[] = [
   { k: K.ins, log: false, num: l => l.fgm - l.tpm, den: l => l.fga - l.tpa, prior: 180 },
   { k: K.tp, log: false, num: l => l.tpm, den: l => l.tpa, prior: 200 },
@@ -62,8 +63,10 @@ const OBS: Obs[] = [
   { k: K.stl, log: true, num: l => l.stl, den: l => l.min, prior: 600 },
   { k: K.blk, log: true, num: l => l.blk, den: l => l.min, prior: 600 },
   { k: K.pf, log: true, num: l => l.pf, den: l => l.min, prior: 600 },
+  // defence: shots he contested as the primary defender that missed (older seasons have no count and are skipped)
+  { k: K.def, log: false, num: l => (l.dfga ?? 0) - (l.dfgm ?? 0), den: l => l.dfga ?? 0, prior: 600, w: 1 },
 ];
-export const PERF = { alpha: 1, skill: 0.32, overall: 0.9, maxStep: 12 };
+export const PERF = { alpha: 1, skill: 0.32, overall: 0.9, maxStep: 12, vetNeg: 1.1, youngPos: 1.2, spread: [0.5, 0.3, 0.2] };
 const lgt = (p: number) => Math.log(Math.min(0.995, Math.max(0.005, p)) / (1 - Math.min(0.995, Math.max(0.005, p))));
 
 /** Season line (regular season + playoffs) the player produced in season Y. */
@@ -171,6 +174,13 @@ export function performanceShift(lg: League, Y: number) {
     if (!f) continue;
     let res = ys.map((y, i) => y - f.fit(xs[i]));
     if (ROLE.has(o.k)) res = deCtx(res, who.map(x => x.p), ws);
+    if (o.k === K.def) {
+      // bigs contest shots at the rim, guards jumpers: compare each with his own position group
+      const grp = (p: Player) => { const n = posNum(p.pos); return n <= 2.5 ? 0 : n >= 4.5 ? 2 : 1; };
+      const gm = [[0, 0], [0, 0], [0, 0]];
+      who.forEach((x, i) => { const g = gm[grp(x.p)]; g[0] += ws[i] * res[i]; g[1] += ws[i]; });
+      res = res.map((r, i) => { const g = gm[grp(who[i].p)]; return g[1] > 0 ? r - g[0] / g[1] : r; });
+    }
     who.forEach((x, i) => {
       const sl = f.slope(xs[i]);
       if (sl < 0.03) return;
@@ -233,16 +243,27 @@ export function develop(lg: League, rng: Rng) {
     if (pf && honored && pf.ovrGain < 0) { pf.ovrGain = 0; pf.dz.fill(0); }
     const flop = !!pf && pf.ovrGain < YOUNG.flop;
     (dev as any).flop = flop;
+    const cur = new Array(NK).fill(0);
     if (pf) {
       const ageF = age <= 24 ? 1 : age <= 28 ? 0.85 : age <= 31 ? 0.6 : 0.4;
       // young players: playing close to their rating costs nothing, a real flop costs less than for veterans
       const young = age <= YOUNG.maxAge;
       if (young && pf.ovrGain < 0 && pf.ovrGain > -YOUNG.deadZone) { pf.dz.fill(0); pf.ovrGain = 0; why.dz = true; }
-      const neg = young ? YOUNG.negFactor : 0.7;
-      const a = PERF.alpha * ageF * (pf.ovrGain < 0 ? neg : 1);
+      // a season below his rating: the young get the benefit of the doubt, a veteran who no longer delivers
+      // pays in full (he will not grow back into it); a good season still counts most for the young
+      const a = PERF.alpha * (pf.ovrGain < 0
+        ? (young ? YOUNG.negFactor * ageF : age >= 30 ? PERF.vetNeg : age >= 28 ? 0.85 : 0.7 * ageF)
+        : ageF * (young ? PERF.youngPos : 1));
       const gain = pf.ovrGain * a;
       const cap = Math.abs(gain) > PERF.maxStep ? PERF.maxStep / Math.abs(gain) : 1;
-      for (let i = 0; i < NK; i++) p.z[i] += pf.dz[i] * a * cap;
+      for (let i = 0; i < NK; i++) cur[i] = pf.dz[i] * a * cap;
+    }
+    // what a season shows is spread over three summers (50 / 30 / 20): one bad year does not sink a player at once,
+    // and a real decline (or a real step up) keeps adding up
+    {
+      const q = dev.pq ?? [];
+      for (let i = 0; i < NK; i++) p.z[i] += PERF.spread[0] * cur[i] + PERF.spread[1] * (q[0]?.[i] ?? 0) + PERF.spread[2] * (q[1]?.[i] ?? 0);
+      dev.pq = [cur.map(v => Math.round(v * 1000) / 1000), ...(q[0] ? [q[0]] : [])];
     }
     why.flop = flop;
     const s1 = sh();

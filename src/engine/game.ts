@@ -376,7 +376,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     if (runSide === s) runPts += pts; else { runSide = s; runPts = pts; }
     s.pts += pts;
     for (const g of s.on) g.st.pm += pts;
-    for (const g of other(s).on) g.st.pm -= pts;
+    for (const g of other(s).on) { g.st.pm -= pts; g.st.opp += pts; }
   };
   const tick = (dt: number) => {
     for (const s of [H, A]) for (const g of s.gps) {
@@ -823,7 +823,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     }
     const size = three ? 0 : C.mmHt * Math.max(-8, Math.min(8, actor.p.ht - md.p.ht));
     const shift = passQ + homeAdv - fat + usgShift - C.def * defOn * (three ? 0.7 : 1) + size + fitAll + (three ? e3 : fit2 + e2) + callShift + (defCall === 'pressure' ? 0.08 : 0) + (fb && !three ? C.fbMake : 0) - (lc ? C.lateClock : 0);
-    inc(actor, 'fga');
+    inc(actor, 'fga'); md.st.dfga++;
     if (three) inc(actor, 'tpa');
     lastBlocked = false;
     let made: boolean;
@@ -849,7 +849,7 @@ export function* gameGen(home: TeamIn, away: TeamIn, o: GameOpts): Generator<Gam
     const MISS: Record<string, string> = { dunk: 'misses at the rim', layup: 'misses at the rim', putback: 'misses the putback', hook: 'misses a hook shot', turnaround: 'misses a turnaround', floater: 'misses a floater', fadeaway: 'misses a fadeaway', jumper: 'misses a mid-range jumper' };
     if (made) {
       const pts = three ? 3 : 2;
-      inc(actor, 'fgm'); if (three) inc(actor, 'tpm');
+      inc(actor, 'fgm'); if (three) inc(actor, 'tpm'); md.st.dfgm++;
       inc(actor, 'pts', pts); score(off, pts);
       const mates = on.filter(g => g !== actor);
       const pAst = Math.min(0.95, C.ast * E.ast * mates.reduce((a, g) => a + g.ast, 0) * (three ? 1.18 : 0.94));

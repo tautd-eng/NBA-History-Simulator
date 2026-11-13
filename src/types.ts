@@ -2,15 +2,17 @@ export interface StatLine {
   gp: number; gs: number; min: number; pts: number;
   fgm: number; fga: number; tpm: number; tpa: number; ftm: number; fta: number;
   orb: number; drb: number; ast: number; stl: number; blk: number; tov: number; pf: number; pm: number;
+  /** defence: shots taken against him as the primary defender (and made), opponent points while he was on the floor */
+  dfga: number; dfgm: number; opp: number;
 }
 export const STAT_KEYS: (keyof StatLine)[] = [
-  'gp', 'gs', 'min', 'pts', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'orb', 'drb', 'ast', 'stl', 'blk', 'tov', 'pf', 'pm',
+  'gp', 'gs', 'min', 'pts', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'orb', 'drb', 'ast', 'stl', 'blk', 'tov', 'pf', 'pm', 'dfga', 'dfgm', 'opp',
 ];
 export function emptyLine(): StatLine {
-  return { gp: 0, gs: 0, min: 0, pts: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0, orb: 0, drb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, pm: 0 };
+  return { gp: 0, gs: 0, min: 0, pts: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0, orb: 0, drb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, pm: 0, dfga: 0, dfgm: 0, opp: 0 };
 }
 export function addLine(a: StatLine, b: StatLine) {
-  for (const k of STAT_KEYS) a[k] += b[k];
+  for (const k of STAT_KEYS) a[k] = (a[k] ?? 0) + (b[k] ?? 0);   // older saves have no defence counts
 }
 
 export interface CareerSeason extends StatLine { s: number; tid: string; po: boolean; ovr: number; age: number }
@@ -40,7 +42,7 @@ export interface Player {
   real: boolean;         // has historical data
   entered: number;       // season the player joined the league universe
   scout: number;         // persistent scouting bias for draft (per player)
-  dev?: { pot: number; peak: number; vol: number; e: number[] }; // hidden development traits
+  dev?: { pot: number; peak: number; vol: number; e: number[]; pq?: number[][] }; // pq: the last two seasons' performance shifts (spread over three summers) // hidden development traits
   rh?: number[][];
   devWhy?: DevWhy;        // the last summer's change, by cause       // ratings history: [season, ...RATING_LABELS ratings]
   prospect?: boolean;    // on the draft board, not yet in the league
