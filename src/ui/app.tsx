@@ -188,7 +188,7 @@ function App() {
       status: (l: any) => `${seasonLabel(l.season)} · ${phaseLabel(l)}`,
     });
   }, []);
-  useEffect(() => { document.body.classList.toggle('online-player', octx?.role === 'player'); }, [octx?.role]);
+  useEffect(() => { document.body.classList.toggle('online-player', octx?.role === 'player' || lg?.online?.role === 'player'); }, [octx?.role, lg]);
 
   const bump = () => setRev(r => r + 1);
 

@@ -16,7 +16,7 @@ import {
   enterFreeAgency, faStage, startSeason, faOffer, faDemand, offersOn, withdrawOffer, faRenounce, faRelease, faDecide, faMatch, prevTeam, faOffersFor,
 } from '../league/offseason';
 import { DecisionsBoard } from './offsteps';
-import { isHuman, handTo } from '../league/humans';
+import { isHuman, handTo, canRun } from '../league/humans';
 import { OthersWaiting } from './humans';
 import { SortTable, f1 } from './sorttable';
 import { ExpansionRoom, LotteryRoom, LotteryReveal, AutoControls, useAutoPlay } from './draftday';
@@ -142,10 +142,10 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
           {myTurn ? <>
             <span className="hint">You're on the clock – pick from the list{suggestion ? ` (GM suggests: ${lg.players[suggestion].name})` : ''}.</span>
             <button onClick={() => act(() => run(lg, { t: 'draftPick' }))}>Let the GM pick</button>
-          </> : <button className="primary host-only" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'one'))}>Next pick</button>}
-          <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={!on || myTurn} />
-          {!myTurn && myLeft && <button className="host-only" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'user'))}>{(lg.humans?.length ?? 0) > 1 ? 'To the next user pick' : 'To my pick'}</button>}
-          <button className="host-only" onClick={() => { setPlaying(false); act(() => { draftAdvance(lg, 'all'); finishDraft(lg); }); }}>{lg.userTid ? 'To the end (GM picks for me)' : 'To the end'}</button>
+          </> : canRun(lg) ? <button className="primary host-only" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'one'))}>Next pick</button> : <span className="hint">Waiting for the host to move the draft on.</span>}
+          {canRun(lg) && <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={!on || myTurn} />}
+          {canRun(lg) && !myTurn && myLeft && <button className="host-only" disabled={playing} onClick={() => act(() => draftAdvance(lg, 'user'))}>{(lg.humans?.length ?? 0) > 1 ? 'To the next user pick' : 'To my pick'}</button>}
+          {canRun(lg) && <button className="host-only" onClick={() => { setPlaying(false); act(() => { draftAdvance(lg, 'all'); finishDraft(lg); }); }}>{lg.userTid ? 'To the end (GM picks for me)' : 'To the end'}</button>}
           {!myTurn && on && lg.online && isHuman(lg, on.tid) && <button className="host-only" title="He is not here – his GM makes the pick" onClick={() => act(() => draftPick(lg))}>GM picks for {lg.teams[on.tid].abbr}</button>}
           {d.lotto?.result && <button className="ghost" onClick={() => setReveal(true)}>Lottery</button>}
         </div>

@@ -28,3 +28,6 @@ export function setHuman(lg: League, tid: string, on: boolean) {
 
 /** Hot seat: the controls go to the team on the clock. Online every person has his own screen, so nothing moves. */
 export function handTo(lg: League, tid: string) { if (!(lg as any).online) lg.userTid = tid; }
+
+/** Who may move the league on: everyone offline (hot seat); online only the host. */
+export const canRun = (lg: League) => !(lg as any).online || (lg as any).online.role === 'host';

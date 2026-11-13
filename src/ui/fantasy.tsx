@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Fantasy draft room.
 import { useMemo, useState } from 'react';
+import { canRun } from '../league/humans';
 import { run } from '../league/commands';
 import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, RATING_LABELS, ratingOf } from '../data';
 import { ageIn } from '../players';
@@ -43,10 +44,10 @@ export function FantasyRoom({ lg, onChange, onTick = () => {}, openPlayer }: any
         </div>
         <p className="note">All players from the {(lg.start ?? 1980) - 1}–{String(lg.start ?? 1980).slice(2)} season go into one pool. {f.rounds} rounds in snake order (the last pick of a round picks first in the next). Undrafted players become free agents.</p>
         <div className="def-row">
-          {myTurn ? <span className="chip on-clock">You're on the clock – pick from the list!</span> : on ? <button className="primary" disabled={playing} onClick={() => act(() => fantasyStep(lg))}>Next pick</button> : null}
-          {on && <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={myTurn} />}
-          {!myTurn && lg.userTid && on && <button disabled={playing} onClick={() => act(() => fantasyAdvance(lg))}>To my pick</button>}
-          {on && <button onClick={() => { setPlaying(false); act(() => fantasyAdvance(lg, true)); }}>{lg.userTid ? 'Auto-finish (AI picks for me too)' : 'Run the whole draft'}</button>}
+          {myTurn ? <span className="chip on-clock">You're on the clock – pick from the list!</span> : on && canRun(lg) ? <button className="primary" disabled={playing} onClick={() => act(() => fantasyStep(lg))}>Next pick</button> : on ? <span className="hint">Waiting for the host to move the draft on.</span> : null}
+          {on && canRun(lg) && <AutoControls playing={playing} setPlaying={setPlaying} speed={speed} setSpeed={setSpeed} disabled={myTurn} />}
+          {!myTurn && lg.userTid && on && canRun(lg) && <button disabled={playing} onClick={() => act(() => fantasyAdvance(lg))}>{(lg.humans?.length ?? 0) > 1 ? 'To the next user pick' : 'To my pick'}</button>}
+          {on && canRun(lg) && <button onClick={() => { setPlaying(false); act(() => fantasyAdvance(lg, true)); }}>{lg.userTid ? 'Auto-finish (AI picks for me too)' : 'Run the whole draft'}</button>}
         </div>
         <div className="def-row">
           <div className="seg" role="group" aria-label="Position">{POS.map(([k, l]) => <button key={k} className={pos === k ? 'on' : ''} onClick={() => setPos(k)}>{l}</button>)}</div>
