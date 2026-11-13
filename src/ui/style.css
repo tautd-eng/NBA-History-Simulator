@@ -938,3 +938,7 @@ main.wide { max-width: 1920px; }
 .sal-tbl td.sal { font-variant-numeric: tabular-nums; }
 .sal-tbl .fa-tag { font-size: 0.7rem; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .sal-tbl tfoot td { border-top: 2px solid var(--line); }
+.bids-rev { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.bids-list { display: inline-flex; flex-wrap: wrap; gap: 4px; font-size: 0.75rem; }
+.bids-list span { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--muted); }
+.bids-list span.won { border-color: var(--accent); color: inherit; font-weight: 600; }

@@ -283,9 +283,9 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z), fmt: (v: any) => <Ovr v={v} /> },
     { key: 'pot', label: 'Pot.', get: (r: any) => potOf(r.p, N) },
     { key: 'from', label: 'Last team', left: true, get: (r: any) => lg.teams[r.from]?.abbr ?? '', fmt: (_: any, r: any) => tm(r.from) },
-    { key: 'int', label: 'Interest', title: 'AI teams that would make him an offer right now – the one he likes best first', left: true, get: (r: any) => market.get(r.p.id)?.length ?? -1,
+    { key: 'int', label: 'Interest', title: 'Teams interested in him (offers stay secret until he signs)', left: true, get: (r: any) => market.get(r.p.id)?.length ?? -1,
       fmt: (_: any, r: any) => { const o = market.get(r.p.id); if (!o) return <span className="dim">–</span>; if (!o.length) return <span className="dim">no offers</span>;
-        return <button className="link-btn" onClick={() => setOffersOf(r.p.id)} title={`${o.length} teams would offer – leaning towards ${lg.teams[o[0].tid].name}. Click for all offers.`}><b>{o.length}</b> <span className="dim">→</span> {lg.teams[o[0].tid].abbr} <span className="chip tiny">offers</span></button>; } },
+        return <button className="link-btn" onClick={() => setOffersOf(r.p.id)} title={`${o.length} teams interested – what they offer stays secret until he signs`}><b>{o.length}</b> <span className="chip tiny">interested</span></button>; } },
     ...attrCols((r: any) => r.p, N),
   ];
   const signedCols = [
@@ -297,6 +297,7 @@ export function FAHub({ lg, onChange, openPlayer, openTeam, goFA }: any) {
     { key: 'sal', label: 'Salary', get: (r: any) => r.sal ?? 0, fmt: (v: any) => moneyOf(v, N) },
     { key: 'yrs', label: 'Yrs', get: (r: any) => (r.exp ? r.exp - N + 1 : 1) },
     { key: 'st', label: 'Wave', get: (r: any) => r.st, fmt: (v: any, r: any) => <span className="dim" title={r.desc ?? ''}>{v >= 4 ? 'late' : `W${v}`}{r.kind === 'match' ? ' ✓' : r.kind === 'qo' ? ' QO' : r.kind === 'resign' ? ' ↺' : ''}</span> },
+    { key: 'bids', label: 'Offers', left: true, title: 'Every offer he had – revealed now that he signed', get: (r: any) => lg.bidLog?.[r.p.id]?.bids?.length ?? 0, fmt: (_: any, r: any) => <BidsReveal lg={lg} pid={r.p.id} /> },
   ];
   return (
     <div className="col">
@@ -472,30 +473,36 @@ function OptionsSummary({ lg, openPlayer, onOpen }: any) {
 /** Every offer a free agent has on the table right now, and how much he likes each one. */
 function OffersDialog({ lg, p, offers: ai, close, openPlayer }: any) {
   const N = lg.season, u = lg.userTid;
-  const ask0 = ai[0]?.ask ?? askingSalary(p, N);
-  const offers = [...ai, ...offersOn(lg, p.id).map((o: any) => ({ tid: o.tid, sal: o.sal, yrs: o.yrs, score: offerUtility(lg, p, o.tid, o.sal, ask0, o.yrs), human: true, short: o.sal + 1e-9 < faDemand(lg, p, o.tid, o.yrs) }))]
-    .sort((a: any, b: any) => (a.short ? 1 : 0) - (b.short ? 1 : 0) || b.score - a.score);
-  const best = Math.max(0.01, ...offers.map((o: any) => o.score));
+  // blind bidding: until he signs you see who is interested – not what they offer
+  const teams = [...new Set([...ai.map((o: any) => o.tid), ...offersOn(lg, p.id).map((o: any) => o.tid)])].filter(t => t !== u).sort((a: any, b: any) => lg.teams[a].name.localeCompare(lg.teams[b].name));
+  const mine = offersOn(lg, p.id).find((o: any) => o.tid === u);
   return (
     <div className="overlay center" onClick={close}>
-      <div className="dialog offers-dlg" role="dialog" aria-label={`Offers for ${p.name}`} onClick={e => e.stopPropagation()}>
-        <div className="team-head"><h2>Offers for {p.name}</h2><button className="ghost small" onClick={close}>Close</button></div>
-        <p className="note">OVR {ovrOf(p.z)} · age {ageIn(p, N)} · asks about {moneyOf(offers[0]?.ask ?? askingSalary(p, N), N)}{p.rfa ? <> · restricted: the <TL tid={p.rfa} /> can match any offer</> : ''}. What AI teams would offer right now and how much he likes each deal (money against his ask, plus winning, role, loyalty and the city). Offers are made at the end of the wave; until then they can still change.</p>
-        {offers.length ? <ul className="offers">
-          {offers.map((o: any, i: number) => {
-            const why = reasons(lg, p, o.tid).slice(0, 2).map((x: any) => x.t).join('; ');
-            return <li key={o.tid} className={i === 0 ? 'lead' : ''}>
-              <span className="o-team"><TL tid={o.tid} />{i === 0 ? <span className="chip tiny on-clock">leaning</span> : null}{o.mle ? <span className="chip tiny" title="Mid-level exception">MLE</span> : null}{o.needRoom ? <span className="chip tiny" title="His own team – would clear room to keep him">Bird rights</span> : null}{o.human ? <span className="chip tiny">{o.tid === u ? 'your offer' : 'person'}</span> : null}{o.short ? <span className="chip tiny" title="Under what he asks from this team">under his number</span> : null}</span>
-              <span className="o-money"><b>{moneyOf(o.sal, N)}</b> × {o.yrs} yrs</span>
-              <span className="o-bar" title={`His interest: ${Math.round(100 * o.score / best)}% of his favourite offer`}><span style={{ width: `${Math.max(4, Math.min(100, 100 * o.score / best))}%` }}></span></span>
+      <div className="dialog offers-dlg" role="dialog" aria-label={`Interest in ${p.name}`} onClick={e => e.stopPropagation()}>
+        <div className="team-head"><h2>Interest in {p.name}</h2><button className="ghost small" onClick={close}>Close</button></div>
+        <p className="note">OVR {ovrOf(p.z)} · age {ageIn(p, N)}{p.rfa ? <> · restricted: the <TL tid={p.rfa} /> can match any offer</> : ''}. Teams that are interested. What they offer stays secret until he signs – then every offer is shown.</p>
+        {teams.length ? <ul className="offers">
+          {teams.map((tid: any) => {
+            const why = reasons(lg, p, tid).slice(0, 2).map((x: any) => x.t).join('; ');
+            return <li key={tid}>
+              <span className="o-team"><TL tid={tid} />{p.bird === tid ? <span className="chip tiny" title="His own team">Bird rights</span> : null}{isHuman(lg, tid) ? <span className="chip tiny">person</span> : null}</span>
               {why && <span className="o-why dim">{why}</span>}
             </li>;
           })}
-        </ul> : <p className="note">No AI team would make him an offer right now.</p>}
-        {u && <p className="note">From your team he asks {moneyOf(faDemand(lg, p, u), N)}{reasons(lg, p, u).length ? ` (${reasons(lg, p, u).slice(0, 2).map((x: any) => x.t).join('; ')})` : ''}. Make or change your offer under “Free agents” – he answers at the end of the wave.</p>}
+        </ul> : <p className="note">No other team is interested right now.</p>}
+        {u && <p className="note">{mine ? <>Your offer: <b>{moneyOf(mine.sal, N)}</b> × {mine.yrs} yrs{mine.sal + 1e-9 < faDemand(lg, p, u, mine.yrs) ? ' – under his number' : ''}. </> : null}From your team he asks {moneyOf(faDemand(lg, p, u, preferredYears(p, N)), N)}{reasons(lg, p, u).length ? ` (${reasons(lg, p, u).slice(0, 2).map((x: any) => x.t).join('; ')})` : ''}. Make or change your offer under “Free agents” – he answers at the end of the wave.</p>}
       </div>
     </div>
   );
+}
+
+/** After he signed: every offer he had. */
+export function BidsReveal({ lg, pid }: any) {
+  const b = lg.bidLog?.[pid];
+  const [open, setOpen] = useState(false);
+  if (!b?.bids?.length) return null;
+  return <span className="bids-rev"><button className="small ghost" onClick={() => setOpen(!open)}>{open ? 'Hide offers' : `${b.bids.length} offer${b.bids.length > 1 ? 's' : ''}`}</button>
+    {open && <span className="bids-list">{[...b.bids].sort((x: any, y: any) => y.sal - x.sal).map((x: any, i: number) => <span key={i} className={lg.players[pid]?.tid === x.tid ? 'won' : ''}>{lg.teams[x.tid]?.abbr} {moneyOf(x.sal, b.s)}×{x.yrs}</span>)}</span>}</span>;
 }
 
 // ---------------------------------------------------------------- free agents list
@@ -595,15 +602,9 @@ export function FAOfferBox({ lg, p, onDone, onCancel }: any) {
   const L = lengthPrice(p, N, years, Math.min(max, askingSalary(p, N)));
   const pay = payroll(lg, tid);
   const pref = preferredYears(p, N);
-  // every offer on the table – the AI teams' (what they would bid now) and people's – by how much he likes it
-  const ask0 = askingSalary(p, N) * (lg.phase === 'freeagency' ? [1, 1, 0.85, 0.7, 0.7][Math.max(1, Math.min(3, lg.fa?.stage ?? 3))] : 0.7);
+  // blind bidding: who is interested, not what they offer (revealed once he signs)
   const mineNow = offersOn(lg, p.id).find((o: any) => o.tid === tid);
-  const rows = [
-    ...faOffersFor(lg, p).map((o: any) => ({ tid: o.tid, sal: o.sal, yrs: o.yrs, score: o.score })),
-    ...offersOn(lg, p.id).map((o: any) => ({ tid: o.tid, sal: o.sal, yrs: o.yrs, score: offerUtility(lg, p, o.tid, o.sal, ask0, o.yrs), human: true, mine: o.tid === tid, short: o.sal + 1e-9 < faDemand(lg, p, o.tid, o.yrs) })),
-  ].sort((a: any, b: any) => (a.short ? 1 : 0) - (b.short ? 1 : 0) || b.score - a.score);
-  const top = Math.max(1e-6, ...rows.map((r: any) => r.score));
-  const table = rows.slice(0, 8).map((r: any) => ({ ...r, rel: Math.max(0.05, Math.min(1, r.score / top)) }));
+  const others = [...new Set([...faOffersFor(lg, p).map((o: any) => o.tid), ...offersOn(lg, p.id).map((o: any) => o.tid)])].filter(t => t !== tid);
   return (
     <div className="offer ext" role="group" aria-label={`Offer to ${p.name}`}>
       <div><b>{p.name}</b> <span className="dim">{p.pos} · age {ageIn(p, N)} · OVR {ovrOf(p.z)} · max contract {pc(max)}{usd(max, N)} · your payroll {Math.round(pay * 100)}% of the cap</span></div>
@@ -622,20 +623,13 @@ export function FAOfferBox({ lg, p, onDone, onCancel }: any) {
         <button className="small ghost" onClick={() => setSal(null)}>His number</button>
       </div>
       <div className={`ext-chance ${offer + 1e-9 >= n ? 'pos' : offer >= n * 0.93 ? 'mid' : 'neg'}`}>
-        {offer + 1e-9 >= n ? <>This meets his number{offer > n + 1e-4 ? ` (you are paying ${((offer - n) * 100).toFixed(2)}% more than you need to)` : ''}. He takes it unless another offer appeals to him more.</>
+        {offer + 1e-9 >= n ? <>This meets his number{offer > n + 1e-4 ? ` (you are paying ${((offer - n) * 100).toFixed(2)}% more than you need to)` : ''}. He takes it unless another team's (secret) offer appeals to him more.</>
           : offer >= n * 0.93 ? <>Close: about a <b>1 in 3</b> chance he takes {((1 - offer / n) * 100).toFixed(1)}% less than his number.</>
           : <>Too far under his number ({pc(n)}) – he will say no.</>}
         {' '}He answers {lg.phase === 'freeagency' ? 'at the end of this wave' : 'tomorrow'}.
       </div>
-      {table.length > 0 && <div className="tbl-wrap"><table className="tbl compact">
-        <thead><tr><th className="l">On the table</th><th>Salary</th><th>Yrs</th><th className="l">He likes it</th><th></th></tr></thead>
-        <tbody>{table.map((r: any, i: number) => <tr key={i} className={r.tid === tid ? 'mine' : ''}>
-          <td className="l">{lg.teams[r.tid].name}{r.mine ? ' (you)' : r.human ? ' (person)' : ''}</td>
-          <td>{pc(r.sal)}</td><td>{r.yrs}</td>
-          <td className="l"><span className="o-bar inl"><span style={{ width: `${Math.round(100 * r.rel)}%` }}></span></span>{i === 0 ? <span className="chip tiny">leading</span> : null}{r.short ? <span className="chip tiny neg">under his number</span> : null}</td>
-          <td>{r.mine ? <button className="small ghost" onClick={() => { withdrawOffer(lg, p.id); onDone({ ok: false, msg: 'Offer withdrawn.' }); }}>Withdraw</button> : null}</td>
-        </tr>)}</tbody>
-      </table></div>}
+      <p className="note">{others.length ? <>Also interested: <b>{others.map((t: any) => lg.teams[t].abbr).join(', ')}</b> – their offers stay secret until he signs.</> : 'No other team is interested right now.'}
+        {mineNow ? <> Your offer on the table: <b>{pc(mineNow.sal)}</b> × {mineNow.yrs} yrs{mineNow.sal + 1e-9 < faDemand(lg, p, tid, mineNow.yrs) ? ' (under his number)' : ''} <button className="small ghost" onClick={() => { withdrawOffer(lg, p.id); onDone({ ok: false, msg: 'Offer withdrawn.' }); }}>Withdraw</button></> : null}</p>
       <div className="def-row">
         <button className="primary" onClick={() => onDone(faOffer(lg, p.id, offer, years))}>{mineNow ? 'Change offer' : 'Make offer'}: {years} yr{years > 1 ? 's' : ''} at {dol ? $(offer) : pc(offer)}</button>
         <button className="ghost" onClick={onCancel}>Cancel</button>

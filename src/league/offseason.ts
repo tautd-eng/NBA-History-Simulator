@@ -443,6 +443,7 @@ const FLOOR = 0.9;
  */
 export function enterFreeAgency(lg: League) {
   lg.offers = []; // last season's open offers are off the table
+  lg.bidLog = {};
   offDevelop(lg); // (retirements and development, if the offseason steps were skipped)
   if (lg.draftDay && !lg.draftDay.done) { draftAdvance(lg, 'all'); finishDraft(lg); }
   const rng = rngOf(lg);
@@ -628,8 +629,9 @@ export function resolveOffersInSeason(lg: League, rng: Rng) {
   for (const pid of [...new Set(lg.offers.map(o => o.pid))]) {
     const p = lg.players[pid];
     if (!p || p.tid || p.retired) continue;
+    const all = offersOn(lg, pid).map(o => ({ tid: o.tid, sal: o.sal, yrs: o.yrs, human: true }));
     const bids = humanBids(lg, p, rng, askingSalary(p, lg.season) * STAGE_MULT[4]);
-    if (bids.length) signOffer(lg, bids[0].o, bids[0].mle);
+    if (bids.length) { (lg.bidLog ??= {})[pid] = { s: lg.season, bids: all }; signOffer(lg, bids[0].o, bids[0].mle); }
     else for (const o of offersOn(lg, pid)) {
       lg.news.push({ s: lg.season, t: `${lg.teams[o.tid].name}: ${tagOf(p, lg.season)} turned down your offer of ${(o.sal * 100).toFixed(1)}% of the cap for ${o.yrs} yr${o.yrs > 1 ? 's' : ''}.` });
       withdrawOffer(lg, pid, o.tid);
@@ -1065,6 +1067,9 @@ function aiSignings(lg: League, rng: Rng, stage: number) {
     const offers = teamOffers(lg, p, stage, rng, ask, yrsOffer);
     // offers people made him: he weighs them against the AI teams' and takes the one he likes best
     const hb = humanBids(lg, p, rng, ask);
+    // blind bidding: what everyone offered is revealed once he signs
+    lg.bidLog ??= {};
+    lg.bidLog[p.id] = { s: N, bids: [...offers.map(o => ({ tid: o.t.tid, sal: o.sal, yrs: yrsOffer })), ...offersOn(lg, p.id).map(o => ({ tid: o.tid, sal: o.sal, yrs: o.yrs, human: true }))] };
     if (hb.length && hb[0].score >= Math.max(-Infinity, ...offers.map(o => o.score))) {
       const o = hb[0].o;
       signOffer(lg, o, hb[0].mle);

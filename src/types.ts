@@ -231,7 +231,8 @@ export interface League {
   humans?: string[];                 // hot seat: every human-run team (userTid is the one being played now)
   proposals?: Proposal[];
   commish?: boolean;
-  offers?: FAOfferRec[];             // contract offers people made to free agents – he decides at the end of the wave (or the day)                 // commissioner mode: any trade between any teams can be forced            // trade offers between human-run teams, waiting for the other side
+  offers?: FAOfferRec[];
+  bidLog?: Record<string, { s: number; bids: { tid: string; sal: number; yrs: number; human?: boolean }[] }>; // the offers a free agent had when he signed (shown only after he signs)             // contract offers people made to free agents – he decides at the end of the wave (or the day)                 // commissioner mode: any trade between any teams can be forced            // trade offers between human-run teams, waiting for the other side
   hofManual?: string[];
   jerseyManual?: { pid: string; tid: string }[]; // jerseys retired by hand              // players put into the Hall of Fame by hand
   /** awards screen after the regular season: which awards have been revealed (count of places shown) */
