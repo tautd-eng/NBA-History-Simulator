@@ -192,18 +192,10 @@ function App() {
     return () => window.removeEventListener('popstate', on);
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      // an online league reopens online (its newest version), not from the copy in this browser
-      const sl = currentSlot();
-      if (sl.startsWith('online-') && currentUser()) {
-        try { const l = await openOnline(sl.slice(7)); ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); setReady(true); return; } catch { /* fall back to the local copy */ }
-      }
-      const l = await loadLeague();
-      if (l) { ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); }
-      setReady(true);
-    })();
-  }, []);
+  // the game opens on the main menu; leagues are opened from there (Load game / online)
+  useEffect(() => { setReady(true); }, []);
+  const [screen, setScreen] = useState<'menu' | 'new' | 'load' | 'host' | 'prefs'>('menu');
+  const [hostAfter, setHostAfter] = useState(false);
   // a new version of the online league arrived / the host applied others' moves
   useEffect(() => {
     bindApp({
@@ -256,23 +248,33 @@ function App() {
     l.userTid = userTid;
     setLg(l); setTeam(userTid ?? 'LAL'); setTab('apzvalga');
     saveLeague(l).then(ok => setSaved(ok ? 'ok' : 'fail'));
+    if (hostAfter) { setHostAfter(false); setShowOnline(true); }
   }
 
   const [more, setMore] = useState(false);
   const [tradeSeed, setTradeSeed] = useState<{ pid: string; n: number } | null>(null);
   if (!ready) return <div className="loading">Loading league…</div>;
-  const switchTo = async (id: string) => {
+  const switchTo = async (id: string, host = false) => {
     if (id.startsWith('online-') && currentUser()) {
       try { const l = await openOnline(id.slice(7)); setSlot(id); ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); setTab('apzvalga'); setPlayer(null); setShowSaves(false); return; } catch { /* the copy in this browser */ }
     }
     setSlot(id);
     const l = await loadLeague(id);
-    if (l) { ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); setTab('apzvalga'); setPlayer(null); setShowSaves(false); }
+    if (l) { ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); setTab('apzvalga'); setPlayer(null); setShowSaves(false); if (host) setShowOnline(true); }
   };
-  const startNew = () => { setSlot(newSlotId()); setLg(null); setShowSaves(false); };
+  const startNew = () => { setSlot(newSlotId()); setLg(null); setShowSaves(false); setScreen('new'); };
+  const toMenu = () => { setLg(null); setPlayer(null); setLive(null); setClutch(null); setGameView(null); setShowSaves(false); setShowSettings(false); setShowHumans(false); setScreen('menu'); };
   const onlinePanel = showOnline && <OnlinePanel lg={lg} joinCode={joinCode} close={() => { setShowOnline(false); if (joinCode) try { history.replaceState(null, '', location.pathname + location.hash); } catch { /* ignore */ } }}
     onOpen={(l: any, id: string) => { setSlot(slotOf(id)); ensurePicks(l); l.trades ??= []; setLg(l); setTeam(l.userTid ?? Object.keys(l.teams)[0]); setTab('apzvalga'); setPlayer(null); saveLeague(l, slotOf(id)); }} />;
-  if (!lg) return <><div className="setup-online"><button onClick={() => setShowOnline(true)}>🌐 Online league – join with a code or open yours</button></div><Setup onStart={start} onLoad={switchTo} />{onlinePanel}</>;
+  if (!lg) {
+    const back = () => { setHostAfter(false); setScreen('menu'); };
+    const body = screen === 'new' ? <Setup onStart={start} onBack={back} host={hostAfter} />
+      : screen === 'load' ? <LoadScreen onLoad={(id: string) => switchTo(id)} onBack={back} />
+      : screen === 'host' ? <HostScreen onNew={() => { setHostAfter(true); setSlot(newSlotId()); setScreen('new'); }} onLoad={(id: string) => switchTo(id, true)} onBack={back} />
+      : screen === 'prefs' ? <PrefsScreen onBack={back} />
+      : <MainMenu go={(k: string) => { if (k === 'join') setShowOnline(true); else { if (k === 'new') setSlot(newSlotId()); setScreen(k as any); } }} />;
+    return <>{body}{onlinePanel}</>;
+  }
 
   const remember = () => {
     views.current.push({ tab, team, player, y: window.scrollY, subs: navSubs() });
@@ -311,7 +313,7 @@ function App() {
         </div>
         <Controls lg={lg} busy={busy} run={run} stop={() => (stop.current = true)} saved={saved} />
       </header>
-      {octx && <OnlineBar lg={lg} openPanel={() => setShowOnline(true)} onLeave={() => { setSlot(newSlotId()); setLg(null); }} />}
+      {octx && <OnlineBar lg={lg} openPanel={() => setShowOnline(true)} onLeave={() => { setSlot(newSlotId()); toMenu(); }} />}
       <nav className="tabs" aria-label="Sections">
         {tabsFor(lg).map(([k, l, main]) => (
           <button key={k} className={`${tab === k ? 'on' : ''} ${main ? '' : 'sec'}`} onClick={() => { go(k); setMore(false); }} aria-label={l}><TabIcon k={k} /><span className="tl">{l}</span></button>
@@ -345,10 +347,10 @@ function App() {
           <button className="ghost small" onClick={() => setShowOnline(true)}>Online league</button>
           {!octx && <button className="ghost small" onClick={() => setShowHumans(true)}>Players & teams</button>}
           <button className="ghost small" onClick={() => setShowSaves(true)}>Saves</button>
-          <button className="ghost small" onClick={startNew}>New league</button>
+          <button className="ghost small" onClick={toMenu}>Main menu</button>
         </span>
       </footer>
-      {showSaves && <SavesPanel lg={lg} close={() => setShowSaves(false)} onLoad={switchTo} onNew={startNew} />}
+      {showSaves && <SavesPanel lg={lg} close={() => setShowSaves(false)} onLoad={(id: string) => switchTo(id)} onNew={startNew} />}
       {onlinePanel}
       {showHumans && <HumansPanel lg={lg} close={() => setShowHumans(false)} onChange={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
       {showSettings && <SettingsPanel lg={lg} close={() => setShowSettings(false)} onSaved={async () => { bump(); setSaved((await saveLeague(lg)) ? 'ok' : 'fail'); }} />}
@@ -506,6 +508,98 @@ function SavesPanel({ lg, close, onLoad, onNew }: any) {
   );
 }
 
+// ---------------------------------------------------------------- main menu
+function MainMenu({ go }: any) {
+  const items: [string, string, string][] = [
+    ['new', 'New game', 'Start a league from any season since 1979–80, or today\'s NBA'],
+    ['load', 'Load game', 'Continue one of your saved leagues'],
+    ['host', 'Host online game', 'Run a league with friends: each runs a team, you move it on'],
+    ['join', 'Join online game', 'Enter a friend\'s league code, or open your online leagues'],
+    ['prefs', 'Preferences', 'How the game shows things'],
+  ];
+  return (
+    <div className="setup menu-screen">
+      <div className="setup-card menu-card">
+        <span className="ball big-ball" aria-hidden="true"></span>
+        <h1>NBA History Simulator</h1>
+        <nav className="main-menu" aria-label="Main menu">
+          {items.map(([k, t, d]) => <button key={k} className={k === 'new' ? 'primary' : ''} onClick={() => go(k)}><b>{t}</b><span>{d}</span></button>)}
+        </nav>
+        <p className="dim small-t">Version {BUILD}</p>
+      </div>
+    </div>
+  );
+}
+
+function LoadScreen({ onLoad, onBack }: any) {
+  const [saves, setSaves] = useState<any[] | null>(null);
+  const [edit, setEdit] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [ask, setAsk] = useState<string | null>(null);
+  const refresh = () => listSaves().then(setSaves);
+  useEffect(() => { refresh(); }, []);
+  return (
+    <div className="setup">
+      <div className="setup-card">
+        <button className="ghost small menu-back" onClick={onBack}>← Main menu</button>
+        <h1>Load game</h1>
+        {saves === null ? <p className="note">Loading…</p> : !saves.length ? <p className="note">No saved leagues in this browser yet.</p> :
+          <ul className="save-list">{saves.map(sv => (
+            <li key={sv.id}>
+              {edit === sv.id
+                ? <span className="save-edit"><input value={name} onChange={e => setName(e.target.value)} aria-label="Save name" /><button className="small primary" onClick={async () => { const l = await loadLeague(sv.id); if (l) { l.saveName = name.trim() || sv.name; await saveLeague(l, sv.id); } setEdit(null); refresh(); }}>Save</button></span>
+                : <span><b>{sv.name}</b>{sv.id.startsWith('online-') ? <span className="chip tiny">online</span> : null}<br /><span className="dim">{sv.label} · saved {new Date(sv.updated).toLocaleString()}</span></span>}
+              <span className="save-actions">
+                <button className="small primary" onClick={() => onLoad(sv.id)}>Load</button>
+                <button className="small" onClick={() => { setEdit(sv.id); setName(sv.name); }}>Rename</button>
+                {ask === sv.id
+                  ? <><button className="small danger" onClick={async () => { await deleteSave(sv.id); setAsk(null); refresh(); }}>Delete for good</button> <button className="small ghost" onClick={() => setAsk(null)}>Cancel</button></>
+                  : <button className="small ghost" onClick={() => setAsk(sv.id)}>Delete</button>}
+              </span>
+            </li>
+          ))}</ul>}
+        <details className="more"><summary>Continue from another device</summary><Devices lg={null} onLoad={onLoad} /></details>
+      </div>
+    </div>
+  );
+}
+
+function HostScreen({ onNew, onLoad, onBack }: any) {
+  const [saves, setSaves] = useState<any[] | null>(null);
+  useEffect(() => { listSaves().then(s => setSaves(s.filter((x: any) => !x.id.startsWith('online-')))); }, []);
+  return (
+    <div className="setup">
+      <div className="setup-card">
+        <button className="ghost small menu-back" onClick={onBack}>← Main menu</button>
+        <h1>Host online game</h1>
+        <p className="lede">Pick the league to put online: a new one, or one you already play. You sign in, create the online league and send your friends its code; each of them picks a team, and you move the league on.</p>
+        <button className="primary big" onClick={onNew}>Start a new league to host</button>
+        {saves && saves.length > 0 && <>
+          <h3>…or host one of your saved leagues</h3>
+          <ul className="save-list">{saves.map(sv => (
+            <li key={sv.id}><span><b>{sv.name}</b><br /><span className="dim">{sv.label} · saved {new Date(sv.updated).toLocaleString()}</span></span>
+              <span className="save-actions"><button className="small primary" onClick={() => onLoad(sv.id)}>Host this league</button></span></li>
+          ))}</ul>
+        </>}
+      </div>
+    </div>
+  );
+}
+
+function PrefsScreen({ onBack }: any) {
+  const [, bump] = useState(0);
+  return (
+    <div className="setup">
+      <div className="setup-card">
+        <button className="ghost small menu-back" onClick={onBack}>← Main menu</button>
+        <h1>Preferences</h1>
+        <label className="commish"><input type="checkbox" checked={showDollars()} onChange={e => { setShowDollars(e.target.checked); bump(x => x + 1); }} /> Show salaries in dollars too (that season's money). Off: everything is a share of the salary cap – the same in every era.</label>
+        <p className="note">Season length, playoff format, the salary cap and injuries are set for each league when you start it (and later under “Season format” inside the league).</p>
+      </div>
+    </div>
+  );
+}
+
 function ResetButton({ onReset }: any) {
   const [ask, setAsk] = useState(false);
   if (!ask) return <button className="ghost small" onClick={() => setAsk(true)}>New league</button>;
@@ -618,9 +712,7 @@ function SeasonFields({ form, setForm, idp = '' }: any) {
   </>;
 }
 
-function Setup({ onStart, onLoad }: any) {
-  const [saves, setSaves] = useState<any[]>([]);
-  useEffect(() => { listSaves().then(setSaves); }, []);
+function Setup({ onStart, onBack, host }: any) {
   const [d, setD] = useState(0);
   const [form, setForm] = useState(() => formOf(null));
   const [fantasy, setFantasy] = useState(false);
@@ -645,11 +737,8 @@ function Setup({ onStart, onLoad }: any) {
       <div className="setup-card">
         <p className="eyebrow">{label} season · {teams.length} teams · real rosters</p>
         <h1>NBA History Simulator</h1>
-        {saves.length > 0 && <div className="saves-mini">
-          <b>Continue a saved league</b>
-          <ul>{saves.slice(0, 6).map(sv => <li key={sv.id}><span><b>{sv.name}</b> <span className="dim">{sv.label} · {new Date(sv.updated).toLocaleDateString()}</span></span><button className="small primary" onClick={() => onLoad(sv.id)}>Load</button></li>)}</ul>
-        </div>}
-        <details className="more"><summary>Continue from another device</summary><Devices lg={null} onLoad={onLoad} /></details>
+        <button className="ghost small menu-back" onClick={onBack}>← Main menu</button>
+        {host && <p className="hint">You are setting up a league to host online: once it starts, sign in and create the online league – your friends join with its code.</p>}
         <p className="lede">Rewrite NBA history. The league starts with the real players of {label}. New draft classes arrive every year, and how they develop is up to the simulation and the destiny slider.</p>
         <label className="field" htmlFor="start">
           <span>Starting season</span>
