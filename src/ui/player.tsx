@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fatigueAt, nextCal, fatigueLabel } from '../league/fatigue';
 import { injName } from '../league/injuries';
 import { todayIndex } from '../league/league';
-import { RATING_LABELS, ratingOf, shownOvr as ovrOf, shownFromRaw, histShown, shownFromBpm, perD, rimD, postD } from '../data';
+import { RATING_LABELS, ratingOf, shownOvr as ovrOf, shownFromRaw, histShown, shownFromBpm, perD, rimD, postD, attrOf } from '../data';
 import { ageIn } from '../players';
 import { SortTable, f1, f0, pctf, div } from './sorttable';
 import { traits, TRAIT_LABELS, reasons, extensionNeed, extensionChance, preferredYears } from '../league/prefs';
@@ -277,7 +277,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange, findTrades }: 
   ) : null;
 
   // progression rows: ratings recorded each season
-  const rh: number[][] = p.rh?.length ? p.rh : [[lg.season, ...RATING_LABELS.map(r => ratingOf(p.z[r.k], r.inv))]];
+  const rh: number[][] = p.rh?.length ? p.rh : [[lg.season, ...RATING_LABELS.map(r => attrOf(p.z, r))]];
   const ovrBy = Object.fromEntries(p.ovrHist.map((x: any) => [x[0], histShown(x)]));
   const progRows = rh.map((row, i) => ({ key: row[0], s: row[0], ovr: ovrBy[row[0]] ?? null, r: row.slice(1), prev: i ? rh[i - 1].slice(1) : null, pOvr: i ? ovrBy[rh[i - 1][0]] ?? null : null }));
   const progCols = [
@@ -318,7 +318,7 @@ export function PlayerPanel({ lg, pid, close, openTeam, onChange, findTrades }: 
         <h3>Current skills</h3>
         <div className="ratings">
           {RATING_LABELS.map(r => {
-            const val = ratingOf(p.z[r.k], r.inv);
+            const val = attrOf(p.z, r);
             return (
               <div key={r.name} className="rating">
                 <span className="rl">{r.name}{r.tendency ? ' *' : ''}</span>

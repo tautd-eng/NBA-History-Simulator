@@ -1,6 +1,6 @@
 // Player roles (archetypes) from era-relative skill z-scores, and how well a group of them fits together.
 // Shared by the game engine (lineup synergy) and the UI (badges on player cards, team fit panel).
-import { K, RATING_LABELS, ratingOf, bpmOf } from './data';
+import { K, RATING_LABELS, ratingOf, bpmOf, attrOf } from './data';
 
 export const POS_NUM: Record<string, number> = { PG: 1, G: 1.5, SG: 2, 'G-F': 2.5, GF: 2.5, SF: 3, F: 3.5, 'F-G': 3, PF: 4, 'F-C': 4.5, FC: 4.5, 'C-F': 4.5, C: 5 };
 export const posN = (pos: string) => POS_NUM[pos] ?? POS_NUM[pos?.split('-')[0]] ?? 3;
@@ -73,7 +73,7 @@ export function roleOf(z: number[], pos: string): Role {
   const second = arch !== ROLE && sc[1].s >= 0.55 && sc[1].s > sc[0].s - 0.35 ? sc[1].a : undefined;
   // what counts for his position: nobody minds a point guard who doesn't block shots
   const skip = new Set(pn <= 3 ? [K.blk, K.orb] : pn >= 4 ? [K.stl] : []);
-  const rated = ABILITY.filter(r => !skip.has(r.k)).map(r => ({ n: r.name, v: ratingOf(z[r.k], r.inv), w: r.k === K.pf ? -10 : 0 }));
+  const rated = ABILITY.filter(r => !skip.has(r.k)).map(r => ({ n: r.name, v: attrOf(z, r), w: r.k === K.pf ? -10 : 0 }));
   const hi = rated.filter(r => r.v >= 64).sort((a, b) => b.v + b.w - a.v - a.w).slice(0, 3);
   const lo = rated.filter(r => r.v <= 38).sort((a, b) => a.v - a.w - b.v + b.w).slice(0, 3);
   const strengths = (hi.length ? hi : rated.slice().sort((a, b) => b.v - a.v).slice(0, 1)).map(r => r.n);

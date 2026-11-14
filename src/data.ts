@@ -176,9 +176,27 @@ export function shownFromRaw(raw: number): number { return shownFromBpm((raw - 4
 export function histShown(h: number[]): number { return h[2] ?? shownFromRaw(h[1]); }
 /** 0–100 display rating for a single skill */
 export function ratingOf(z: number, inv = false): number {
-  const v = 50 + 14 * (inv ? -z : z);
-  return Math.max(1, Math.min(99, Math.round(v)));
+  // like a basketball game's scale: a typical player ~50, a clear strength ~64 (1 sd), a real standout 80+,
+  // the very best in the league at it 90+ – the top end is stretched so the elite stand apart
+  const v = inv ? -z : z, a = Math.abs(v);
+  const d = a <= 1 ? 14 * a : a <= 2.5 ? 14 + 18 * (a - 1) : 41 + 10 * (a - 2.5);
+  return Math.max(1, Math.min(99, Math.round(50 + Math.sign(v) * d)));
 }
+/**
+ * The z a rating shows. Three-point shooting is shown as a shooter's quality, not his percentage alone: accuracy, his
+ * touch (free throws) and – for a good shooter – the volume he takes them in (the engine keeps these apart).
+ */
+export function attrZ(z: number[], k: number): number {
+  if (k === K.tp) {
+    // accuracy, the shooter's touch (free throws) and how many he takes – the volume only counts for a good shooter
+    const vol = Math.max(0, Math.min(2, z[K.tpr] + 0.5 * z[K.usg]));
+    const gate = Math.max(0, Math.min(1, (z[K.tp] + 0.5) / 1.5));
+    return 0.75 * z[K.tp] + 0.25 * z[K.ft] + 0.4 * vol * gate;
+  }
+  return z[k];
+}
+/** A displayed 0–99 rating for one of RATING_LABELS. */
+export const attrOf = (z: number[], L: { k: number; inv?: boolean }) => ratingOf(attrZ(z, L.k), L.inv);
 
 export function agingIndex(age: number) {
   return Math.max(0, Math.min(H.ages.length - 1, age - H.ages[0]));

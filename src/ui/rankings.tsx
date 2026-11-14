@@ -6,7 +6,7 @@ import { TLogo, PFace } from './art';
 import { useNavState } from './nav';
 import { useMemo, useState } from 'react';
 import { devReason } from './offsteps';
-import { shownOvr as ovrOf, shownFromRaw, histShown, shownFromBpm, bpmOf, RATING_LABELS, ratingOf, perD, rimD } from '../data';
+import { shownOvr as ovrOf, shownFromRaw, histShown, shownFromBpm, bpmOf, RATING_LABELS, ratingOf, perD, rimD, attrOf } from '../data';
 import { ageIn } from '../players';
 import { teamStrength, payroll } from '../ai/value';
 import { isFreeAgent } from '../ai/trades';
@@ -14,7 +14,7 @@ import { SortTable, f1 } from './sorttable';
 import { posNum } from '../engine/game';
 import { potOf, moneyOf } from './offseason';
 
-const R = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
+const R = (p: any, i: number) => attrOf(p.z, RATING_LABELS[i]);
 const OFF = [0, 1, 2, 3, 4, 5, 6];   // shooting, creation, ball security, offensive boards
 const DEF = [8, 10, 11];             // steals, defence, discipline (+ perimeter defence and rim protection below)
 const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);

@@ -26,7 +26,7 @@ import { isHuman } from '../league/humans';
 import { roleOf } from '../archetypes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { loadHistory, H, RATING_LABELS, shownOvr as ovrOf, shownFromRaw, shownFromBpm, ratingOf, seasonInfo, bpmOf, LAST_SEASON } from '../data';
+import { loadHistory, H, RATING_LABELS, shownOvr as ovrOf, shownFromRaw, shownFromBpm, ratingOf, seasonInfo, bpmOf, LAST_SEASON, attrOf } from '../data';
 import { setEraCal } from '../engine/game';
 import { newLeague, standings, playoffFormat, realChampion, simDayWatching, watchableToday, playedToday, seasonGames, applySettings, startClutch, finishClutch, todayIndex, awaitingPlayoffs } from '../league/league';
 import { AwardsStep } from './awardsstep';
@@ -636,7 +636,7 @@ function settingsOf(f: any) {
   };
 }
 
-function SeasonFields({ form, setForm, idp = '' }: any) {
+function SeasonFields({ form, setForm, idp = '', noInj = false }: any) {
   const set = (k: string, v: any) => setForm({ ...form, [k]: v });
   const teams = form.poTeams ? +form.poTeams : 8;
   const used = teams === 2 ? 2 : teams === 4 ? 3 : 4;
@@ -705,14 +705,14 @@ function SeasonFields({ form, setForm, idp = '' }: any) {
       </select>
       <small>A restricted free agent's old team can match any offer sheet. Until the 1988 agreement real NBA teams had this right of first refusal over all their free agents.</small>
     </label>
-    <label className="field" htmlFor={idp + 'inj'}>
+    {!noInj && <label className="field" htmlFor={idp + 'inj'}>
       <span>Injuries</span>
       <select id={idp + 'inj'} value={form.inj ?? ''} onChange={e => set('inj', e.target.value)}>
         <option value="">On – players get hurt, as in real seasons</option>
         <option value="off">Off – nobody gets hurt</option>
       </select>
       <small>Turning them off also heals everyone who is injured now. It takes effect right away.</small>
-    </label>
+    </label>}
   </>;
 }
 
@@ -805,8 +805,12 @@ function Setup({ onStart, onBack, host }: any) {
               <small>{rr ? `Snake order, but from round ${rr} it turns again: the team that picked last in round ${rr - 1} also picks last in round ${rr} – it evens out the top picks' advantage.` : 'Snake: the last pick of a round picks first in the next.'}</small>
             </div>}
           </Opt>
-          <Opt title="Season, playoffs and rules" value={JSON.stringify(settingsOf(form)) === JSON.stringify(settingsOf(formOf(null))) ? 'As in history' : 'Custom'}>
-            <SeasonFields form={form} setForm={setForm} />
+          <Opt title="Season, playoffs and rules" value={JSON.stringify({ ...settingsOf(form), noInjuries: false }) === JSON.stringify(settingsOf(formOf(null))) ? 'As in history' : 'Custom'}>
+            <SeasonFields form={form} setForm={setForm} noInj />
+          </Opt>
+          <Opt title="Injuries" value={form.inj === 'off' ? 'Off' : 'On'}>
+            <div className="seg" role="group" aria-label="Injuries">{([['', 'On – players get hurt, as in real seasons'], ['off', 'Off – nobody gets hurt']] as const).map(([k, t]) => <button key={k} className={(form.inj ?? '') === k ? 'on' : ''} onClick={() => setForm({ ...form, inj: k })}>{t}</button>)}</div>
+            <small className="dim">Can be changed later inside the league under “Season format”.</small>
           </Opt>
           <Opt title="Random seed" value={String(seed)}>
             <label className="field" htmlFor="seed">
@@ -1163,7 +1167,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
   const [view, setView] = useNavState<'stats' | 'attr' | 'hist' | 'rec'>('team.view', 'stats');
   const inSeason = lg.phase === 'regular' || lg.phase === 'playoffs';
   const calNow = inSeason ? nextCal(lg, todayIndex(lg)) : 0;
-  const RT = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
+  const RT = (p: any, i: number) => attrOf(p.z, RATING_LABELS[i]);
   const attrCols = [
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <><PFace lg={lg} p={r.p} /><button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button>{r.p.injury > 0 && <span className="inj" title={r.p.inj ? `${injName(r.p.inj.k)} – out ~${r.p.injury} more games` : 'Injured'}>+{r.p.injury}</span>}</> },
     { key: 'pos', label: 'Pos', get: (r: any) => r.p.pos, fmt: (v: any) => <span className="dim">{v}</span> },

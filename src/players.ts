@@ -1,4 +1,4 @@
-import { H, NK, K, ovrOf, bpmOf, RealSeason, RATING_LABELS, ratingOf, shownOvr, agingIndex } from './data';
+import { H, NK, K, ovrOf, bpmOf, RealSeason, RATING_LABELS, ratingOf, shownOvr, agingIndex, attrOf } from './data';
 import { Player, emptyLine } from './types';
 import { hash01, Rng } from './rng';
 
@@ -150,7 +150,7 @@ export function snapRatings(p: Player, season: number) {
   // [season, simulation overall, displayed overall]
   const sh = shownOvr(p.z, p.id);
   if (last && last[0] === season) { last[1] = ovr; (last as any)[2] = sh; } else p.ovrHist.push([season, ovr, sh] as any);
-  const row = [season, ...RATING_LABELS.map(r => ratingOf(p.z[r.k], r.inv))];
+  const row = [season, ...RATING_LABELS.map(r => attrOf(p.z, r))];
   p.rh ??= [];
   const lr = p.rh[p.rh.length - 1];
   if (lr && lr[0] === season) p.rh[p.rh.length - 1] = row; else p.rh.push(row);

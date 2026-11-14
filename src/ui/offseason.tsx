@@ -9,7 +9,7 @@ import { run } from '../league/commands';
 import { RoleCell, roleSortKey, projectedZ } from './roles';
 import { money, usd, showDollars, dollarsOf } from './money';
 import { useMemo, useState } from 'react';
-import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, RATING_LABELS, ratingOf, seasonInfo } from '../data';
+import { shownOvr as ovrOf, shownFromRaw, shownFromBpm, RATING_LABELS, ratingOf, seasonInfo, attrOf } from '../data';
 import { ageIn } from '../players';
 import { peakBpm, payroll, askingSalary, MIN_SAL, maxSalary, hardCap } from '../ai/value';
 import { discount, reasons, preferredYears, lengthPrice, offerUtility } from '../league/prefs';
@@ -27,7 +27,7 @@ import { posNum } from '../engine/game';
 
 export const moneyOf = (frac: number, s: number) => money(frac, s);
 export const potOf = (p: any, s: number) => shownFromBpm(peakBpm(p, s));
-const R = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
+const R = (p: any, i: number) => attrOf(p.z, RATING_LABELS[i]);
 /** Height and every rating, for lists where you choose players without opening their cards.
  *  `proj`: the ratings he projects to at his peak (the league's average development, skill by skill) instead of today's. */
 export function attrCols(pOf: (r: any) => any, S: number, proj = false) {
@@ -36,10 +36,10 @@ export function attrCols(pOf: (r: any) => any, S: number, proj = false) {
   return [
     { key: 'role', label: 'Role', left: true, asc: true, title: 'Archetype – for a young player without a clear role yet, what he projects to become (proj.)', get: (r: any) => roleSortKey(pOf(r), S), fmt: (_: any, r: any) => <RoleCell p={pOf(r)} S={S} /> },
     htCol((r: any) => pOf(r).ht),
-    ...RATING_LABELS.map((L, i) => ({ key: 'r' + i, label: L.short, title: L.name + (L.tendency ? ' (a tendency, not a skill)' : '') + (proj ? ' – projected at his peak' : ''), get: (r: any) => ratingOf(zOf(r)[L.k], L.inv), fmt: (v: any, r: any) => {
+    ...RATING_LABELS.map((L, i) => ({ key: 'r' + i, label: L.short, title: L.name + (L.tendency ? ' (a tendency, not a skill)' : '') + (proj ? ' – projected at his peak' : ''), get: (r: any) => attrOf(zOf(r), L), fmt: (v: any, r: any) => {
       if (L.tendency) return <span className="dim">{v}</span>;
       if (!proj) return v;
-      const d = v - ratingOf(pOf(r).z[L.k], L.inv);
+      const d = v - attrOf(pOf(r).z, L);
       return <span title={`Now ${v - d}`}>{v}{d >= 3 ? <span className="pos small-t"> +{d}</span> : d <= -3 ? <span className="neg small-t"> {d}</span> : null}</span>;
     } })),
   ];
