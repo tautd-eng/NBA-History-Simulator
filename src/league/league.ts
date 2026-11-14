@@ -27,7 +27,7 @@ export function rngOf(lg: League) { return new Rng(lg.rng); }
 function saveRng(lg: League, r: Rng) { lg.rng = [...r.s] as any; }
 
 // ---------------------------------------------------------------- creation
-export function newLeague(destiny: number, seed: number, settings: Settings = { games: null, series: null }, opts: { fantasy?: boolean; start?: number; classMode?: ClassMode; futureMode?: FutureMode } = {}): League {
+export function newLeague(destiny: number, seed: number, settings: Settings = { games: null, series: null }, opts: { fantasy?: boolean | { rr?: number | null }; start?: number; classMode?: ClassMode; futureMode?: FutureMode } = {}): League {
   const rng = new Rng(seed);
   // starting after the data ends: the league is set up with the last real rosters and begins with that summer's off-season
   // today's league: the real 2026–27 opening rosters (the ratings are the players' latest real season)
@@ -128,9 +128,9 @@ export function newLeague(destiny: number, seed: number, settings: Settings = { 
     for (const t of Object.values(lg.teams)) t.roster = [];
     for (const p of Object.values(lg.players)) if (!(p as any).stash) p.tid = null;
     lg.phase = 'fantasy';
-    lg.fantasy = { order: rng.shuffle(Object.keys(lg.teams)), rounds: 13, picks: [], done: false };
+    lg.fantasy = { order: rng.shuffle(Object.keys(lg.teams)), rounds: 13, picks: [], done: false, rr: typeof opts.fantasy === 'object' ? opts.fantasy.rr ?? null : null };
     saveRng(lg, rng);
-    lg.news.push({ s: season, t: `Fantasy draft: all ${label} players go into one pool and teams pick in snake order.` });
+    lg.news.push({ s: season, t: `Fantasy draft: all ${label} players go into one pool and teams pick in snake order${lg.fantasy.rr ? ` (reversed again from round ${lg.fantasy.rr})` : ''}.` });
     return lg;
   }
   if (future) {

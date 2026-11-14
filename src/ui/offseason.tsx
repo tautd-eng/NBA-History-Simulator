@@ -1,6 +1,8 @@
 // @ts-nocheck
 // Off-season screens: draft day (one pick at a time), the free-agency hub
 // (three stages) and the free-agent list where the user makes offers.
+import { PickBoard, OnClock } from './pickboard';
+import { htStr, htCol, htDiff } from './units';
 import { Linkify, PL, TL, nav } from './nav';
 import { MyBoard, BoardToggle, boardOf } from './myboard';
 import { run } from '../league/commands';
@@ -33,7 +35,7 @@ export function attrCols(pOf: (r: any) => any, S: number, proj = false) {
   const zOf = (r: any) => { const p = pOf(r); if (!proj) return p.z; let z = cache.get(p.id); if (!z) { z = projectedZ(p, S); cache.set(p.id, z); } return z; };
   return [
     { key: 'role', label: 'Role', left: true, asc: true, title: 'Archetype – for a young player without a clear role yet, what he projects to become (proj.)', get: (r: any) => roleSortKey(pOf(r), S), fmt: (_: any, r: any) => <RoleCell p={pOf(r)} S={S} /> },
-    { key: 'ht', label: 'Ht', title: 'Height, cm', get: (r: any) => Math.round(pOf(r).ht * 2.54) },
+    htCol((r: any) => pOf(r).ht),
     ...RATING_LABELS.map((L, i) => ({ key: 'r' + i, label: L.short, title: L.name + (L.tendency ? ' (a tendency, not a skill)' : '') + (proj ? ' – projected at his peak' : ''), get: (r: any) => ratingOf(zOf(r)[L.k], L.inv), fmt: (v: any, r: any) => {
       if (L.tendency) return <span className="dim">{v}</span>;
       if (!proj) return v;
@@ -137,8 +139,8 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
       <section className="panel accent">
         <div className="team-head">
           <h2>{d.year} draft day</h2>
-          {on && <span className={`chip ${myTurn ? 'on-clock' : ''}`}>No. {on.pick} · round {on.round} – {lg.teams[on.tid].name} on the clock{on.tid !== on.orig ? ` (via ${lg.teams[on.orig].abbr})` : ''}</span>}
         </div>
+        {on && <OnClock lg={lg} tid={on.tid} pick={on.pick} round={on.round} via={on.tid !== on.orig ? on.orig : null} mine={myTurn} />}
         {d.lottery && <p className="note"><Linkify text={d.lottery} /></p>}
         <div className="def-row">
           {myTurn ? <>
@@ -160,31 +162,15 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
         <p className="note">Overall and potential stay hidden until a player is drafted – judge him by his ratings, his role and the scouts' rank.</p>
       </section>
       <section className="col">
+        <PickBoard lg={lg} at={d.idx} openPlayer={openPlayer}
+          slots={d.order.map((o: any, i: number) => {
+            const made = d.picks[i];
+            if (made) return { n: made.pick, round: o.round, tid: made.tid, via: made.via, pid: made.pid };
+            const owner = lg.picks?.find((p: any) => p.season === d.year && p.round === o.round && p.orig === o.orig)?.owner ?? o.orig;
+            return { n: i + 1, round: o.round, tid: owner, via: owner !== o.orig ? o.orig : undefined };
+          })}
+          note={trades.length ? <ul className="news pb-trades">{trades.map((t: any, i: number) => <li key={i} className="trade-li"><span className="yr">⇄</span><span><Linkify text={t.text} /></span></li>)}</ul> : null} />
         {lg.userTid && <MyBoard lg={lg} year={d.year} pool={d.pool} openPlayer={openPlayer} onChange={() => act(() => {})} />}
-        <div className="panel">
-          <h2>Picks</h2>
-          {recent.length ? (
-            <ul className="news">
-              {feed.slice(0, 50).map((f: any) => f.k === 't' ? (
-                <li key={'t' + f.i} className="pop-in trade-li"><span className="yr">⇄</span><span><b>Trade:</b> <Linkify text={f.x.text} /></span></li>
-              ) : (
-                <li key={f.x.pick} className={`pop-in ${f.x.tid === lg.userTid ? 'mine' : ''}`}>
-                  <span className="yr">{f.x.pick}</span>
-                  <span><b>{lg.teams[f.x.tid].abbr}</b>{f.x.via ? <span className="dim"> (via {lg.teams[f.x.via].abbr})</span> : null} <button className="link" onClick={() => openPlayer(f.x.pid)}>{lg.players[f.x.pid].name}</button> <span className="dim">{lg.players[f.x.pid].pos} · OVR {ovrOf(lg.players[f.x.pid].z, lg.players[f.x.pid].id)} · pot {potOf(lg.players[f.x.pid], d.year + 1)}</span></span>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="note">The draft hasn't started – the first pick is on the clock.</p>}
-        </div>
-        <div className="panel">
-          <h2>Upcoming picks</h2>
-          <ul className="news">
-            {d.order.slice(d.idx, d.idx + 12).map((o: any, i: number) => {
-              const owner = lg.picks?.find((p: any) => p.season === d.year && p.round === o.round && p.orig === o.orig)?.owner ?? o.orig;
-              return <li key={i} className={owner === lg.userTid ? 'mine' : ''}><span className="yr">{d.idx + i + 1}</span><span>{lg.teams[owner].name}{owner !== o.orig ? <span className="dim"> (via {lg.teams[o.orig].abbr})</span> : null}</span></li>;
-            })}
-          </ul>
-        </div>
       </section>
     </div>
     </>

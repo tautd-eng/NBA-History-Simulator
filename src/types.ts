@@ -193,7 +193,9 @@ export interface FreeAgency {
 export interface RetRow { pid: string; tid: string | null; age: number; ovr: number; why: string; back: boolean; undone?: boolean; rk?: number }
 /** Why a player's rating changed this summer, in displayed OVR points by cause. */
 export interface DevWhy { s: number; inj: number; perf: number; trend: number; luck: number; cap: number; destiny: number; league?: number; total: number; flop?: boolean; dz?: boolean }
-export interface FantasyDraft { order: string[]; rounds: number; picks: { round: number; pick: number; tid: string; pid: string }[]; done: boolean }
+export interface FantasyDraft {
+  /** third-round reversal: from this round on the snake turns the other way (3 = classic 3RR) */
+  rr?: number | null; order: string[]; rounds: number; picks: { round: number; pick: number; tid: string; pid: string }[]; done: boolean }
 
 export interface League {
   version: number;

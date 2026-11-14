@@ -1,5 +1,6 @@
 // Your own draft board: rank the prospects yourself (drag, arrows, add / remove). Your GM drafts from it when
 // he picks for you, and the draft room shows where everyone stands on it.
+import { htStr, htCol, htDiff } from './units';
 import { useState } from 'react';
 import { boardScore } from '../ai/trades';
 import { mgmtOf } from './mgmt';
@@ -56,7 +57,7 @@ export function MyBoard({ lg, year, pool, openPlayer, onChange, title = 'Your bo
         return <li key={pid} draggable className={`${gone ? 'gone' : ''} ${drag === i ? 'dragging' : ''}`}
           onDragStart={() => setDrag(i)} onDragOver={e => e.preventDefault()} onDrop={() => { if (drag !== null && drag !== i) move(drag, i); setDrag(null); }} onDragEnd={() => setDrag(null)}>
           <span className="bl-n">{i + 1}</span>
-          <span className="bl-name"><button className="link" onClick={() => openPlayer(pid)}>{p.name}</button> <span className="dim">{p.pos} · {Math.floor(S - p.born)} · {Math.round(p.ht * 2.54)} cm</span>{by ? <span className="chip tiny">taken – {by}</span> : null}</span>
+          <span className="bl-name"><button className="link" onClick={() => openPlayer(pid)}>{p.name}</button> <span className="dim">{p.pos} · {Math.floor(S - p.born)} · {htStr(p.ht)}</span>{by ? <span className="chip tiny">taken – {by}</span> : null}</span>
           <span className="bl-role"><RoleCell p={p} S={S} /></span>
           <span className="bl-btns">
             <button className="small ghost" disabled={i === 0} onClick={() => move(i, 0)} title="To the top">⤒</button>

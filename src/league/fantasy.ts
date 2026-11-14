@@ -15,9 +15,15 @@ export function fantasyOnClock(lg: League): { tid: string; round: number; pick: 
   const i = f.picks.length;
   const round = Math.floor(i / n) + 1;
   if (round > f.rounds) return null;
-  const k = i % n;
-  const tid = round % 2 === 1 ? f.order[k] : f.order[n - 1 - k];
-  return { tid, round, pick: i + 1 };
+  return { tid: fantasyTidAt(f, i), round, pick: i + 1 };
+}
+
+/** Who picks at overall index i: snake order; with a reversal round (3RR / 5RR) the snake turns again from that round on. */
+export function fantasyTidAt(f: { order: string[]; rr?: number | null }, i: number): string {
+  const n = f.order.length, round = Math.floor(i / n) + 1, k = i % n;
+  let fwd = round % 2 === 1;
+  if (f.rr && round >= f.rr) fwd = !fwd;
+  return fwd ? f.order[k] : f.order[n - 1 - k];
 }
 
 export function fantasyPool(lg: League): Player[] {

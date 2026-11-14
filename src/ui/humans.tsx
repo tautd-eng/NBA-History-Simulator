@@ -30,6 +30,7 @@ export function HumansPanel({ lg, close, onChange }: any) {
         <ul className="save-list hum-list">{teams.map(t => (
           <li key={t.tid} className={t.tid === lg.userTid ? 'mine' : ''}>
             <label><input type="checkbox" checked={hs.has(t.tid)} onChange={e => set(t.tid, e.target.checked)} /> <b>{t.name}</b>{t.tid === lg.userTid ? <span className="chip tiny">playing now</span> : null}</label>
+            {hs.has(t.tid) && <input className="hum-name" placeholder="Name" aria-label={`Who runs ${t.name}`} defaultValue={lg.humanNames?.[t.tid] ?? ''} onChange={e => { (lg.humanNames ??= {})[t.tid] = e.target.value.slice(0, 24); onChange(); }} />}
             {hs.has(t.tid) && t.tid !== lg.userTid && <button className="small" onClick={() => { playAs(lg, t.tid); bump(x => x + 1); onChange(); }}>Play as</button>}
           </li>
         ))}</ul>

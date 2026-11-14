@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { htStr, htCol, htDiff, htUnit, setHtUnit } from './units';
 import { PlayoffPreviews, SeriesDialog } from './preview';
 import { forward } from '../league/commands';
 import { useNavState, navSubs, restoreSubs } from './nav';
@@ -594,6 +595,9 @@ function PrefsScreen({ onBack }: any) {
         <button className="ghost small menu-back" onClick={onBack}>← Main menu</button>
         <h1>Preferences</h1>
         <label className="commish"><input type="checkbox" checked={showDollars()} onChange={e => { setShowDollars(e.target.checked); bump(x => x + 1); }} /> Show salaries in dollars too (that season's money). Off: everything is a share of the salary cap – the same in every era.</label>
+        <div className="field"><span>Heights</span>
+          <div className="seg">{([['m', 'Metres (2.01 m)'], ['ft', 'Feet and inches (6′7″)']] as const).map(([k, t]) => <button key={k} className={htUnit() === k ? 'on' : ''} onClick={() => { setHtUnit(k); bump(x => x + 1); }}>{t}</button>)}</div>
+        </div>
         <p className="note">Season length, playoff format, the salary cap and injuries are set for each league when you start it (and later under “Season format” inside the league).</p>
       </div>
     </div>
@@ -716,6 +720,7 @@ function Setup({ onStart, onBack, host }: any) {
   const [d, setD] = useState(0);
   const [form, setForm] = useState(() => formOf(null));
   const [fantasy, setFantasy] = useState(false);
+  const [rr, setRr] = useState<number | null>(null);
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1e6));
   const [user, setUser] = useState('');
   const [start, setStart] = useState(1980);
@@ -787,11 +792,15 @@ function Setup({ onStart, onBack, host }: any) {
           <span><input id="fantasy" type="checkbox" checked={fantasy} onChange={e => setFantasy(e.target.checked)} /> Fantasy draft</span>
           <small>All {label} players go into one pool and teams draft their rosters from scratch. You pick for your own team.</small>
         </label>
+        {fantasy && <div className="field"><span>Draft order</span>
+          <div className="seg" role="group" aria-label="Fantasy draft order">{([[null, 'Snake'], [3, '3RR'], [5, '5RR']] as const).map(([k, t]) => <button key={t} className={rr === k ? 'on' : ''} onClick={() => setRr(k)}>{t}</button>)}</div>
+          <small>{rr ? `Snake order, but from round ${rr} it turns again: the team that picked last in round ${rr - 1} also picks last in round ${rr} – it evens out the top picks' advantage.` : 'Snake: the last pick of a round picks first in the next.'}</small>
+        </div>}
         <details className="more">
           <summary>Season and playoff format</summary>
           <SeasonFields form={form} setForm={setForm} />
         </details>
-        <button className="primary big" onClick={() => onStart(d / 100, seed, user || null, settingsOf(form), fantasy, start, mode, fmode)}>{fantasy ? 'To the fantasy draft' : 'Start the league'}</button>
+        <button className="primary big" onClick={() => onStart(d / 100, seed, user || null, settingsOf(form), fantasy ? { rr } : false, start, mode, fmode)}>{fantasy ? 'To the fantasy draft' : 'Start the league'}</button>
       </div>
     </div>
   );
@@ -1144,7 +1153,7 @@ function TeamView({ lg, tid, setTid, openPlayer, openGame }: any) {
     { key: 'name', label: 'Player', left: true, get: (r: any) => r.p.name, fmt: (v: any, r: any) => <><PFace lg={lg} p={r.p} /><button className="link" onClick={() => openPlayer(r.p.id)}>{v}</button>{r.p.injury > 0 && <span className="inj" title={r.p.inj ? `${injName(r.p.inj.k)} – out ~${r.p.injury} more games` : 'Injured'}>+{r.p.injury}</span>}</> },
     { key: 'pos', label: 'Pos', get: (r: any) => r.p.pos, fmt: (v: any) => <span className="dim">{v}</span> },
     { key: 'role', label: 'Role', left: true, asc: true, get: (r: any) => roleOf(r.p.z, r.p.pos).arch.name, fmt: (_: any, r: any) => { const ro = roleOf(r.p.z, r.p.pos); return <><RoleBadge id={ro.arch.id} />{ro.second && <RoleBadge id={ro.second.id} small />}</>; } },
-    { key: 'ht', label: 'Ht', title: 'Height, cm', get: (r: any) => Math.round(r.p.ht * 2.54) },
+    htCol((r: any) => r.p.ht),
     { key: 'age', label: 'Age', asc: true, get: (r: any) => ageIn(r.p, lg.season) },
     { key: 'ovr', label: 'OVR', get: (r: any) => ovrOf(r.p.z, r.p.id), fmt: (v: any) => <Ovr v={v} small /> },
     { key: 'pot', label: 'Pot.', title: 'Potential', get: (r: any) => potOf(r.p, lg.season) },

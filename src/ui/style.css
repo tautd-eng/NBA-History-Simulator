@@ -985,3 +985,27 @@ button.on-board { background: var(--accent); color: #fff; border-color: var(--ac
 .main-menu button span { font-size: 0.85rem; color: var(--muted); font-weight: 400; }
 .main-menu button.primary span { color: inherit; opacity: 0.85; }
 .menu-back { align-self: flex-start; }
+
+/* draft board (draft and fantasy draft) */
+.pick-board { display: flex; flex-direction: column; gap: 8px; }
+.pb-scroll { max-height: min(72vh, 760px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
+.pb-rh { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 2px 4px; position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.pb-round { display: flex; flex-direction: column; gap: 3px; }
+.pb-row { display: grid; grid-template-columns: 28px 46px 1fr; align-items: center; gap: 8px; padding: 5px 8px; border-left: 5px solid var(--line); border-radius: 6px; background: var(--sunk); font-size: 0.88rem; min-height: 32px; }
+.pb-row.next { opacity: 0.72; }
+.pb-row.clock { background: var(--accent-soft); outline: 2px solid var(--accent); opacity: 1; }
+.pb-row.mine .pb-n { color: var(--accent); font-weight: 700; }
+.pb-n { font-variant-numeric: tabular-nums; color: var(--muted); text-align: right; }
+.pb-team { font-weight: 700; font-size: 0.74rem; text-align: center; border-radius: 4px; padding: 2px 0; letter-spacing: 0.03em; }
+.pb-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-otc { color: var(--accent); animation: otc 1.2s ease-in-out infinite; }
+@keyframes otc { 50% { opacity: 0.45; } }
+.pb-trades { max-height: 120px; overflow: auto; font-size: 0.82rem; }
+.otc-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--r); font-size: 0.98rem; flex-wrap: wrap; }
+.otc-banner .otc-tag { margin-left: auto; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; opacity: 0.9; }
+.otc-banner.mine .otc-tag { animation: otc 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pb-otc, .otc-banner.mine .otc-tag { animation: none; } }
+.pb-row { grid-template-columns: 28px 46px 1fr auto; }
+.pb-row.human { box-shadow: inset -5px 0 0 var(--accent); }
+.pb-user { font-size: 0.72rem; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 8px; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hum-name { width: 9em; padding: 4px 8px; font-size: 0.85rem; }

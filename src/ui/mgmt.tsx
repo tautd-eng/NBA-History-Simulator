@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Team management – only for the user's team: the rotation (automatic, with how deep and how much the young
 // play, or minutes by hand), the tactical set-up, and contract extensions.
+import { htDiff } from './units';
 import { useMemo, useState } from 'react';
 import { K } from '../data';
 import { run } from '../league/commands';
@@ -327,7 +328,7 @@ function Matchups({ lg, openPlayer, onChange }: any) {
             <td className="l"><select aria-label={`Who guards ${p.name}`} value={cur[p.id] ?? ''} onChange={e => set(p.id, e.target.value)}>
               <option value="">Auto – by position</option>
               {mine.map((q: any) => <option key={q.id} value={q.id}>{q.name} ({q.pos}, {ovrOf(q.z, q.id)})</option>)}
-            </select>{d && Math.abs(d.ht - p.ht) >= 4 ? <span className={`chip tiny ${d.ht < p.ht ? 'neg' : ''}`} title="Height difference">{d.ht > p.ht ? '+' : ''}{Math.round((d.ht - p.ht) * 2.54)} cm</span> : null}</td>
+            </select>{d && Math.abs(d.ht - p.ht) >= 4 ? <span className={`chip tiny ${d.ht < p.ht ? 'neg' : ''}`} title="Height difference">{htDiff(d.ht - p.ht)}</span> : null}</td>
           </tr>;
         })}</tbody>
       </table></div>
