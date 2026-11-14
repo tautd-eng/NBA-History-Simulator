@@ -1427,8 +1427,10 @@ function aiTeamOption(lg: League, t: Team, p: Player, Y: number, log: FreeAgency
   const mustKeep = (ageIn(p, N) <= 25 && shownOvr(p.z, p.id) >= 76) || keeps(lg, t.tid, p);
   const fits = () => hardCap(lg) - pay();
   const keep = worth && (fits() >= 0 || clearRoom(lg, t, fits, worthTo(lg, p, t.tid) * (mustKeep ? 1.5 : 1), N, `to keep ${p.name} (team option)`) || mustKeep);
+  // making room may have moved him (traded or released with the rest): then the option is no longer this team's
+  if (p.tid !== t.tid || !p.contract?.opts?.includes(o)) return;
   if (keep) {
-    p.contract.opts = p.contract.opts!.filter(x => x !== o);
+    p.contract.opts = p.contract.opts.filter(x => x !== o);
     log.push({ st: 0, kind: 'option', pid: p.id, tid: t.tid, desc: 'team exercised the option' });
   } else {
     p.contract = { sal: p.contract.sal, exp: Y }; p.noRfa = true;
