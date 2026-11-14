@@ -25,7 +25,28 @@ export const DEV = { noise: 0.32, ar: 0.55, maxOvrStep: 8, soft: 2.7, maxSkillSt
  * hurts only negFactor as much, and without a flop one summer costs at most
  * maxDrop OVR (≤22, 23–24, 25).
  */
-export const YOUNG = { maxAge: 25, deadZone: 2.5, flop: -3, negFactor: 0.5, maxDrop: [0, 1, 2], grow: [0.4, 0.38, 0.35, 0.3, 0.15, 0.15, 0.1, 0.05] };
+export const YOUNG = { maxAge: 25, deadZone: 2.5, flop: -3, negFactor: 0.5, maxDrop: [0, 1, 2], grow: [0.4, 0.38, 0.35, 0.28, 0.12, 0.12, 0.18, 0.18, 0.1] };
+
+/**
+ * The development curve, year by year (index = age − 19, clamped at both ends):
+ *  grow:    natural growth of the young (BPM per summer, before the talent bonus that runs until 22)
+ *  minDrop: minimum decline by the player's own clock (BPM per summer)
+ *  neg:     share of a below-rating season that is charged
+ *  pos:     share of an above-rating season that is credited
+ *  lgDown / lgUp: share of the league-wide recalibration he carries when the league runs too strong / too weak
+ *  young:   most a young player who did not flop can lose in one summer (OVR, sim scale)
+ */
+export const AGE = {
+  //         19    20    21    22    23    24    25    26    27    28    29    30    31    32    33    34    35    36    37    38    39
+  grow:   [0.40, 0.38, 0.35, 0.28, 0.12, 0.12, 0.18, 0.18, 0.10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  minDrop:[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.25, 0.35, 0.45, 0.55, 0.80, 1.05, 1.30, 1.55, 1.80, 2.05, 2.20],
+  neg:    [0, 0, 0, 0, 0.20, 0.40, 0.55, 0.60, 0.65, 0.85, 0.90, 1.00, 1.05, 1.10, 1.10, 1.10, 1.10, 1.10, 1.10, 1.10, 1.10],
+  pos:    [1.50, 1.50, 1.50, 1.50, 1.35, 1.25, 1.15, 1.00, 0.90, 0.85, 0.85, 0.80, 0.75, 0.65, 0.60, 0.55, 0.55, 0.55, 0.55, 0.55, 0.55],
+  lgDown: [0.50, 0.50, 0.50, 0.50, 0.45, 0.40, 0.35, 0.35, 0.40, 0.70, 1.00, 1.20, 1.40, 1.60, 1.80, 1.80, 1.80, 1.80, 1.80, 1.80, 1.80],
+  lgUp:   [1.30, 1.30, 1.30, 1.30, 1.30, 1.30, 1.30, 1.30, 1.30, 1.20, 1.00, 0.80, 0.65, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50],
+  young:  [0, 0, 0, 0, 0.5, 1, 2],
+};
+export const atAge = (t: number[], age: number) => t[Math.max(0, Math.min(t.length - 1, Math.round(age) - 19))];
 
 export function ensureDev(p: Player, rng: Rng) {
   if (p.dev) return p.dev;
@@ -245,19 +266,16 @@ export function develop(lg: League, rng: Rng) {
     (dev as any).flop = flop;
     const cur = new Array(NK).fill(0);
     if (pf) {
-      const ageF = age <= 24 ? 1 : age <= 28 ? 0.85 : age <= 31 ? 0.6 : 0.4;
       // a season below his rating: up to 22 it costs nothing (the young grow into their game), from 23 the bill
       // comes in step by step, and a veteran who no longer delivers pays in full (he will not grow back into it).
       // A good season counts most for the young – and right away (below).
-      const a = PERF.alpha * (pf.ovrGain < 0
-        ? (age <= 22 ? 0 : age === 23 ? 0.2 : age === 24 ? 0.4 : age === 25 ? 0.55 : age >= 30 ? PERF.vetNeg : age >= 28 ? 0.85 : 0.7 * ageF)
-        : ageF * (age <= 22 ? 1.5 : age <= 24 ? 1.3 : age === 25 ? 1.15 : 1));
+      const a = PERF.alpha * atAge(pf.ovrGain < 0 ? AGE.neg : AGE.pos, age);
       if (age <= 22 && pf.ovrGain < 0) why.dz = true;
       const gain = pf.ovrGain * a;
       const cap = Math.abs(gain) > PERF.maxStep ? PERF.maxStep / Math.abs(gain) : 1;
       for (let i = 0; i < NK; i++) cur[i] = pf.dz[i] * a * cap;
-      // a young player who delivers is rewarded at once, not over three summers
-      if (age <= 24 && pf.ovrGain > 0) { for (let i = 0; i < NK; i++) p.z[i] += cur[i]; cur.fill(0); }
+      // a young player who delivers – or a veteran who still does – is rewarded at once, not over three summers
+      if ((age <= 24 || age >= 28) && pf.ovrGain > 0) { for (let i = 0; i < NK; i++) p.z[i] += cur[i]; cur.fill(0); }
     }
     // what a season shows is spread over three summers (50 / 30 / 20): one bad year does not sink a player at once,
     // and a real decline (or a real step up) keeps adding up
@@ -284,10 +302,10 @@ export function develop(lg: League, rng: Rng) {
     // the young grow by themselves until about 23 – the more talented (hidden potential, and already good for his
     // age) the faster; no box score needed for that
     // (and keep filling out a little until 26, so careers peak at 25–27 as in the real league)
-    if (age <= 26) {
+    if (age <= 27) {
       const expect = age <= 19 ? 70 : age <= 21 ? 72 : 74;
-      const t = age <= 23 ? 0.5 * dev.pot + (s0 - expect) / 6 : 0;
-      const grow = YOUNG.grow[Math.max(0, Math.min(7, age - 19))] + 0.3 * Math.max(0, Math.min(2.5, t));
+      const t = age <= 22 ? 0.5 * dev.pot + (s0 - expect) / 6 : 0;
+      const grow = atAge(AGE.grow, age) + 0.3 * Math.max(0, Math.min(2.5, t));
       for (let i = 0; i < NK; i++) nat[i] += grow * OVR_DIR[i];
     }
     // the age curve by the player's own clock (some peak early, some late): no natural decline before 28,
@@ -297,8 +315,8 @@ export function develop(lg: League, rng: Rng) {
       const effAge = age - dev.peak;
       const meanOnly = p.z.map((v, i) => v + H.aging[H.keys[i]].mean[ai]);
       const drift = bpmOf(meanOnly) - bpmOf(p.z);
-      if (effAge <= 27 && drift < 0) for (let i = 0; i < NK; i++) nat[i] -= drift * OVR_DIR[i];
-      const minDrop = effAge < 28 ? 0 : effAge < 30 ? 0.2 * (effAge - 27) : Math.min(2.0, 0.5 + 0.2 * (effAge - 30));
+      if (effAge <= 28 && drift < 0) for (let i = 0; i < NK; i++) nat[i] -= drift * OVR_DIR[i];
+      const minDrop = atAge(AGE.minDrop, effAge);
       const extra = Math.max(0, drift + minDrop);
       if (minDrop > 0 && extra > 0) for (let i = 0; i < NK; i++) nat[i] -= extra * OVR_DIR[i];
     }
@@ -315,7 +333,7 @@ export function develop(lg: League, rng: Rng) {
     why.trend = s2 - s1; why.luck = s3 - s2;
     dev.e = eNew;
     // young players who did not flop lose at most a little in one summer
-    const maxDrop = age <= 22 ? YOUNG.maxDrop[0] : age <= 24 ? YOUNG.maxDrop[1] : age <= YOUNG.maxAge ? YOUNG.maxDrop[2] : Infinity;
+    const maxDrop = age <= 25 ? atAge(AGE.young, age) : Infinity;
     // grown players don't swing wildly: one summer moves a single skill by at most maxSkillStep (≈7 rating points)
     if (age >= 24) for (let i = 0; i < NK; i++) { const dv = p.z[i] - z0[i]; if (Math.abs(dv) > DEV.maxSkillStep) p.z[i] = z0[i] + Math.sign(dv) * DEV.maxSkillStep; }
     // and in his prime (26–29) a player who did not flop loses at most a few points in one summer
@@ -429,7 +447,7 @@ export function youngFloor(lg: League, S = lg.season) {
   for (const p of Object.values(lg.players)) {
     if (p.retired || !p.dev || (p.dev as any).flop) continue;
     const age = ageIn(p, S - 1);
-    const maxDrop = age <= 22 ? YOUNG.maxDrop[0] : age <= 24 ? YOUNG.maxDrop[1] : age <= YOUNG.maxAge ? YOUNG.maxDrop[2] : Infinity;
+    const maxDrop = age <= 25 ? atAge(AGE.young, age) : Infinity;
     if (maxDrop === Infinity) continue;
     const prev = p.ovrHist.find(h => h[0] === S - 1)?.[1];
     if (prev === undefined) continue;
@@ -462,7 +480,11 @@ export function normalizeLeague(lg: League, S = lg.season, maxStep = Infinity) {
     const down = bpmOf(shift) - bpmOf(new Array(NK).fill(0)) < 0;
     const wOf = (p: Player) => {
       const a = ageIn(p, S - 1) - (p.dev?.peak ?? 0);
-      return down ? (a <= 22 ? 0.5 : a <= 27 ? 0.35 : a <= 29 ? 1.1 : 1.8) : (a <= 27 ? 1.3 : a <= 29 ? 1 : 0.5);
+      // a veteran who had a good season carries half of his share, one who played to his rating (up to 32) three
+      // quarters, one who had a bad season half again as much
+      const w = p.devWhy?.s === S ? p.devWhy.perf : 0;
+      const form = a > 27 ? (w >= 1 ? 0.5 : w <= -1 ? 1.5 : a <= 32 ? 0.75 : 1) : 1;
+      return down ? atAge(AGE.lgDown, a) * form : atAge(AGE.lgUp, a);
     };
     const rot = Object.values(lg.teams).filter(t => t.active).flatMap(t => t.roster.map(pid => lg.players[pid]).sort((x, y) => bpmOf(y.z) - bpmOf(x.z)).slice(0, 10));
     const meanW = rot.length ? rot.reduce((a, p) => a + wOf(p), 0) / rot.length : 1;
