@@ -716,6 +716,17 @@ function SeasonFields({ form, setForm, idp = '' }: any) {
   </>;
 }
 
+/** One setup option: a row with its name and current value; clicking it opens the choices. */
+function Opt({ title, value, children }: any) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`opt ${open ? 'open' : ''}`}>
+      <button className="opt-head" aria-expanded={open} onClick={() => setOpen(o => !o)}><span>{title}</span><b>{value}</b><span className="opt-car" aria-hidden="true">{open ? '▴' : '▾'}</span></button>
+      {open && <div className="opt-body">{children}</div>}
+    </div>
+  );
+}
+
 function Setup({ onStart, onBack, host }: any) {
   const [d, setD] = useState(0);
   const [form, setForm] = useState(() => formOf(null));
@@ -744,62 +755,66 @@ function Setup({ onStart, onBack, host }: any) {
         <h1>NBA History Simulator</h1>
         <button className="ghost small menu-back" onClick={onBack}>← Main menu</button>
         {host && <p className="hint">You are setting up a league to host online: once it starts, sign in and create the online league – your friends join with its code.</p>}
-        <p className="lede">Rewrite NBA history. The league starts with the real players of {label}. New draft classes arrive every year, and how they develop is up to the simulation and the destiny slider.</p>
+        <p className="lede">The league starts with the real players of {label}. Pick the season and your team – everything else is optional.</p>
         <label className="field" htmlFor="start">
           <span>Starting season</span>
           <select id="start" value={start} onChange={e => pickYear(+e.target.value)}>
             {years.map(y => <option key={y} value={y}>{y - 1}–{String(y).slice(2)}{y > LAST_SEASON ? ' – today\'s rosters' : ''}</option>)}
           </select>
-          <small>{future ? `Today's NBA: the real ${LAST_SEASON}–${String(LAST_SEASON + 1).slice(2)} opening-night rosters, ${LAST_SEASON} rookies included (rated from their draft slot; everyone else from his ${LAST_SEASON - 1}–${String(LAST_SEASON).slice(2)} season). From the next draft on, the rookies are historical ones coming round again (copies of the players, developing like the originals did) – choose how below.` : 'Teams and rosters are as they were that season. The league has no stats from earlier years: history starts here.'}</small>
-        </label>
-        {future && <fieldset className="field radio-set">
-          <legend>Draft classes from {LAST_SEASON + 1} on</legend>
-          {FUTURE_MODES.map(([k, l, txt]) => (
-            <label key={k} className={`radio ${fmode === k ? 'on' : ''}`}>
-              <input type="radio" name="futuremode" value={k} checked={fmode === k} onChange={() => setFmode(k)} />
-              <span><b>{l}</b><small>{txt}</small></span>
-            </label>
-          ))}
-          <small>A class (or, mixed, a player) only comes round again once every one of its players has retired – nobody plays against his own copy.</small>
-        </fieldset>}
-        {!future && <fieldset className="field radio-set">
-          <legend>Draft classes</legend>
-          {CLASS_MODES.map(([k, l, txt]) => (
-            <label key={k} className={`radio ${mode === k ? 'on' : ''}`}>
-              <input type="radio" name="classmode" value={k} checked={mode === k} onChange={() => setMode(k)} />
-              <span><b>{l}</b><small>{txt}</small></span>
-            </label>
-          ))}
-        </fieldset>}
-        <label className="field" htmlFor="destiny">
-          <span>Destiny slider <b>{d}%</b></span>
-          <input id="destiny" type="range" min="0" max="100" step="5" value={d} onChange={e => setD(+e.target.value)} />
-          <small>{desc}{mode !== 'real' ? ' With mixed classes, destiny works by career year: a rookie develops like the real player did in the same year of his career.' : ''}</small>
+          <small>{future ? `Today's NBA: the real ${LAST_SEASON}–${String(LAST_SEASON + 1).slice(2)} opening-night rosters, ${LAST_SEASON} rookies included.` : 'Teams and rosters as they were that season; history starts here.'}</small>
         </label>
         <label className="field" htmlFor="team">
-          <span>Your team (highlighted)</span>
+          <span>Your team</span>
           <select id="team" value={user} onChange={e => setUser(e.target.value)}>
             <option value="">None – just watching</option>
             {teams.map(([tid, t]) => <option key={tid} value={tid}>{t.name}</option>)}
           </select>
         </label>
-        <label className="field" htmlFor="seed">
-          <span>Random seed</span>
-          <input id="seed" type="number" value={seed} onChange={e => setSeed(+e.target.value)} />
-          <small>The same seed and settings produce the same history.</small>
-        </label>
-        <label className="field check" htmlFor="fantasy">
-          <span><input id="fantasy" type="checkbox" checked={fantasy} onChange={e => setFantasy(e.target.checked)} /> Fantasy draft</span>
-          <small>All {label} players go into one pool and teams draft their rosters from scratch. You pick for your own team.</small>
-        </label>
-        {fantasy && <div className="field"><span>Draft order</span>
-          <div className="seg" role="group" aria-label="Fantasy draft order">{([[null, 'Snake'], [3, '3RR'], [5, '5RR']] as const).map(([k, t]) => <button key={t} className={rr === k ? 'on' : ''} onClick={() => setRr(k)}>{t}</button>)}</div>
-          <small>{rr ? `Snake order, but from round ${rr} it turns again: the team that picked last in round ${rr - 1} also picks last in round ${rr} – it evens out the top picks' advantage.` : 'Snake: the last pick of a round picks first in the next.'}</small>
-        </div>}
-        <details className="more">
-          <summary>Season and playoff format</summary>
-          <SeasonFields form={form} setForm={setForm} />
-        </details>
+        <div className="opt-list">
+          <Opt title="Destiny" value={`${d}%`}>
+            <label className="field" htmlFor="destiny">
+              <input id="destiny" type="range" min="0" max="100" step="5" value={d} onChange={e => setD(+e.target.value)} aria-label="Destiny" />
+              <small>{desc}{mode !== 'real' ? ' With mixed classes, destiny works by career year: a rookie develops like the real player did in the same year of his career.' : ''}</small>
+            </label>
+          </Opt>
+          <Opt title={future ? `Draft classes from ${LAST_SEASON + 1}` : 'Draft classes'} value={(future ? FUTURE_MODES.find(x => x[0] === fmode) : CLASS_MODES.find(x => x[0] === mode))?.[1]}>
+            {future ? <fieldset className="field radio-set">
+              {FUTURE_MODES.map(([k, l, txt]) => (
+                <label key={k} className={`radio ${fmode === k ? 'on' : ''}`}>
+                  <input type="radio" name="futuremode" value={k} checked={fmode === k} onChange={() => setFmode(k)} />
+                  <span><b>{l}</b><small>{txt}</small></span>
+                </label>
+              ))}
+              <small>A class (or, mixed, a player) only comes round again once every one of its players has retired – nobody plays against his own copy.</small>
+            </fieldset> : <fieldset className="field radio-set">
+              {CLASS_MODES.map(([k, l, txt]) => (
+                <label key={k} className={`radio ${mode === k ? 'on' : ''}`}>
+                  <input type="radio" name="classmode" value={k} checked={mode === k} onChange={() => setMode(k)} />
+                  <span><b>{l}</b><small>{txt}</small></span>
+                </label>
+              ))}
+            </fieldset>}
+          </Opt>
+          <Opt title="Rosters" value={fantasy ? `Fantasy draft${rr ? ` · ${rr}RR` : ''}` : 'Real rosters'}>
+            <label className="field check" htmlFor="fantasy">
+              <span><input id="fantasy" type="checkbox" checked={fantasy} onChange={e => setFantasy(e.target.checked)} /> Fantasy draft</span>
+              <small>All {label} players go into one pool and teams draft their rosters from scratch. You pick for your own team.</small>
+            </label>
+            {fantasy && <div className="field"><span>Draft order</span>
+              <div className="seg" role="group" aria-label="Fantasy draft order">{([[null, 'Snake'], [3, '3RR'], [5, '5RR']] as const).map(([k, t]) => <button key={t} className={rr === k ? 'on' : ''} onClick={() => setRr(k)}>{t}</button>)}</div>
+              <small>{rr ? `Snake order, but from round ${rr} it turns again: the team that picked last in round ${rr - 1} also picks last in round ${rr} – it evens out the top picks' advantage.` : 'Snake: the last pick of a round picks first in the next.'}</small>
+            </div>}
+          </Opt>
+          <Opt title="Season, playoffs and rules" value={JSON.stringify(settingsOf(form)) === JSON.stringify(settingsOf(formOf(null))) ? 'As in history' : 'Custom'}>
+            <SeasonFields form={form} setForm={setForm} />
+          </Opt>
+          <Opt title="Random seed" value={String(seed)}>
+            <label className="field" htmlFor="seed">
+              <input id="seed" type="number" value={seed} onChange={e => setSeed(+e.target.value)} aria-label="Random seed" />
+              <small>The same seed and settings produce the same history.</small>
+            </label>
+          </Opt>
+        </div>
         <button className="primary big" onClick={() => onStart(d / 100, seed, user || null, settingsOf(form), fantasy ? { rr } : false, start, mode, fmode)}>{fantasy ? 'To the fantasy draft' : 'Start the league'}</button>
       </div>
     </div>

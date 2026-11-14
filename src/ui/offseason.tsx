@@ -44,6 +44,17 @@ export function attrCols(pOf: (r: any) => any, S: number, proj = false) {
     } })),
   ];
 }
+/** A "Sort by" picker for a draft table: every column that can sort, by its full name. */
+export function SortBy({ cols, value, onChange }: any) {
+  const opts = cols.filter((c: any) => c.get && c.key !== 'act' && c.key !== 'name');
+  return (
+    <label className="sort-by"><span className="dim">Sort by</span>
+      <select value={value} onChange={e => onChange(e.target.value)} aria-label="Sort by">
+        {opts.map((c: any) => <option key={c.key} value={c.key}>{c.title ? c.title.split(' – ')[0].split(' (')[0] : c.label}</option>)}
+      </select>
+    </label>
+  );
+}
 /** Today's ratings or the projected ones. */
 export function AttrMode({ proj, setProj }: any) {
   return <div className="seg" role="group" aria-label="Ratings shown">
@@ -63,6 +74,7 @@ const lastLine = (p: any) => [...p.career].reverse().find((c: any) => !c.po);
 export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTeam }: any) {
   const d = lg.draftDay && lg.draftDay.year === lg.season ? lg.draftDay : null;
   const [pos, setPos] = useState('all');
+  const [sortKey, setSortKey] = useState('cons');
   const proj = false;
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(600);
@@ -156,9 +168,10 @@ export function DraftRoom({ lg, onChange, onTick = () => {}, openPlayer, openTea
         {!myTurn && on && lg.online && isHuman(lg, on.tid) && <p className="note">Waiting for {lg.teams[on.tid].name} to pick.</p>}
         <div className="def-row">
           <div className="seg" role="group" aria-label="Position">{POS.map(([k, l]) => <button key={k} className={pos === k ? 'on' : ''} onClick={() => setPos(k)}>{l}</button>)}</div>
+          <SortBy cols={cols} value={sortKey} onChange={setSortKey} />
           <span className="hint">{d.pool.length} players left on the board</span>
         </div>
-        <SortTable cols={cols} rows={board.map((p: any) => ({ ...p, key: p.id }))} initial="cons" initialAsc limit={80} />
+        <SortTable key={sortKey} cols={cols} rows={board.map((p: any) => ({ ...p, key: p.id }))} initial={sortKey} initialAsc={!!cols.find((c: any) => c.key === sortKey)?.asc} limit={80} />
         <p className="note">Overall and potential stay hidden until a player is drafted – judge him by his ratings, his role and the scouts' rank.</p>
       </section>
       <section className="col">

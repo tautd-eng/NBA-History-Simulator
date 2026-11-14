@@ -1009,3 +1009,13 @@ button.on-board { background: var(--accent); color: #fff; border-color: var(--ac
 .pb-row.human { box-shadow: inset -5px 0 0 var(--accent); }
 .pb-user { font-size: 0.72rem; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 8px; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hum-name { width: 9em; padding: 4px 8px; font-size: 0.85rem; }
+/* new game: options open on click */
+.opt-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.opt + .opt { border-top: 1px solid var(--line); }
+.opt-head { display: grid; grid-template-columns: 1fr auto 18px; gap: 10px; align-items: center; width: 100%; text-align: left; background: var(--surface); border: 0; border-radius: 0; padding: 12px 14px; font-size: 0.95rem; }
+.opt-head b { font-weight: 600; color: var(--accent); max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opt-car { color: var(--muted); }
+.opt.open .opt-head { background: var(--sunk); }
+.opt-body { padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 12px; background: var(--sunk); }
+.sort-by { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+.sort-by select { padding: 4px 8px; }

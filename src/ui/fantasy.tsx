@@ -9,6 +9,8 @@ import { fantasyTidAt, fantasyOnClock, fantasyPool, fantasyUserPick, fantasyAdva
 import { AutoControls, useAutoPlay } from './draftday';
 import { posNum } from '../engine/game';
 import { PickBoard, OnClock } from './pickboard';
+import { SortTable } from './sorttable';
+import { attrCols, SortBy } from './offseason';
 
 const POS = [['all', 'All'], ['g', 'Guards'], ['f', 'Forwards'], ['c', 'Centers']] as const;
 
@@ -29,9 +31,16 @@ export function FantasyRoom({ lg, onChange, onTick = () => {}, openPlayer }: any
   const pool = useMemo(() => fantasyPool(lg)
     .filter((p: any) => pos === 'all' || (pos === 'g' ? posNum(p.pos) <= 2.5 : pos === 'c' ? posNum(p.pos) >= 4.5 : posNum(p.pos) > 2.5 && posNum(p.pos) < 4.5))
     .filter((p: any) => !q || p.name.toLowerCase().includes(q.toLowerCase()))
-    .sort((a: any, b: any) => ovrOf(b.z, b.id) - ovrOf(a.z, a.id)).slice(0, 120), [f.picks.length, pos, q]);
-  const R = (p: any, i: number) => ratingOf(p.z[RATING_LABELS[i].k], RATING_LABELS[i].inv);
-  const SHOW = [0, 1, 4, 6, 7, 10];
+    .sort((a: any, b: any) => ovrOf(b.z, b.id) - ovrOf(a.z, a.id)), [f.picks.length, pos, q]);
+  const [sortKey, setSortKey] = useState('ovr');
+  const cols = [
+    { key: 'name', label: 'Player', left: true, get: (p: any) => p.name, fmt: (v: any, p: any) => <button className="link" onClick={() => openPlayer(p.id)}>{v}</button> },
+    { key: 'pos', label: 'Pos', title: 'Position', get: (p: any) => posNum(p.pos), fmt: (_: any, p: any) => <span className="dim">{p.pos}</span> },
+    { key: 'age', label: 'Age', title: 'Age', asc: true, get: (p: any) => ageIn(p, lg.season) },
+    { key: 'ovr', label: 'OVR', title: 'Overall', get: (p: any) => ovrOf(p.z, p.id), fmt: (v: any) => <b>{v}</b> },
+    ...attrCols((p: any) => p, lg.season),
+    { key: 'act', label: '', get: () => 0, fmt: (_: any, p: any) => myTurn ? <button className="small primary" onClick={() => act(() => { run(lg, { t: 'fantasyPick', pid: p.id }); })}>Pick</button> : null },
+  ];
   const act = (fn: () => void) => { fn(); onChange(); };
   const mine = lg.userTid ? lg.teams[lg.userTid].roster.map((pid: string) => lg.players[pid]) : [];
   const recent = f.picks.slice().reverse().slice(0, 30);
@@ -53,25 +62,10 @@ export function FantasyRoom({ lg, onChange, onTick = () => {}, openPlayer }: any
         </div>
         <div className="def-row">
           <div className="seg" role="group" aria-label="Position">{POS.map(([k, l]) => <button key={k} className={pos === k ? 'on' : ''} onClick={() => setPos(k)}>{l}</button>)}</div>
+          <SortBy cols={cols} value={sortKey} onChange={setSortKey} />
           <input id="fan-q" className="search" placeholder="Search player" value={q} onChange={e => setQ(e.target.value)} aria-label="Search player" />
         </div>
-        <div className="tbl-wrap pool">
-          <table className="tbl">
-            <thead><tr><th className="l">Player</th><th>Pos</th><th>Age</th><th>OVR</th>{SHOW.map(i => <th key={i} title={RATING_LABELS[i].name}>{RATING_LABELS[i].short}</th>)}<th></th></tr></thead>
-            <tbody>
-              {pool.map((p: any) => {
-                return (
-                  <tr key={p.id}>
-                    <td className="l"><button className="link" onClick={() => openPlayer(p.id)}>{p.name}</button></td>
-                    <td className="dim">{p.pos}</td><td>{ageIn(p, lg.season)}</td><td><b>{ovrOf(p.z, p.id)}</b></td>
-                    {SHOW.map(i => <td key={i}>{R(p, i)}</td>)}
-                    <td>{myTurn && <button className="small primary" onClick={() => act(() => { run(lg, { t: 'fantasyPick', pid: p.id }); })}>Pick</button>}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <SortTable key={sortKey} cols={cols} rows={pool.map((p: any) => ({ ...p, key: p.id }))} initial={sortKey} initialAsc={!!cols.find((c: any) => c.key === sortKey)?.asc} limit={150} />
       </section>
       <section className="col">
         {lg.userTid && (
