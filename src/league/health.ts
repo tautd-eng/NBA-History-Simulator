@@ -290,14 +290,17 @@ export function develop(lg: League, rng: Rng) {
       const grow = YOUNG.grow[Math.max(0, Math.min(7, age - 19))] + 0.3 * Math.max(0, Math.min(2.5, t));
       for (let i = 0; i < NK; i++) nat[i] += grow * OVR_DIR[i];
     }
-    // veterans: the data's aging curve only sees survivors, so enforce a minimum
-    // expected decline after 30 (in BPM per year) along the overall-rating direction
-    const minDrop = age < 30 ? 0 : Math.min(1.8, 0.25 + 0.17 * (age - 30));
-    if (minDrop > 0) {
+    // the age curve by the player's own clock (some peak early, some late): no natural decline before 28,
+    // then it starts gently (28–29) and gets steeper from 30 – the data's curve only sees survivors, so a
+    // minimum expected decline (BPM per year, along the overall-rating direction) is enforced
+    {
+      const effAge = age - dev.peak;
       const meanOnly = p.z.map((v, i) => v + H.aging[H.keys[i]].mean[ai]);
       const drift = bpmOf(meanOnly) - bpmOf(p.z);
+      if (effAge <= 27 && drift < 0) for (let i = 0; i < NK; i++) nat[i] -= drift * OVR_DIR[i];
+      const minDrop = effAge < 28 ? 0 : effAge < 30 ? 0.2 * (effAge - 27) : Math.min(2.0, 0.5 + 0.2 * (effAge - 30));
       const extra = Math.max(0, drift + minDrop);
-      if (extra > 0) for (let i = 0; i < NK; i++) nat[i] -= extra * OVR_DIR[i];
+      if (minDrop > 0 && extra > 0) for (let i = 0; i < NK; i++) nat[i] -= extra * OVR_DIR[i];
     }
     // no single off-season moves a player more than DEV.maxOvrStep overall points
     const trial = p.z.map((v, i) => v + nat[i]);
@@ -447,13 +450,23 @@ export function normalizeLeague(lg: League, S = lg.season, maxStep = Infinity) {
   const players = Object.values(lg.players).filter(p => !p.retired);
   const z0 = new Map(players.map(p => [p.id, p.z.slice()]));
   let shiftSize = 0;
+  const wRel = new Map<string, number>();   // each player's share of the correction (by age)
   if (str > 0) {
     const shift = before.mean.map((m, k) => {
       const diff = real.mean[k] - m;
       return Math.abs(diff) > 0.03 ? str * diff : 0;
     });
     shiftSize = Math.sqrt(shift.reduce((a, x) => a + x * x, 0));
-    for (const p of players) for (let k = 0; k < NK; k++) p.z[k] += shift[k];
+    // who carries the correction: when the league has drifted too strong, mostly the veterans past their peak
+    // (careers still peak around 27); when it has drifted too weak, mostly the young and players in their prime
+    const down = bpmOf(shift) - bpmOf(new Array(NK).fill(0)) < 0;
+    const wOf = (p: Player) => {
+      const a = ageIn(p, S - 1) - (p.dev?.peak ?? 0);
+      return down ? (a <= 22 ? 0.5 : a <= 27 ? 0.35 : a <= 29 ? 1.1 : 1.8) : (a <= 27 ? 1.3 : a <= 29 ? 1 : 0.5);
+    };
+    const rot = Object.values(lg.teams).filter(t => t.active).flatMap(t => t.roster.map(pid => lg.players[pid]).sort((x, y) => bpmOf(y.z) - bpmOf(x.z)).slice(0, 10));
+    const meanW = rot.length ? rot.reduce((a, p) => a + wOf(p), 0) / rot.length : 1;
+    for (const p of players) { const w = wOf(p) / meanW; wRel.set(p.id, w); for (let k = 0; k < NK; k++) p.z[k] += shift[k] * w; }
   }
   let spread = 1;
   const mid = simProfile(lg);
@@ -466,11 +479,12 @@ export function normalizeLeague(lg: League, S = lg.season, maxStep = Infinity) {
     zClamp(p.z);
     // the recalibration drifts the whole league a little; it never moves one player more than maxStep in a summer
     // (the rest of the correction comes in later years) – a star at his peak does not drop because of it
-    const a = z0.get(p.id)!, o0 = shownOvr(a);
-    if (Math.abs(shownOvr(p.z) - o0) > maxStep) {
+    // (a veteran past his peak, who carries more of the correction, may move proportionally more)
+    const a = z0.get(p.id)!, o0 = shownOvr(a), lim = maxStep * Math.max(1, wRel.get(p.id) ?? 1);
+    if (Math.abs(shownOvr(p.z) - o0) > lim) {
       const b = p.z.slice();
       let lo = 0, hi = 1;
-      for (let it = 0; it < 12; it++) { const t = (lo + hi) / 2; if (Math.abs(shownOvr(a.map((v, i) => v + t * (b[i] - v))) - o0) <= maxStep) lo = t; else hi = t; }
+      for (let it = 0; it < 12; it++) { const t = (lo + hi) / 2; if (Math.abs(shownOvr(a.map((v, i) => v + t * (b[i] - v))) - o0) <= lim) lo = t; else hi = t; }
       for (let i = 0; i < NK; i++) p.z[i] = a[i] + lo * (b[i] - a[i]);
     }
     if (p.ovrHist.length && p.ovrHist[p.ovrHist.length - 1][0] === S) snapRatings(p, S);
