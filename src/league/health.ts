@@ -25,7 +25,7 @@ export const DEV = { noise: 0.32, ar: 0.55, maxOvrStep: 8, soft: 2.7, maxSkillSt
  * hurts only negFactor as much, and without a flop one summer costs at most
  * maxDrop OVR (≤22, 23–24, 25).
  */
-export const YOUNG = { maxAge: 25, deadZone: 2.5, flop: -3, negFactor: 0.5, maxDrop: [0, 1, 2], grow: [0.4, 0.38, 0.35, 0.3, 0.15] };
+export const YOUNG = { maxAge: 25, deadZone: 2.5, flop: -3, negFactor: 0.5, maxDrop: [0, 1, 2], grow: [0.4, 0.38, 0.35, 0.3, 0.15, 0.15, 0.1, 0.05] };
 
 export function ensureDev(p: Player, rng: Rng) {
   if (p.dev) return p.dev;
@@ -283,10 +283,11 @@ export function develop(lg: League, rng: Rng) {
     }
     // the young grow by themselves until about 23 – the more talented (hidden potential, and already good for his
     // age) the faster; no box score needed for that
-    if (age <= 23) {
+    // (and keep filling out a little until 26, so careers peak at 25–27 as in the real league)
+    if (age <= 26) {
       const expect = age <= 19 ? 70 : age <= 21 ? 72 : 74;
-      const t = 0.5 * dev.pot + (s0 - expect) / 6;
-      const grow = YOUNG.grow[Math.max(0, Math.min(4, age - 19))] + 0.3 * Math.max(0, Math.min(2.5, t));
+      const t = age <= 23 ? 0.5 * dev.pot + (s0 - expect) / 6 : 0;
+      const grow = YOUNG.grow[Math.max(0, Math.min(7, age - 19))] + 0.3 * Math.max(0, Math.min(2.5, t));
       for (let i = 0; i < NK; i++) nat[i] += grow * OVR_DIR[i];
     }
     // veterans: the data's aging curve only sees survivors, so enforce a minimum
